@@ -3,10 +3,11 @@
 import daedalus with {
     StyleSheet, DomElement,
     TextElement, ListItemElement, ListElement,
-    HeaderElement, ButtonElement, NumberInputElement
+    HeaderElement, ButtonElement, NumberInputElement, LinkElement
 }
 
 const game_style = {
+    header: StyleSheet({'text-align': 'center'}),
     row: StyleSheet({margin: 0, padding: 0, display: 'block'}),
     board: StyleSheet({margin: "0 auto", display: 'inline-block'}),
     cell: StyleSheet({
@@ -293,7 +294,9 @@ export class Game extends DomElement {
         const width = window.innerWidth / parseFloat(em_width)
         const default_size = Math.floor(Math.min(0.7 * (width / 1.5), 15))
         const default_count = Math.ceil(0.15 * default_size * default_size)
-        console.log(default_size)
+
+        this.appendChild(new DomElement("h2", {className: game_style.header}, [new TextElement("Minesweeper")]))
+        this.appendChild(new DomElement("div", {className: game_style.header}, [new LinkElement("Powered By Daedalus", "https://github.com/nsetzer/daedalus/")]))
 
         this.appendChild(new DomElement("div", {className: game_style.padding}, []))
 

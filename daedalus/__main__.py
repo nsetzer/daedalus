@@ -21,6 +21,43 @@ class CLI(object):
     def execute(self, args):
         pass
 
+class BuildHtmlCLI(CLI):
+    """
+    compile a js and html file for production use
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('build_html',
+            help="compile javascript into a single html file")
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--onefile', action='store_true')
+        subparser.add_argument('index_js')
+        subparser.add_argument('out_html')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+        paths.insert(0, os.path.split(jspath)[0])
+
+        static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
+        builder = Builder(paths, static_data)
+
+        js, html = builder.build(args.index_js, onefile=True)
+
+        makedirs(os.path.split(args.out_html)[0])
+
+        with open(args.out_html, "w") as wf:
+            cmd = 'daedalus ' + ' '.join(sys.argv[1:])
+            wf.write("<!--%s-->\n" % cmd)
+            wf.write(html)
+
 class BuildCLI(CLI):
     """
     compile a js and html file for production use
@@ -28,13 +65,12 @@ class BuildCLI(CLI):
 
     def register(self, parser):
         subparser = parser.add_parser('build',
-            help="compile javascript into a single file")
+            help="compile javascript and create the release html + js")
         subparser.set_defaults(func=self.execute, cli=self)
 
         subparser.add_argument('--minify', action='store_true')
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--env', type=str, action='append', default=[])
-        subparser.add_argument('--onefile', action='store_true')
         subparser.add_argument('--static', type=str, default=None)
         subparser.add_argument('index_js')
         subparser.add_argument('out')
@@ -51,44 +87,39 @@ class BuildCLI(CLI):
         static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
         builder = Builder(paths, static_data)
 
-        js, html = builder.build(args.index_js, minify=args.minify, onefile=args.onefile)
+        js, html = builder.build(args.index_js, minify=args.minify)
 
-        makedirs(args.out)
+        makedirs(os.path.join(args.out, "static"))
 
         out_html = os.path.join(args.out, "index.html")
         with open(out_html, "w") as wf:
             wf.write(html)
 
-        if not args.onefile:
+        out_js = os.path.join(args.out, "static", "index.js")
+        with open(out_js, "w") as wf:
+            wf.write(js)
 
-            makedirs(os.path.join(args.out, "static"))
+        if args.static and os.path.exists(args.static):
+            for dirpath, dirnames, filenames in os.walk(args.static):
+                paths = []
+                for dirname in dirnames:
+                    src_path = os.path.join(dirpath, dirname)
+                    dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
+                    if not os.path.exists(dst_path):
+                        os.makedirs(dst_path)
 
+                for filename in filenames:
+                    src_path = os.path.join(dirpath, filename)
+                    dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
+                    with open(src_path, "rb") as rb:
+                        with open(dst_path, "wb") as wb:
+                            wb.write(rb.read())
 
-            out_js = os.path.join(args.out, "static", "index.js")
-            with open(out_js, "w") as wf:
-                wf.write(js)
-
-            if args.static and os.path.exists(args.static):
-                for dirpath, dirnames, filenames in os.walk(args.static):
-                    paths = []
-                    for dirname in dirnames:
-                        src_path = os.path.join(dirpath, dirname)
-                        dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
-                        if not os.path.exists(dst_path):
-                            os.makedirs(dst_path)
-
-                    for filename in filenames:
-                        src_path = os.path.join(dirpath, filename)
-                        dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
-                        with open(src_path, "rb") as rb:
-                            with open(dst_path, "wb") as wb:
-                                wb.write(rb.read())
-
-            inp_favicon = builder.find("favicon.ico")
-            out_favicon = os.path.join(args.out, "favicon.ico")
-            with open(inp_favicon, "rb") as rb:
-                with open(out_favicon, "wb") as wb:
-                    wb.write(rb.read())
+        inp_favicon = builder.find("favicon.ico")
+        out_favicon = os.path.join(args.out, "favicon.ico")
+        with open(inp_favicon, "rb") as rb:
+            with open(out_favicon, "wb") as wb:
+                wb.write(rb.read())
 
 class CompileCLI(CLI):
     """
@@ -173,6 +204,7 @@ def getArgs():
 
 def register_parsers(parser):
 
+    BuildHtmlCLI().register(parser)
     BuildCLI().register(parser)
     CompileCLI().register(parser)
     ServeCLI().register(parser)

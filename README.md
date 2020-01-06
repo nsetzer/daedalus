@@ -14,7 +14,7 @@ python setup.py install
 ```
 
 ## Daedalus-JS Documentation
-[Element](./doc/element.md)
+[Element](./docs/element.md)
 
 ### Daedalus-PY CLI Documentation
 

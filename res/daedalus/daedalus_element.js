@@ -180,7 +180,11 @@ export class LinkElement extends DomElement {
     }
 
     onClick() {
-        history.pushState({}, "", this.link)
+        if (this.link.startsWith('http')) {
+            window.open(this.link, '_blank');
+        } else {
+            history.pushState({}, "", this.link)
+        }
     }
 }
 
