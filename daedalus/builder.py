@@ -550,7 +550,7 @@ class Builder(object):
         print("%10d %.2f %.2f%% of %d" % (final_source_size, t2-t1, p, source_size))
         return js, export_name
 
-    def build(self, path, minify=False):
+    def build(self, path, minify=False, onefile=False):
         # make this have API functions which
         # can be overridden
 
@@ -567,7 +567,7 @@ class Builder(object):
 
         html = html \
             .replace("<!--TITLE-->", self.getHtmlTitle()) \
-            .replace("<!--SOURCE-->", self.getHtmlSource(js)) \
+            .replace("<!--SOURCE-->", self.getHtmlSource(js, onefile)) \
             .replace("<!--RENDER-->", self.getHtmlRender(render_function, root))
 
         return js, html
@@ -607,8 +607,11 @@ class Builder(object):
     def getHtmlTitle(self):
         return '<title>Daedalus</title>'
 
-    def getHtmlSource(self, js):
-        return '<script src="/static/index.js" type="text/javascript"></script>'
+    def getHtmlSource(self, js, onefile):
+        if onefile:
+            return '<script type="text/javascript">\n%s\n</script>' % js
+        else:
+            return '<script src="/static/index.js" type="text/javascript"></script>'
 
     def getHtmlRender(self, render_function, root):
         return ('<script type="text/javascript">' \
