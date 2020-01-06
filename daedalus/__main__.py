@@ -34,6 +34,7 @@ class BuildCLI(CLI):
         subparser.add_argument('--minify', action='store_true')
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--onefile', action='store_true')
         subparser.add_argument('--static', type=str, default=None)
         subparser.add_argument('index_js')
         subparser.add_argument('out')
@@ -50,39 +51,44 @@ class BuildCLI(CLI):
         static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
         builder = Builder(paths, static_data)
 
-        js, html = builder.build(args.index_js, minify=args.minify)
+        js, html = builder.build(args.index_js, minify=args.minify, onefile=args.onefile)
 
-        makedirs(os.path.join(args.out, "static"))
+        makedirs(args.out)
 
         out_html = os.path.join(args.out, "index.html")
         with open(out_html, "w") as wf:
             wf.write(html)
 
-        out_js = os.path.join(args.out, "static", "index.js")
-        with open(out_js, "w") as wf:
-            wf.write(js)
+        if not args.onefile:
 
-        if args.static and os.path.exists(args.static):
-            for dirpath, dirnames, filenames in os.walk(args.static):
-                paths = []
-                for dirname in dirnames:
-                    src_path = os.path.join(dirpath, dirname)
-                    dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
-                    if not os.path.exists(dst_path):
-                        os.makedirs(dst_path)
+            makedirs(os.path.join(args.out, "static"))
 
-                for filename in filenames:
-                    src_path = os.path.join(dirpath, filename)
-                    dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
-                    with open(src_path, "rb") as rb:
-                        with open(dst_path, "wb") as wb:
-                            wb.write(rb.read())
 
-        inp_favicon = builder.find("favicon.ico")
-        out_favicon = os.path.join(args.out, "favicon.ico")
-        with open(inp_favicon, "rb") as rb:
-            with open(out_favicon, "wb") as wb:
-                wb.write(rb.read())
+            out_js = os.path.join(args.out, "static", "index.js")
+            with open(out_js, "w") as wf:
+                wf.write(js)
+
+            if args.static and os.path.exists(args.static):
+                for dirpath, dirnames, filenames in os.walk(args.static):
+                    paths = []
+                    for dirname in dirnames:
+                        src_path = os.path.join(dirpath, dirname)
+                        dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
+                        if not os.path.exists(dst_path):
+                            os.makedirs(dst_path)
+
+                    for filename in filenames:
+                        src_path = os.path.join(dirpath, filename)
+                        dst_path = os.path.join(args.out, "static", os.path.relpath(src_path, args.static))
+                        with open(src_path, "rb") as rb:
+                            with open(dst_path, "wb") as wb:
+                                wb.write(rb.read())
+
+            inp_favicon = builder.find("favicon.ico")
+            out_favicon = os.path.join(args.out, "favicon.ico")
+            with open(inp_favicon, "rb") as rb:
+                with open(out_favicon, "wb") as wb:
+                    wb.write(rb.read())
 
 class CompileCLI(CLI):
     """
