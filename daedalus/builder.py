@@ -268,8 +268,9 @@ class JsModule(object):
         self.index_js = index_js
         self.files = {index_js.path: index_js}
         self.static_data = None
-        self.module_exports = {}
+        self.module_exports = set()
         self.module_imports = {}
+        self.static_exports = set()
         self.import_paths = {}
         self.ast = None
         self.source_size = 0
@@ -355,7 +356,8 @@ class JsModule(object):
         else:
             ast = order[0].ast
 
-        self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, self.module_exports, merge)
+        all_exports = self.module_exports | self.static_exports
+        self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, all_exports, merge)
 
         self.dirty = False
         t2 = time.time()
@@ -365,11 +367,12 @@ class JsModule(object):
     def setStaticData(self, data):
         # parse the user provided static data
         lines = []
+        self.static_exports = set()
         if data:
             for key, value in data.items():
                 line = "const %s=%s;" % (key, json.dumps(value))
                 lines.append(line)
-
+                self.static_exports.add(key)
         if lines:
             source = "\n".join(lines)
             tokens = Lexer().lex(source)
