@@ -435,7 +435,9 @@ class Lexer(LexerBase):
                 self._putch(c)
                 self._lex_number()
 
-            elif c == ' ' or c == '\t':
+            elif c == ' ' or c == '\t' or ord(c) < 0x20:
+                # ignore white space and ASCII control codes
+                # newline was already processed above
                 self._maybe_push()
             else:
                 self._putch(c)
@@ -647,7 +649,7 @@ def main():
     #r.match(2/3)
 
     text1= """
-        var # x = 1
+      x \r\n
     """
 
     tokens = Lexer().lex(text1)
