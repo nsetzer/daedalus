@@ -173,17 +173,19 @@ export class TextElement extends DomElement {
 
 style_link = StyleSheet({cursor: 'pointer', color: 'blue'})
 export class LinkElement extends DomElement {
-    constructor(text, link) {
-        super("div", {className: style_link, title:link}, [new TextElement(text)])
+    constructor(text, url) {
+        super("div", {className: style_link, title:url}, [new TextElement(text)])
 
-        this.link = link
+        this.state = {
+            url
+        }
     }
 
     onClick() {
-        if (this.link.startsWith('http')) {
-            window.open(this.link, '_blank');
+        if (this.state.url.startsWith('http')) {
+            window.open(this.state.url, '_blank');
         } else {
-            history.pushState({}, "", this.link)
+            history.pushState({}, "", this.state.url)
         }
     }
 }
