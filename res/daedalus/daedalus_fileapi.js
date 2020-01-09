@@ -103,12 +103,16 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
         xhr.onreadystatechange = function() {
             if (xhr.readyState == 4 && xhr.status == 200) {
                 if (success !== null) {
-                    let params={name: file.name, url,
+                    let params={
+                        fileName: file.name, url,
                         lastModified: file.lastModified,
-                        size: file.size, type: file.type};
+                        size: file.size,
+                        type: file.type
+                    };
                     success(params)
                     if (progress !== null) {
                         progress({
+                            bytesTransfered: file.size,
                             fileSize: file.size,
                             fileName: file.name,
                             finished: true,
@@ -117,10 +121,15 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
                 }
             } else if(xhr.status >= 400) {
                 if (failure !== null) {
-                    let params={name: file.name, url, status: xhr.status};
+                    let params={
+                        fileName: file.name,
+                        url,
+                        status: xhr.status
+                    };
                     failure(params)
                     if (progress !== null) {
                         progress({
+                            bytesTransfered: 0,
                             fileSize: file.size,
                             fileName: file.name,
                             finished: true,
@@ -138,6 +147,7 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
                 fileSize: file.size,
                 fileName: file.name,
                 finished: false,
+                first: true,
             })
         }
 

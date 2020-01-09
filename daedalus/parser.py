@@ -56,7 +56,8 @@ class Parser(object):
             (L2R, self.visit_grouping2, ['.', "?."]),  # also: x[], x()
             (L2R, self.visit_new, []),
             (L2R, self.visit_unary_postfix, ['++', '--']),
-            (R2L, self.visit_unary_prefix, ['!', '~', '+', '-', '++', '--', 'typeof', 'void', 'delete', 'await']),
+            (R2L, self.visit_unary_prefix, ['!', '~', '+', '-', '++', '--']),
+            (R2L, self.visit_prefix, ['typeof', 'void', 'delete', 'await']),
             (R2L, self.visit_binary, ['**']),
             (L2R, self.visit_binary, ['*', '/', '%']),
             (L2R, self.visit_binary, ['+', '-']),
@@ -352,6 +353,19 @@ class Parser(object):
         if no_lhs and i2 is not None:
             token.children.append(self.consume(tokens, token, index, 1))
             token.type = Token.T_PREFIX
+
+        return 1
+
+    def visit_prefix(self, parent, tokens, index, operators):
+
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+        token.children.append(self.consume(tokens, token, index, 1))
+        token.type = Token.T_PREFIX
 
         return 1
 
@@ -1120,12 +1134,14 @@ class Parser(object):
 
 def main():
 
+    # TODO: let x,y,z
+    # TODO: if (true) {x=1;} + 1
+    #       this gives an odd error message
+    #       expected object but the error is because of the parent node
+
     text1 = """
-    x = {
-        b : c,
-        'x' : 'y'
-        'z' : 'y'
-    }
+    x = {a}
+    delete x.a
 
     """
 
