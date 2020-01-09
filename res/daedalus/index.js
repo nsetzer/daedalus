@@ -5,6 +5,7 @@ import './daedalus_location.js'
 import './daedalus_router.js'
 import './daedalus_auth.js'
 import './daedalus_fileapi.js'
+import './daedalus_platform.js'
 
 let workstack = [];
 let deletions = [];

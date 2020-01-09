@@ -677,11 +677,8 @@ class Compiler(object):
 def main():
 
     text1 = """
-    switch (x) {
-        case 'a':
-            break;
-        default:
-            break;
+    function (){
+        delete this.attrs.files[msg.fileName];
     }
     """
 

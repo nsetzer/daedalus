@@ -36,7 +36,7 @@ reserved_words = {
     # keywords
     'await',  'break',  'case',
     'catch',  'class', 'const', 'continue', 'debugger', 'default',
-    'delete'  'do',  'else', 'enum', 'eval', 'export', 'extends',
+    'delete',  'do',  'else', 'enum', 'eval', 'export', 'extends',
     'final', 'finally', 'float', 'for', 'function', 'goto', 'if',
     'implements', 'import', 'in', 'instanceof',  'interface', 'let',
     'new',  'package',
@@ -649,7 +649,7 @@ def main():
     #r.match(2/3)
 
     text1= """
-      x \r\n
+    delete x.y
     """
 
     tokens = Lexer().lex(text1)
