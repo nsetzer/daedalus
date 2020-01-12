@@ -105,7 +105,7 @@ export class DomElement {
     appendChild(childElement) {
 
         if (!childElement || !childElement.type) {
-            raise "invalid child";
+            throw "invalid child";
         }
 
         if (typeof this.children === "string") {
@@ -115,13 +115,32 @@ export class DomElement {
         }
 
         this.children.push(childElement)
-        //this.children.splice(0, 0, childElement)  // nani?
         this.update()
 
         return childElement
     }
 
+    insertChild(index, childElement) {
+        if (!childElement || !childElement.type) {
+            throw "invalid child";
+        }
+
+        if (typeof this.children === "string") {
+            this.children = [this.children, ]
+        } else if (typeof this.children === "undefined") {
+            this.children = []
+        }
+
+        this.children.splice(index, 0, childElement);
+        this.update();
+
+        return childElement
+    }
+
     removeChild(childElement) {
+        if (!childElement || !childElement.type) {
+            throw "invalid child";
+        }
         const index = this.children.indexOf(childElement)
         if (index >= 0) {
             this.children.splice(index, 1)

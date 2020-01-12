@@ -91,6 +91,28 @@ function joinpath(...parts) {
     return str;
 }
 
+function splitpath(path) {
+    const parts = path.split('/');
+    if (parts[parts.length-1] === '') {
+        parts.pop()
+    }
+    return parts;
+}
+
+// foo.txt -> ['foo', '.txt']
+// .config -> ['.config', '']
+// path/to/.config -> ['path/to/.config', '']
+// path/to/foo.txt -> ['path/to/foo', '.txt']
+function splitext(name) {
+    const index = name.lastIndexOf('.');
+    if (index <= 0 || name[index-1] == '/') {
+        return [name, '']
+    }
+    else {
+        return [name.slice(0,index), name.slice(index)]
+    }
+}
+
 let css_sheet = null;
 let selector_names = {};
 
@@ -189,4 +211,6 @@ export const util = {
     serializeParameters,
     isFunction,
     joinpath,
+    splitpath,
+    splitext,
 }

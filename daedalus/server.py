@@ -256,20 +256,27 @@ class SampleResource(Resource):
         super(SampleResource, self).__init__()
         self.builder = Builder(search_path, static_data)
         self.index_js = index_js
-        self.source, self.html = self.builder.build(self.index_js)
+        self.style, self.source, self.html = self.builder.build(self.index_js)
         self.static_path = static_path
 
     def endpoints(self):
         return [
+            ("GET", "/static/index.css", self.get_style),
             ("GET", "/static/index.js", self.get_source),
             ("GET", "/static/:path*", self.get_static),
             ("GET", "/favicon.ico", self.get_favicon),
             ("GET", "/:path*", self.get_path),
         ]
 
-    # TODO remove
-    #def build(self):
-    #    return self.builder.build(self.index_js)
+    def get_style(self, request, location, matches):
+        """
+        serve the compiled css
+        """
+        print("got style", len(self.style))
+        response = Response(payload=self.style, compress=request.acceptsGzip())
+        response.headers['Content-Type'] = 'text/css'
+        return response
+
 
     def get_source(self, request, location, matches):
         """
@@ -298,7 +305,7 @@ class SampleResource(Resource):
         """
         rebuild the javascript and html, return the html
         """
-        self.source, self.html = self.builder.build(self.index_js)
+        self.style, self.source, self.html = self.builder.build(self.index_js)
         return Response(payload=self.html)
 
     def get_favicon(self, request, location, matches):
