@@ -1140,8 +1140,9 @@ def main():
     #       expected object but the error is because of the parent node
 
     text1 = """
-    x = {a}
-    delete x.a
+    if () {
+        throw "this"
+    }
 
     """
 

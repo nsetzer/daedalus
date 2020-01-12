@@ -49,7 +49,7 @@ class BuildHtmlCLI(CLI):
         static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
         builder = Builder(paths, static_data)
 
-        js, html = builder.build(args.index_js, onefile=True)
+        css, js, html = builder.build(args.index_js, onefile=True)
 
         makedirs(os.path.split(args.out_html)[0])
 
@@ -87,7 +87,7 @@ class BuildCLI(CLI):
         static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
         builder = Builder(paths, static_data)
 
-        js, html = builder.build(args.index_js, minify=args.minify)
+        css, js, html = builder.build(args.index_js, minify=args.minify)
 
         makedirs(os.path.join(args.out, "static"))
 
@@ -98,6 +98,10 @@ class BuildCLI(CLI):
         out_js = os.path.join(args.out, "static", "index.js")
         with open(out_js, "w") as wf:
             wf.write(js)
+
+        out_css = os.path.join(args.out, "static", "index.css")
+        with open(out_css, "w") as wf:
+            wf.write(css)
 
         if args.static and os.path.exists(args.static):
             for dirpath, dirnames, filenames in os.walk(args.static):
@@ -137,6 +141,7 @@ class CompileCLI(CLI):
         subparser.add_argument('--env', type=str, action='append', default=[])
         subparser.add_argument('index_js')
         subparser.add_argument('out_js')
+        subparser.add_argument('out_css')
 
     def execute(self, args):
 
@@ -151,17 +156,16 @@ class CompileCLI(CLI):
 
         builder = Builder(paths, static_data)
 
-        js, root = builder.compile(args.index_js, standalone=args.standalone)
+        # TODO: add flag to not pre-compile style sheets
+        css, js, root = builder.compile(args.index_js, standalone=args.standalone)
 
-        if args.out_js == "-":
-            sys.stdout.write(js)
-            sys.stdout.write("\n")
+        with open(args.out_js, "w") as wf:
+            wf.write(js)
+            wf.write("\n")
 
-        else:
-            with open(args.out_js, "w") as wf:
-                wf.write(js)
-                wf.write("\n")
-            print("root: ", root)
+        with open(args.out_css, "w") as wf:
+            wf.write(css)
+            wf.write("\n")
 
 class ServeCLI(CLI):
 

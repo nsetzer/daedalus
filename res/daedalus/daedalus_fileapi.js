@@ -69,6 +69,7 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
 
     for (let i = 0; i < arrayLength; i++) {
         let file = elem.files[i];
+        let bytesTransfered = 0;
 
         let url;
         if (urlbase.endsWith('/')) {
@@ -90,8 +91,9 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
         xhr.upload.onprogress = function(event) {
             if (event.lengthComputable) {
                 if (progress !== null) {
+                    bytesTransfered = event.loaded
                     progress({
-                        bytesTransfered: event.loaded,
+                        bytesTransfered,
                         fileSize: file.size,
                         fileName: file.name,
                         finished: false,
@@ -129,7 +131,7 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
                     failure(params)
                     if (progress !== null) {
                         progress({
-                            bytesTransfered: 0,
+                            bytesTransfered,
                             fileSize: file.size,
                             fileName: file.name,
                             finished: true,
@@ -143,7 +145,7 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
 
         if (progress !== null) {
             progress({
-                bytesTransfered: 0,
+                bytesTransfered,
                 fileSize: file.size,
                 fileName: file.name,
                 finished: false,

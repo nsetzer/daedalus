@@ -196,6 +196,14 @@ class Token(object):
     def basicType(token):
         return token and token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING)
 
+    def clone(self):
+
+        tok = Token(self.type, self.line, self.index, self.value)
+        tok.file = self.file
+        tok.original_value = self.original_value
+        tok.children = [c.clone() for c in self.children]
+        return tok
+
 class LexerBase(object):
     """
     base class for a generic look-ahead-by-N lexer

@@ -226,7 +226,20 @@ function commitWork(fiber) {
 
     if (fiber.effect === 'CREATE') {
 
-        parentDom.appendChild(fiber.dom);
+        // the fibers are created in the same order as the children
+        // in the array. appending will work for the initial creation
+        // of the parent, or if appendChild is used later on. if
+        // insertChild is used after initial construction, insert the
+        // child dom before the correct element
+        const length = parentDom.children.length;
+        const position = fiber.index;
+
+        if (length == position) {
+            parentDom.appendChild(fiber.dom);
+        } else {
+            parentDom.insertBefore(fiber.dom,
+                parentDom.children[position]);
+        }
 
         if (fiber.element.elementMounted) {
             requestIdleCallback(fiber.element.elementMounted.bind(fiber.element))
@@ -239,9 +252,6 @@ function commitWork(fiber) {
         fiber.alternate.alternate = null // prevent memory leak
         removeDomNode(fiber)
     }
-
-
-
 }
 
 const isEvent = key => key.startsWith("on")

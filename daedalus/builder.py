@@ -6,6 +6,7 @@ from . import __path__
 import json
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser
+from .transform import TransformExtractStyleSheet
 from .compiler import Compiler
 
 def findFile(name, search_paths):
@@ -177,6 +178,8 @@ class JsFile(object):
         self.source_type = source_type
         self.mtime = 0
         self.size = 0
+        self.ast = None
+        self.styles = []
 
         if not name:
             self.name = os.path.splitext(os.path.split(name)[1])[0]
@@ -203,6 +206,10 @@ class JsFile(object):
             for token in tokens:
                 token.file = self.path
             ast = Parser().parse(tokens)
+            uid = TransformExtractStyleSheet.generateUid(self.path)
+            tr1 = TransformExtractStyleSheet(uid)
+            tr1.transform(ast)
+            self.styles = tr1.getStyles()
         except TokenError as e:
             source_lines=source.split("\n")
             line_start = e.token.line - 3
@@ -355,6 +362,8 @@ class JsModule(object):
                 ast = merge_ast(ast, buildFileIIFI(jsf.ast, jsf.exports))
         else:
             ast = order[0].ast
+
+        self.styles = sum([jsf.styles for jsf in order],[])
 
         all_exports = self.module_exports | self.static_exports
         self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, all_exports, merge)
@@ -521,10 +530,14 @@ class Builder(object):
                 struct = _get(mod.name())
                 ast = merge_ast(ast, mod.getAST(merge=len(struct)>0))
                 source_size += mod.source_size
+
+            styles = sum([mod.styles for mod in order], [])
         else:
             ast = jsm.getAST()
+            styles = jsm.styles
             source_size = jsm.source_size
 
+        css = "\n".join(styles)
         error = None
         try:
             js = Compiler(opts={'minify': minify}).compile(ast)
@@ -551,14 +564,14 @@ class Builder(object):
         p = final_source_size / source_size
         t2 = time.time()
         print("%10d %.2f %.2f%% of %d" % (final_source_size, t2-t1, p, source_size))
-        return js, export_name
+        return css, js, export_name
 
     def build(self, path, minify=False, onefile=False):
         # make this have API functions which
         # can be overridden
 
         try:
-            js, root = self.compile(path, minify=minify)
+            css, js, root = self.compile(path, minify=minify)
         except BuildError as e:
             return self.build_error(e)
 
@@ -570,10 +583,11 @@ class Builder(object):
 
         html = html \
             .replace("<!--TITLE-->", self.getHtmlTitle()) \
+            .replace("<!--STYLE-->", self.getHtmlStyle(css, onefile)) \
             .replace("<!--SOURCE-->", self.getHtmlSource(js, onefile)) \
             .replace("<!--RENDER-->", self.getHtmlRender(render_function, root))
 
-        return js, html
+        return css, js, html
 
     def build_error(self, e):
         print(e.filepath)
@@ -609,6 +623,14 @@ class Builder(object):
 
     def getHtmlTitle(self):
         return '<title>Daedalus</title>'
+
+    def getHtmlStyle(self, css, onefile):
+        if not css:
+            return ""
+        elif onefile:
+            return '<style>\n%s\n</style>' % css
+        else:
+            return '<link rel="stylesheet" href="/static/index.css">'
 
     def getHtmlSource(self, js, onefile):
         if onefile:
