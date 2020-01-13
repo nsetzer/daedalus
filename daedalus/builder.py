@@ -214,9 +214,10 @@ class JsFile(object):
             source_lines=source.split("\n")
             line_start = e.token.line - 3
             line_end = e.token.line + 3
-            lines = source_lines[line_start:e.token.line]
-            lines.append(" " * e.token.index + "^")
-            lines.extend(source_lines[e.token.line:line_end])
+            b_lines = ["%4d: %s" % (i+1, source_lines[i]) for i in range(line_start,e.token.line)]
+            a_lines = ["%4d: %s" % (i+1, source_lines[i]) for i in range(e.token.line,line_end)]
+
+            lines = b_lines + ["      " + " " * e.token.index + "^"] + a_lines
             error = BuildError(self.path, e.token, lines, e.original_message, str(e))
 
         if error:
@@ -619,7 +620,7 @@ class Builder(object):
             "<br>".join(e.lines),
             '' if not e.raw_message else '<p>Raw Error: %s</p>' % e.raw_message,
         )
-        return "", html
+        return "", "", html
 
     def getHtmlTitle(self):
         return '<title>Daedalus</title>'
