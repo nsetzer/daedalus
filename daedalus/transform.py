@@ -70,6 +70,7 @@ class TransformExtractStyleSheet(TransformBase):
 
             self.style_count += 1
         except TransformError as e:
+            # the style is not trivial and cannot be processed
             pass
 
     def _object2style(self, selector, token):
