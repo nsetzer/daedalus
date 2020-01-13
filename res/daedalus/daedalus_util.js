@@ -61,7 +61,9 @@ function serializeParameters(obj) {
     }
 
     const strings = Object.keys(obj).reduce(function(a,k) {
-        if (Array.isArray(obj[k])) {
+        if (obj[k] === null || obj[k] === undefined) {
+            ; // nothing to do
+        } else if (Array.isArray(obj[k])) {
             for (let i=0; i < obj[k].length; i++) {
                 a.push(encodeURIComponent(k) + '=' + encodeURIComponent(obj[k][i]));
             }
@@ -74,6 +76,29 @@ function serializeParameters(obj) {
     return '?' + strings.join('&')
 }
 
+/**
+ * Parse URL Parameters from a string or the current window location
+ *
+ * return an object mapping of string to list of strings
+ */
+export function parseParameters(text=undefined) {
+    let match,
+        search = /([^&=]+)=?([^&]*)/g,
+        decode = s => decodeURIComponent(s.replace(/\+/g, " ")),
+        query  = (text===undefined)?window.location.search.substring(1):text;
+
+    let urlParams = {};
+    while (match = search.exec(query)) {
+        let value = decode(match[2])
+        let key = decode(match[1])
+        if (urlParams[key]===undefined) {
+            urlParams[key] = [value]
+        } else {
+            urlParams[key].push(value)
+        }
+    }
+   return urlParams
+}
 
 
 function isFunction(x) {
@@ -131,6 +156,23 @@ function generateStyleSheetName(element, psuedoclass) {
 
 
     return name
+}
+
+// inplace fisher-yates
+function shuffle(array) {
+  let currentIndex = array.length, temporaryValue, randomIndex;
+
+  while (0 !== currentIndex) {
+
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex -= 1;
+
+    temporaryValue = array[currentIndex];
+    array[currentIndex] = array[randomIndex];
+    array[randomIndex] = temporaryValue;
+  }
+
+  return array;
 }
 
 /**
@@ -209,8 +251,10 @@ export const util = {
     randomFloat,
     object2style,
     serializeParameters,
+    parseParameters,
     isFunction,
     joinpath,
     splitpath,
     splitext,
+    shuffle,
 }
