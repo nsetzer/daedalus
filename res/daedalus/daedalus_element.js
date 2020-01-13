@@ -249,12 +249,22 @@ export class ButtonElement extends DomElement {
 
 export class TextInputElement extends DomElement {
 
-    constructor(text) {
+    // second positional parameter reserved for future use
+    // TODO: eliminate use of signal here
+    constructor(text, _, submit_callback) {
         super("input", {value: text}, []);
 
         this.textChanged = Signal(this, 'textChanged');
+
+        this.attrs = {
+            submit_callback,
+        }
     }
 
+    setText(text) {
+        this.updateProps({value: text})
+        this.textChanged.emit(this.props)
+    }
     onChange(event) {
         this.updateProps({value: event.target.value}, false)
         this.textChanged.emit(this.props)
@@ -271,6 +281,12 @@ export class TextInputElement extends DomElement {
     onKeyUp(event) {
         this.updateProps({value: event.target.value}, false)
         this.textChanged.emit(this.props)
+
+        if (event.key == "Enter") {
+            if (this.attrs.submit_callback) {
+                this.attrs.submit_callback(this.props.value)
+            }
+        }
     }
 }
 
