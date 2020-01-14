@@ -163,6 +163,38 @@ export class DomElement {
         }
     }
 
+    addClassName(cls) {
+        let props;
+
+        //assign the class
+        if (!this.props.className) {
+            props = {className: cls};
+        }
+        // append the class to the list
+        else if (Array.isArray(this.props.className)) {
+            props = {className: [...this.props.className, cls]};
+        // convert the class to a class list
+        } else {
+            props = {className: [this.props.className, cls]};
+        }
+        this.updateProps(props)
+    }
+
+    removeClassName(cls) {
+        let props;
+        if (Array.isArray(this.props.className)) {
+            props = {className: this.props.className.filter(x=>x===cls)}
+            if (props.length === this.props.className.length) {
+                return;
+            }
+        } else if (this.props.className === cls) {
+            props = {className: null}
+        } else {
+            return;
+        }
+        this.updateProps(props)
+    }
+
     connect(signal, callback) {
         console.log("signal connect:" + signal._event_name, callback)
         const ref = {element: this, signal: signal, callback: callback};

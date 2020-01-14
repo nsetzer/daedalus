@@ -822,7 +822,7 @@ class Parser(object):
         rhs2 = self.consume(tokens, token, index, 1)
 
         if rhs1.type != Token.T_GROUPING:
-            self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
+            raise ParseError(token, "expected grouping")
         else:
             rhs1.type = Token.T_ARGLIST
 
@@ -839,10 +839,13 @@ class Parser(object):
 
         rhs1 = self.consume(tokens, token, index, 1)
 
+        # function () {}
+        # function name() {}
+
         if rhs1.type == Token.T_FUNCTIONCALL:
             token.children = rhs1.children
         elif rhs1.type == Token.T_GROUPING:
-            # name, arglist
+            # anonymous function
             token.children = [Token(Token.T_TEXT, token.line, token.index, ""), rhs1]
         else:
             # name, arglist
@@ -851,6 +854,9 @@ class Parser(object):
         # function body
         body = self.consume(tokens, token, index, 1)
         token.children.append(body)
+
+        if token.children[1].type != Token.T_GROUPING:
+            raise ParseError(token, "expected arglist")
 
         token.children[1].type = Token.T_ARGLIST
 
@@ -881,6 +887,9 @@ class Parser(object):
             self.warn(rhs2, Parser.W_BRANCH_TRUE)
         else:
             rhs2.type = Token.T_BLOCK
+
+        if (rhs1.type != Token.T_GROUPING):
+            raise ParseError(token, "expected grouping")
 
         rhs1.type = Token.T_ARGLIST
         token.children = [rhs1, rhs2]
@@ -1023,8 +1032,8 @@ class Parser(object):
         rhs1 = self.consume(tokens, token, index, 1)
         rhs2 = self.consume(tokens, token, index, 1)
 
-        if rhs1.type != Token.T_GROUPING:
-            self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
+        if (rhs1.type != Token.T_GROUPING):
+            raise ParseError(token, "expected grouping")
         else:
             rhs1.type = Token.T_ARGLIST
 
@@ -1138,9 +1147,10 @@ def main():
     # TODO: if (true) {x=1;} + 1
     #       this gives an odd error message
     #       expected object but the error is because of the parent node
+    # TODO: if x {} throws a weird error
 
     text1 = """
-    if () {
+    if x.y() {
         throw "this"
     }
 
