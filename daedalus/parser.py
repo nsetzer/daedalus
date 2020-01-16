@@ -9,21 +9,6 @@ blocks can be labeled
 https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import
 imports are complicated
 
-TODO: GROUPING {} should be renamed, BLOCK, OBJECT
-    function A() {}  // block
-    if () {}         // block
-    {1}              // block
-    {}               // object
-    x = {}           // object
-    x = {x}          // object
-    x = {x:y}        // object
-    x = {x,z}        // object
-    x = {x,a:b}      // object
-    x = {...a}       // object
-
-    essentially: if the direct parent is T_MODULE, or T_GROUPING{} or T_BLOCK
-    then the T_GROUPING{} should be renamed T_BLOCK otherwise T_OBJECT
-
 """
 import sys
 import ast
@@ -855,7 +840,7 @@ class Parser(object):
         body = self.consume(tokens, token, index, 1)
         token.children.append(body)
 
-        if token.children[1].type != Token.T_GROUPING:
+        if token.children[1].type not in (Token.T_GROUPING, Token.T_ARGLIST):
             raise ParseError(token, "expected arglist")
 
         token.children[1].type = Token.T_ARGLIST
