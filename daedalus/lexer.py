@@ -52,7 +52,7 @@ reserved_words_extra = {
 }
 
 # symbols for operators that have length 1
-operators1 = set("+-~*/%@&^|!?:.,;=(){}[]#")
+operators1 = set("+-~*/%@&^|!:.,;=(){}[]#")
 
 # operators composed of 2 or more special characters
 # which do not form a prefix of some other operator
@@ -72,7 +72,7 @@ operators2 = {
 
 # the set of all valid operators for this language
 # if an operator is not in this list, then it is a syntax error
-operators3 = operators1 | operators2 | set(["==", "!="])
+operators3 = operators1 | operators2 | set(["?", "==", "!="])
 
 def char_reader(f):
     # convert a file like object into a character generator
@@ -405,6 +405,26 @@ class Lexer(LexerBase):
                     self._putch(c)
                     self._lex_special2()
 
+            elif c == '?':
+                # collect optional chaining operator when a . follows ?
+                # otherwise collect the ternary operator
+                self._maybe_push()
+                self._type = Token.T_SPECIAL
+                self._putch(c)
+                try:
+                    nc = self._peekch()
+                except StopIteration:
+                    nc = None
+
+                if nc and nc == '.':
+                    # collect ?.
+
+                    self._putch(self._getch())
+                    self._push()
+                else:
+                    self._push()
+
+
             elif c in chset_special2:
                 self._maybe_push()
                 self._putch(c)
@@ -464,10 +484,13 @@ class Lexer(LexerBase):
         self._type = Token.T_SPECIAL
 
         while True:
-            c = self._peekch()
+            try:
+                nc = self._peekch()
+            except StopIteration:
+                nc = None
 
-            if c in chset_special2:
-                if self._tok + c not in operators3:
+            if nc and nc in chset_special2:
+                if self._tok + nc not in operators3:
                     self._push()
                     self._type = Token.T_SPECIAL
                 self._putch(self._getch())
@@ -651,13 +674,13 @@ class Lexer(LexerBase):
             self._error("unknown operator")
         super()._push()
 
-def main():
+def main():  # pragma: no cover
 
     #r.match(/filename[^;=\\n]*=((['"]).*?\\2|[^;\\n]*)/)
     #r.match(2/3)
 
     text1= """
-    delete x.y
+    x++
     """
 
     tokens = Lexer().lex(text1)

@@ -337,7 +337,7 @@ class SampleServer(Server):
         router.registerEndpoints(res.endpoints())
         return router
 
-def main():
+def main():  # pragma: no cover
 
     class DemoResource(Resource):
 
@@ -363,5 +363,5 @@ def main():
 
     server.run()
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()
