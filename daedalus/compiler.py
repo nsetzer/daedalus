@@ -111,7 +111,7 @@ class SourceMap(object):
         seq = []
 
         pos=0
-        sign = -1
+        sign = 1
         value = 0
         for char in text:
             i = SourceMap.ALPHABET.index(char)
@@ -127,6 +127,7 @@ class SourceMap(object):
 
             if 0x20&i==0:
                 seq.append(value * sign)
+                sign = 1
                 value = 0
                 pos = 0
         return seq
@@ -154,7 +155,9 @@ class SourceMap(object):
 def isalphanum(a, b):
     """ return true if a+b is not a reversable operation"""
     if a and b:
-        return a[-1].isalphanum() and b[0].isalphanum()
+        c1 = a[-1]
+        c2 = b[0]
+        return c1.isalnum() and c2.isalnum()
     return False
 
 class Compiler(object):
@@ -178,14 +181,9 @@ class Compiler(object):
         self._prev_char = ''
         self._compile(mod)
 
-        #if self.minify:
-        #    return self._write_minified()
-        #else:
-        #    return self._write_pretty()
-        # always minify, let the browser pretty print
         return self._write_minified()
 
-    def _write_pretty(self):
+    def _x_write_pretty(self):  # pragma: no cover
         """
         not so much pretty as 'not ugly'
         """
@@ -266,7 +264,7 @@ class Compiler(object):
             if type == Token.T_NEWLINE:
                 continue
 
-            if prev_text.isidentifier() and text.isidentifier():
+            if isalphanum(prev_text, text):
                 line_len += self.stream.write(" ")
             line_len += self.stream.write(text)
 
@@ -277,7 +275,7 @@ class Compiler(object):
             prev_text = text
         return self.stream.getvalue()
 
-    def _compile_pretty(self, token, depth=0):
+    def _x_compile_pretty(self, token, depth=0):  # pragma: no cover
 
         if token.type == Token.T_MODULE:
             insert = False
@@ -306,17 +304,11 @@ class Compiler(object):
                 insert = True
             self._write_char(token.value[1], Token.T_BLOCK_POP)
         elif token.type == Token.T_PREFIX:
-            if token.value.isalpha():
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, token.value))
-            else:
-                self._write(token)
+            self._write(token)
             self._compile(token.children[0], depth)
         elif token.type == Token.T_POSTFIX:
             self._compile(token.children[0], depth)
-            if token.value.isalpha():
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, token.value))
-            else:
-                self._write(token)
+            self._write(token)
         elif token.type == Token.T_BINARY:
             self._compile(token.children[0], depth)
             if token.value.isalpha():
@@ -333,7 +325,6 @@ class Compiler(object):
         elif token.type == Token.T_VAR:
             self._write(token)
             self._compile(token.children[0], depth)
-            #self._write_char(";")
         elif token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING):
 
             self._write(token)
@@ -394,7 +385,6 @@ class Compiler(object):
                 return "return " + self._compile(token.children[0], depth)
             return "return"
         elif token.type == Token.T_COMMA:
-
             if len(token.children) == 2:
                 a = self._compile(token.children[0], depth)
                 b = self._compile(token.children[1], depth)
@@ -469,17 +459,11 @@ class Compiler(object):
                 insert = True
             self._write_char(token.value[1], Token.T_BLOCK_POP)
         elif token.type == Token.T_PREFIX:
-            if token.value.isalpha():
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, token.value))
-            else:
-                self._write(token)
+            self._write(token)
             self._compile(token.children[0], depth)
         elif token.type == Token.T_POSTFIX:
             self._compile(token.children[0], depth)
-            if token.value.isalpha():
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, token.value))
-            else:
-                self._write(token)
+            self._write(token)
         elif token.type == Token.T_BINARY:
             self._compile(token.children[0], depth)
             if token.value.isalpha():
@@ -540,9 +524,6 @@ class Compiler(object):
                 self._write(Token(Token.T_KEYWORD, token.line, token.index, "else"))
                 index = len(self.tokens)
                 self._compile(token.children[2], depth)
-                # hack: remove the newline after else but before if
-                if self.tokens[index][0] == Token.T_NEWLINE:
-                    self.tokens.pop(index)
         elif token.type == Token.T_FOR:
             self._write_line(depth)
             self._write(token)
@@ -613,7 +594,6 @@ class Compiler(object):
             for child in token.children: # length is zero or one
                 self._compile(child, depth)
         elif token.type == Token.T_COMMA:
-
             if len(token.children) == 2:
                 self._compile(token.children[0], depth)
                 self._write_char(",")
@@ -674,7 +654,7 @@ class Compiler(object):
     def _write_line(self, depth):
         self.tokens.append((Token.T_NEWLINE, ""))
 
-def main():
+def main():  # pragma: no cover
 
     text1 = """
     function (){
@@ -695,21 +675,9 @@ def main():
 
     print("-" * 79)
 
-
     print(text2)
     print("-" * 79)
     print(len(text2), len(text1))
 
-def mainx():
-    # https://blogs.msdn.microsoft.com/davidni/2016/03/14/source-maps-under-the-hood-vlq-base64-and-yoda/
-    srcmap = SourceMap()
-    print(len(SourceMap.ALPHABET))
-    print(srcmap.b64decode('uDt7D0TkuK'), [55, -1974, 314, 5346])
-    print(srcmap.b64decode('gvDn1EilwhEQ4xDpo3vP'), [1776, -2387, 2121809, 8, 1820, -8121988])
-
-    print(srcmap.b64encode([55, -1974, 314, 5346]))
-    print(srcmap.b64encode([1776, -2387, 2121809, 8, 1820, -8121988]))
-
-
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()

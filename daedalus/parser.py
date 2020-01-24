@@ -28,6 +28,7 @@ class Parser(object):
     W_UNSUPPORTED = 4
     W_EXPORT_DEFAULT = 5
     W_VAR_USED = 6
+    W_UNSAFE_BOOLEAN_TEST = 7 # Note: could be expanded to testing between operator &&, ||
 
     def __init__(self,):
         super(Parser, self).__init__()
@@ -47,7 +48,7 @@ class Parser(object):
             (L2R, self.visit_binary, ['*', '/', '%']),
             (L2R, self.visit_binary, ['+', '-']),
             (L2R, self.visit_binary, ['<<', '>>', ">>>"]),
-            (L2R, self.visit_binary, ['<', '<=', ">", ">=", "in", "instanceof"]),
+            (L2R, self.visit_binary, ['<', '<=', ">", ">=", "in", "of", "instanceof"]),
             (L2R, self.visit_binary, ['==', '!=', '===', '!==']),
             (L2R, self.visit_binary, ['&']),
             (L2R, self.visit_binary, ['^']),
@@ -78,6 +79,7 @@ class Parser(object):
             Parser.W_UNSUPPORTED: "token not supported",
             Parser.W_EXPORT_DEFAULT: "meaningless export default",
             Parser.W_VAR_USED: "unsafe use of keyword var",
+            Parser.W_UNSAFE_BOOLEAN_TEST: "unsafe boolean test. use (!!x) or ((typeof x !== \"undefined\") && (x !== null)) instead of bare (x)",
         }
 
         self.disabled_warnings = set()
@@ -156,7 +158,7 @@ class Parser(object):
         self._offset is reset on ever call, and should be cached
         """
 
-        expression_whitelist = ("true", "false", "null", "this", "new", "function", "class", "catch")
+        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "class", "catch")
         self._offset = 0
         index_tok1 = index + direction
         while 0 <= index_tok1 < len(tokens):
@@ -242,6 +244,7 @@ class Parser(object):
     def visit_grouping2(self, parent, tokens, index, operators):
 
         token = tokens[index]
+        # check for attribute operator or 'optional chaining' / elvis operator
         if token.type == Token.T_SPECIAL and token.value in ('.', '?.'):
             rhs = self.consume(tokens, token, index,  1)
             lhs = self.consume(tokens, token, index, -1)
@@ -284,22 +287,32 @@ class Parser(object):
         return 1
 
     def visit_new(self, parent, tokens, index, operators):
+        """
+        new constructor
+        new constructor()
+
+        when this function is run the function call for the constructor
+        has already been processed. This collects a single expression after
+        the keyword
+        """
+
 
         token = tokens[index]
 
-        if token.type == Token.T_KEYWORD and token.value == 'new':
-            i1 = self.peek_token(tokens, token, index, 1)
-            if i1 is None:
-                return 1
-            i2 = self.peek_token(tokens, token, i1, 1)
+        if token.type != Token.T_KEYWORD or token.value != 'new':
+            return 1
 
-            consume2 = i2 is not None and tokens[i2].type == Token.T_GROUPING
+        #i1 = self.peek_token(tokens, token, index, 1)
+        #if i1 is None:
+        #    raise ParseError(token, "expected expression")
+        #i2 = self.peek_token(tokens, token, i1, 1)
+        #consume2 = i2 is not None and tokens[i2].type == Token.T_GROUPING
 
-            token.children.append(self.consume(tokens, token, index, 1))
-            if consume2:
-                token.children.append(self.consume(tokens, token, index, 1))
+        token.children.append(self.consume(tokens, token, index, 1))
+        #if consume2:
+        #    token.children.append(self.consume(tokens, token, index, 1))
 
-            token.type = Token.T_NEW
+        token.type = Token.T_NEW
 
         return 1
 
@@ -383,6 +396,10 @@ class Parser(object):
         return self._offset
 
     def visit_lambda(self, parent, tokens, index, operators):
+        """
+        () => {}
+        a => b
+        """
         token = tokens[index]
 
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
@@ -649,6 +666,12 @@ class Parser(object):
             token.children.append(Token(Token.T_KEYWORD, token.line, token.index, "extends"))
 
         rhs1 = self.consume(tokens, token, index, 1)
+
+        if rhs1.type != Token.T_GROUPING:
+            self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
+        else:
+            rhs1.type = Token.T_BLOCK
+
         token.children.append(rhs1)
 
         for i, child in enumerate(rhs1.children):
@@ -801,6 +824,19 @@ class Parser(object):
             token.children.append(Token(Token.T_OBJECT, token.line, token.index, "{}"))
 
     def collect_keyword_for(self, tokens, index):
+        """
+        for (expr; expr; expr) expr
+        for (expr1) expr
+        where expr1 is one of:
+            [const] property in object
+            [const] item of iterable
+
+        Note: this is the only use of 'of' as a keyword.
+            firefox allows for assigning to a variable 'of'.
+            for these reasons 'of' is not a keyword but is
+            made a special case here
+
+        """
         token = tokens[index]
 
         rhs1 = self.consume(tokens, token, index, 1)
@@ -810,6 +846,13 @@ class Parser(object):
             raise ParseError(token, "expected grouping")
         else:
             rhs1.type = Token.T_ARGLIST
+
+        if len(rhs1.children) == 3:
+            mid = rhs1.children[1]
+            if mid.value == "of" and mid.type == Token.T_TEXT:
+                mid.children.append(rhs1.children.pop(0))
+                mid.children.append(rhs1.children.pop(1))
+                mid.type = Token.T_BINARY
 
         if rhs2.type != Token.T_GROUPING:
             self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
@@ -860,6 +903,12 @@ class Parser(object):
             1: the test
             2: the true case
             3: the optional false case
+
+
+        if (...) {}
+        if (...) {} else {}
+        if (...) {} else if (...) {}
+        if (...) {} else if (...) {} else {}
         """
 
         token = tokens[index]
@@ -877,6 +926,11 @@ class Parser(object):
             raise ParseError(token, "expected grouping")
 
         rhs1.type = Token.T_ARGLIST
+
+        if len(rhs1.children) == 1:
+            if rhs1.children[0].type == Token.T_TEXT:
+                self.warn(rhs1.children[0], Parser.W_UNSAFE_BOOLEAN_TEST)
+
         token.children = [rhs1, rhs2]
         token.type = Token.T_BRANCH
 
@@ -919,7 +973,10 @@ class Parser(object):
         token.type = Token.T_RETURN
 
     def collect_keyword_super(self, tokens, index):
-
+        """
+        super([args])
+        super.parentFunction([args])
+        """
         token = tokens[index]
         rhs1 = self.consume(tokens, token, index, 1)
 
@@ -933,6 +990,9 @@ class Parser(object):
         token.value = ""
 
     def collect_keyword_switch(self, tokens, index):
+        """
+        switch (expr) { case expr: break; default: break; }
+        """
 
         token = tokens[index]
         rhs1 = self.consume(tokens, token, index, 1)
@@ -947,6 +1007,9 @@ class Parser(object):
         token.type = Token.T_SWITCH
 
     def collect_keyword_throw(self, tokens, index):
+        """
+        throw expr
+        """
 
         token = tokens[index]
 
@@ -1044,6 +1107,7 @@ class Parser(object):
                    (token.type == Token.T_FUNCTIONDEF) or \
                    (token.type == Token.T_CLASS) or \
                    (token.type == Token.T_BLOCK) or \
+                   (token.type == Token.T_FINALLY) or \
                    (token.type == Token.T_BINARY and token.value == "=>") or \
                    (token.type == Token.T_GROUPING and token.value == "{}"):
                     # next test this is not an object
@@ -1060,6 +1124,7 @@ class Parser(object):
 
                     ref = self._isObject(child)
                     if ref is not None:
+                        print(token.type)
                         raise ref
                     child.type = Token.T_OBJECT
 
@@ -1109,7 +1174,7 @@ class Parser(object):
         if token.type == Token.T_GROUPING and token.value != "()":
             # either a {} block was incorrectly parsed
             # or a [] block was not labeled list of subscr
-            raise ParseError(token, "parser error: invalid grouping node: " + token.value)
+            raise ParseError(token, "invalid grouping node: " + token.value)
 
         if token.type == Token.T_OBJECT or \
            token.type == Token.T_ARGLIST or \
@@ -1126,7 +1191,7 @@ class Parser(object):
                 else:
                     index += 1
 
-def main():
+def main():  # pragma: no cover
 
     # TODO: let x,y,z
     # TODO: if (true) {x=1;} + 1
@@ -1135,8 +1200,14 @@ def main():
     # TODO: if x {} throws a weird error
 
     text1 = """
-    if x.y() {
-        throw "this"
+
+   try {
+        throw 0;
+    } catch (ex) {
+        console.log(ex)
+    } finally {
+        console.log(ex)
+
     }
 
     """
@@ -1148,5 +1219,5 @@ def main():
 
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main()
