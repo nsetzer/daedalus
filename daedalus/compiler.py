@@ -157,7 +157,10 @@ def isalphanum(a, b):
     if a and b:
         c1 = a[-1]
         c2 = b[0]
-        return c1.isalnum() and c2.isalnum()
+
+
+        return (c1.isalnum() or ord(c1) > 127) and \
+               (c2.isalnum() or ord(c2) > 127)
     return False
 
 class Compiler(object):
@@ -657,9 +660,7 @@ class Compiler(object):
 def main():  # pragma: no cover
 
     text1 = """
-    function (){
-        delete this.attrs.files[msg.fileName];
-    }
+    const \u263A = 1
     """
 
     #text1 = open("./res/daedalus/index.js").read()

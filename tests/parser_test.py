@@ -1,44 +1,10 @@
 
 
 import unittest
-from tests.util import edit_distance
+from tests.util import edit_distance, parsecmp, TOKEN
 
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser, ParseError
-
-def tokcmp(a, b):
-    if a is None:
-        return False
-    if b is None:
-        return False
-
-    _, tok1 = a
-    _, tok2 = b
-
-    return tok1.type == tok2.type and tok1.value == tok2.value
-
-def parsecmp(expected, actual, debug=False):
-
-    a = actual.flatten()
-    b = expected.flatten()
-
-    seq, cor, sub, ins, del_ = edit_distance(a, b, tokcmp)
-
-    error_count = sub + ins + del_
-    if error_count > 0 or debug:
-        print("\n--- %-50s | --- %-.50s" % ("    HYP", "    REF"))
-        for a, b in seq:
-            c = ' ' if tokcmp(a, b) else '|'
-            if not a:
-                a = (0, None)
-            if not b:
-                b = (0, None)
-            print("%3d %-50r %s %3d %-.50r" % (a[0], a[1], c, b[0], b[1]))
-        print(actual.toString(2))
-    return error_count
-
-def TOKEN(t,v,*children):
-    return Token(getattr(Token,t), 1, 0, v, children)
 
 class ParserTestCase(unittest.TestCase):
 
