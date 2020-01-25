@@ -5,7 +5,7 @@ from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
-from daedalus.compiler import Compiler, SourceMap
+from daedalus.compiler import Compiler, SourceMap, isalphanum
 
 class SourceMapTestCase(unittest.TestCase):
 
@@ -20,6 +20,13 @@ class SourceMapTestCase(unittest.TestCase):
 
         self.assertEqual(srcmap.b64encode([55, -1974, 314, 5346]), 'uDt7D0TkuK')
         self.assertEqual(srcmap.b64encode([1776, -2387, 2121809, 8, 1820, -8121988]), 'gvDn1EilwhEQ4xDpo3vP')
+
+class CompilerUtilTestCase(unittest.TestCase):
+
+    def test_001_expr_1(self):
+
+        self.assertTrue(isalphanum("abc", "123"))
+        self.assertTrue(isalphanum("\u263A", "\u263A"))
 
 class CompilerTestCase(unittest.TestCase):
 

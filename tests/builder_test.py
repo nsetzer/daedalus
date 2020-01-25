@@ -1,7 +1,7 @@
 
 
 import unittest
-from tests.util import edit_distance
+from tests.util import edit_distance, parsecmp, TOKEN
 
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser, ParseError
