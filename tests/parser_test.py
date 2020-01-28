@@ -168,6 +168,7 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    @unittest.skip("optional chaining")
     def test_001_maybe_attribute(self):
 
         text = "a?.b"
@@ -750,6 +751,23 @@ class ParserClassTestCase(unittest.TestCase):
                         TOKEN('T_ARGLIST', '()',
                             TOKEN('T_TEXT', 'event')),
                         TOKEN('T_OBJECT', '{}'))))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_class_5(self):
+
+        text = "class A extends X.Y {}"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_CLASS', 'class',
+                TOKEN('T_TEXT', 'A'),
+                TOKEN('T_KEYWORD', 'extends',
+                    TOKEN('T_BINARY', '.',
+                        TOKEN('T_TEXT', 'X'),
+                        TOKEN('T_ATTR', 'Y'))),
+                TOKEN('T_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))

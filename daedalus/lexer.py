@@ -132,6 +132,7 @@ class Token(object):
     T_TRY = "T_TRY"
     T_VAR = "T_VAR"
     T_WHILE = "T_WHILE"
+    T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
 
     # tokens created by the compiler
     T_BLOCK_PUSH = "T_BLOCK_PUSH"

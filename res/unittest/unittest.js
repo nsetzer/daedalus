@@ -1,26 +1,32 @@
 
 
-// import daedalus
-
-// export Test
-// export assertEqual
-// export UnitTestRoot
+import daedalus
 
 const unit_tests = {}
 
-function Test(name, callback) {
+export function Test(name, callback) {
     unit_tests[name] = callback;
 }
 
-
-function assertEqual(lhs, rhs, message) {
-    if (lhs !== rhs) {
-        throw {lhs, rhs, message: (message || "not equal")};
+export assert = {
+    equal: function(lhs, rhs, message) {
+        if (lhs !== rhs) {
+            throw {message: (message || `not equal: (${lhs} !== ${rhs})`)};
+        }
+    },
+    notEqual: function(lhs, rhs, message) {
+        if (lhs === rhs) {
+            throw {message: (message || `equal: (${lhs} === ${rhs})`)};
+        }
+    },
+    isNone: function(value, message) {
+        if (value !== null && value !== undefined) {
+            throw {message: (message || `equal: (${lhs} === ${rhs})`)};
+        }
     }
 }
 
-
-class UnitTestRoot extends daedalus.DomElement{
+export class UnitTestRoot extends daedalus.DomElement {
 
     constructor() {
         super("div", {}, [])

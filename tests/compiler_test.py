@@ -27,6 +27,7 @@ class CompilerUtilTestCase(unittest.TestCase):
 
         self.assertTrue(isalphanum("abc", "123"))
         self.assertTrue(isalphanum("\u263A", "\u263A"))
+        self.assertTrue(isalphanum("function", "_name"))
 
 class CompilerTestCase(unittest.TestCase):
 
@@ -373,6 +374,22 @@ class CompilerTestCase(unittest.TestCase):
             }
         """
         expected = "class A extends B{constructor(){super()}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.compiler.compile(ast)
+
+        self.assertEqual(output, expected)
+
+    def test_001_class_2(self):
+
+        text = """
+            class A extends X.Y {
+                constructor() {
+                    super();
+                }
+            }
+        """
+        expected = "class A extends X.Y{constructor(){super()}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.compiler.compile(ast)

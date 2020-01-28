@@ -21,5 +21,10 @@ cover:
 	coverage html --omit "venv/*,*_test.py,tests/*"
 	#open htmlcov/index.html
 
+.PHONY: demo
+demo:
+	python -m daedalus build_html ./examples/minesweeper.js ./docs/index.html
 
-
+.PHONY: serve_demo
+serve_demo:
+	python -m daedalus serve ./examples/minesweeper.js
