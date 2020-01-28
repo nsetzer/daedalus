@@ -47,6 +47,9 @@ function workLoop(deadline) {
 
     let shouldYield = false;
 
+    const initialWorkLength = workstack.length;
+    const initialUpdateLength = updatequeue.length;
+
     while (!shouldYield) {
         while (workstack.length > 0 && !shouldYield) {
             let unit = workstack.pop();
@@ -70,7 +73,9 @@ function workLoop(deadline) {
 
     debug = workstack.length > 1 || updatequeue.length > 1
     if (debug) {
-        console.warn("workloop failed to finish", workstack.length, updatequeue.length)
+        console.warn("workloop failed to finish",
+            initialWorkLength, '->', workstack.length,
+            initialUpdateLength, '->', updatequeue.length)
     }
 
     requestIdleCallback(workLoop);

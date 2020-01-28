@@ -6,15 +6,15 @@ import daedalus with {
     HeaderElement, ButtonElement, NumberInputElement, LinkElement
 }
 
-const game_style = {
+const style = {
     header: StyleSheet({'text-align': 'center'}),
     row: StyleSheet({margin: 0, padding: 0, display: 'block'}),
     board: StyleSheet({margin: "0 auto", display: 'inline-block'}),
     cell: StyleSheet({
         border: {style: "outset"},
         background: "#AAAAAA",
-        width: '1.5em',
-        height: '1.5em',
+        width: '1.7em',
+        height: '1.7em',
         margin: 0,
         padding: 0,
         display: "inline-block",
@@ -25,8 +25,8 @@ const game_style = {
     cell2: StyleSheet({
         border: {style: "inset"},
         background: "#CCCCCC",
-        width: '1.5em',
-        height: '1.5em',
+        width: '1.7em',
+        height: '1.7em',
         margin: 0,
         padding: 0,
         display: "inline-block",
@@ -36,8 +36,8 @@ const game_style = {
     }),
     cellf: StyleSheet({border: {style: "outset"},
         background: "#003388",
-        width: '1.5em',
-        height: '1.5em',
+        width: '1.7em',
+        height: '1.7em',
         margin: 0,
         padding: 0,
         display: "inline-block",
@@ -47,8 +47,8 @@ const game_style = {
     }),
     cellm: StyleSheet({border: {style: "inset"},
         background: "#880000",
-        width: '1.5em',
-        height: '1.5em',
+        width: '1.7em',
+        height: '1.7em',
         margin: 0,
         padding: 0,
         display: "inline-block",
@@ -58,12 +58,51 @@ const game_style = {
     }),
     padding: StyleSheet({padding: {bottom: '1em'}}),
     center_block: StyleSheet({text: {align: 'center'}}),
-    block: StyleSheet({display: "block"})
+    block: StyleSheet({display: "block"}),
+    button: StyleSheet({
+        border: {'radius': '.5em', color: '#085923', style: 'solid', width: '1px'},
+        'background-image': 'linear-gradient(#14cc51, #0a6628)',
+        'text-align': 'center',
+        padding: ".3em"
+    }),
+
+    panel: StyleSheet({
+        border: {'radius': '0 0 .5em .5em', color: '#646464', style: 'solid', width: '1px'},
+        'background-image': 'linear-gradient(#D5D5D5, #7A7A7A)',
+        'text-align': 'left',
+        'padding-top': '.25em',
+        'padding-bottom': '.25em',
+        'padding-left': '1em',
+        'padding-right': '1em',
+    }),
+
+    panelRow: StyleSheet({
+        'padding-top': '.25em',
+        'padding-bottom': '.25em',
+        'padding-left': '1em',
+        'padding-right': '1em',
+        display: 'flex',
+        'justify-content': 'space-between',
+        'align-items': 'center',
+    }),
+
+    numberInput: StyleSheet({
+        width: "3em"
+    })
+
 }
+
+StyleSheet(`.${style.button}:hover`, {
+    'background-image': 'linear-gradient(#0c7f33, #063f19)';
+})
+
+StyleSheet(`.${style.button}:active`, {
+    'background-image': 'linear-gradient(#063f19, #0c7f33)';
+})
 
 class GameCell extends DomElement {
     constructor(board, row, col) {
-        super("div", {className: game_style.cell}, [])
+        super("div", {className: style.cell}, [])
 
         this.text = this.appendChild(new TextElement("0"))
 
@@ -115,24 +154,93 @@ class GameCell extends DomElement {
     }
 }
 
+class GamePanel extends DomElement {
+
+    constructor(width, height, mineCount) {
+        super("div", {className: style.panel}, [])
+
+        this.attrs = {
+            row1: new DomElement("div", {className: style.panelRow}, []),
+            row2: new DomElement("div", {className: style.panelRow}, []),
+            counter: new TextElement(""),
+            btnNewGame: new ButtonElement("New Game", this.handleNewGame.bind(this)),
+            newGame: () => {console.log("error")},
+            inpWidth: new NumberInputElement(),
+            inpHeight: new NumberInputElement(),
+            inpCount: new NumberInputElement(),
+        }
+
+        this.attrs.btnNewGame.addClassName(style.button)
+        this.attrs.inpWidth.updateProps({maxlength: 2, size: 2, max: 75, value: width})
+        this.attrs.inpHeight.updateProps({maxlength: 2, size: 2, max: 75, value: height})
+        this.attrs.inpCount.updateProps({maxlength: 2, size: 2, max: 75, value: mineCount})
+
+        this.attrs.inpWidth.addClassName(style.numberInput)
+        this.attrs.inpHeight.addClassName(style.numberInput)
+        this.attrs.inpCount.addClassName(style.numberInput)
+
+        this.appendChild(this.attrs.row1)
+        this.appendChild(this.attrs.row2)
+
+        this.attrs.row1.appendChild(this.attrs.counter)
+        this.attrs.row1.appendChild(this.attrs.btnNewGame)
+
+        this.attrs.row2.appendChild(new TextElement("W:"))
+        this.attrs.row2.appendChild(this.attrs.inpWidth)
+        this.attrs.row2.appendChild(new TextElement("H:"))
+        this.attrs.row2.appendChild(this.attrs.inpHeight)
+        this.attrs.row2.appendChild(new TextElement("Mines:"))
+        this.attrs.row2.appendChild(this.attrs.inpCount)
+    }
+
+    setMineCount(count) {
+        this.attrs.counter.setText(`Mines: ${count}`)
+    }
+
+    handleNewGame(event) {
+        console.log(this.attrs.newGame)
+        this.attrs.newGame(
+            this.attrs.inpWidth.props.value,
+            this.attrs.inpHeight.props.value,
+            this.attrs.inpCount.props.value,
+        )
+
+    }
+
+    setNewGameCallback(callback) {
+        this.attrs.newGame = callback
+    }
+
+}
+
+
 class GameBoard extends DomElement {
     constructor(width, height, mineCount) {
-        super("div", {className: game_style.board}, [])
+        super("div", {className: style.board}, [])
 
+        this.attrs = {
+            panel: new GamePanel(width, height, mineCount),
+        }
 
         this.reset(width, height, mineCount)
 
+        this.attrs.panel.setNewGameCallback(this.reset.bind(this))
     }
 
     reset(width, height, mineCount) {
 
         this.children = []
 
-        this.updateState({width: width, height: height, mineCount: mineCount});
+        this.updateState({
+            width: width,
+            height: height,
+            mineCount: mineCount,
+            flagCount: 0
+        });
 
         let row = 0;
         while (row < height) {
-            const row_elem = this.appendChild(new DomElement("div", {className: game_style.row}, []));
+            const row_elem = this.appendChild(new DomElement("div", {className: style.row}, []));
             let col = 0;
             while (col < width) {
                 row_elem.appendChild(new GameCell(this, row, col));
@@ -141,6 +249,15 @@ class GameBoard extends DomElement {
             row ++;
         }
 
+
+        this.appendChild(this.attrs.panel)
+        this.attrs.panel.setMineCount(mineCount)
+
+        this.placeMines()
+        this.computeCounts()
+    }
+
+    placeMines() {
         let placed = 0
         while (placed < this.state.mineCount) {
 
@@ -152,7 +269,6 @@ class GameBoard extends DomElement {
                 placed++;
             }
         }
-        this.computeCounts()
     }
 
     computeCounts() {
@@ -172,7 +288,6 @@ class GameBoard extends DomElement {
                 }
             }
         }
-
     }
 
     indexIsMine(row, col) {
@@ -200,10 +315,37 @@ class GameBoard extends DomElement {
     handleRightClick(cell) {
         if (!cell.state.isRevealed) {
 
-            cell.updateState({isFlagged: !cell.state.isFlagged})
-            const cls = cell.state.isFlagged?game_style.cellf:game_style.cell
-            cell.updateProps({className: cls})
+            this.flagCell(cell, !cell.state.isFlagged);
+
         }
+    }
+
+    flagCell(cell, flag) {
+
+        const prev = cell.state.isFlagged
+
+        // if the state is not changing do nothing
+        if (prev == flag) {
+            return
+        }
+
+        // if the user has placed the maximum number of flags do
+        // not place any more flags
+        if (this.state.flagCount == this.state.mineCount && flag) {
+            return
+        }
+
+        cell.updateState({isFlagged: flag})
+
+        if (cell.state.isFlagged) {
+            this.updateState({flagCount: this.state.flagCount+1})
+            cell.updateProps({className: style.cellf})
+        } else {
+            this.updateState({flagCount: this.state.flagCount-1})
+            cell.updateProps({className: style.cell})
+        }
+
+        this.attrs.panel.setMineCount(this.state.mineCount - this.state.flagCount)
     }
 
     revealCell(row, col) {
@@ -242,7 +384,7 @@ class GameBoard extends DomElement {
                         const c = this.children[i].children[j];
                         if (c.state.isMine) {
                             c.updateState({isRevealed: true})
-                            c.updateProps({className: game_style.cellm})
+                            c.updateProps({className: style.cellm})
                         }
                     }
                 }
@@ -261,7 +403,7 @@ class GameBoard extends DomElement {
 
                 }
                 cell.updateState({isRevealed: true})
-                cell.updateProps({className: game_style.cell2})
+                cell.updateProps({className: style.cell2})
             } else if (cell.state.isRevealed && Object.keys(visited).length==1) {
                 let cells = []
                 for (let i=row-1;i<=row+1;i++) {
@@ -276,55 +418,40 @@ class GameBoard extends DomElement {
                 cells = cells.filter(c => !c.state.isRevealed)
                 const flag = !cells.reduce((a, c)=> a && c.state.isFlagged, true)
                 cells.forEach(c => {
-                    c.updateState({isFlagged: flag})
-                    const cls = flag?game_style.cellf:game_style.cell
-                    c.updateProps({className: cls})
+                    ///c.updateState({isFlagged: flag})
+                    //const cls = flag?style.cellf:style.cell
+                    //c.updateProps({className: cls})
+                    this.flagCell(c, flag)
                 })
 
             }
         }
     }
+
 }
 
 export class Game extends DomElement {
     constructor() {
-        super("div", {className: game_style.block}, [])
+        super("div", {className: style.block}, [])
 
         const em_width = getComputedStyle(document.querySelector('body'))['font-size']
         const width = window.innerWidth / parseFloat(em_width)
-        const default_size = Math.floor(Math.min(0.7 * (width / 1.5), 15))
+        const default_size = Math.floor(Math.min(0.7 * (width / 1.7), 15))
         const default_count = Math.ceil(0.15 * default_size * default_size)
 
-        this.appendChild(new DomElement("h2", {className: game_style.header}, [new TextElement("Minesweeper")]))
-        this.appendChild(new DomElement("div", {className: game_style.header}, [new LinkElement("Powered By Daedalus", "https://github.com/nsetzer/daedalus/")]))
+        this.appendChild(new DomElement("h2", {className: style.header}, [new TextElement("Minesweeper")]))
+        this.appendChild(new DomElement("div", {className: style.header}, [new LinkElement("Powered By Daedalus", "https://github.com/nsetzer/daedalus/")]))
 
-        this.appendChild(new DomElement("div", {className: game_style.padding}, []))
+        this.appendChild(new DomElement("div", {className: style.padding}, []))
 
         let div;
-        div = this.appendChild(new DomElement("div", {className: game_style.center_block}, []))
+        div = this.appendChild(new DomElement("div", {className: style.center_block}, []))
         this.board = new GameBoard(default_size, default_size, default_count)
-        div.appendChild(new DomElement("div", {className: game_style.center_block}, [this.board]))
+        div.appendChild(new DomElement("div", {className: style.center_block}, [this.board]))
 
-        this.appendChild(new DomElement("div", {className: game_style.padding}, []))
+        this.appendChild(new DomElement("div", {className: style.padding}, []))
 
-        div = this.appendChild(new DomElement("div", {className: game_style.center_block}, []))
-        div.appendChild(new ButtonElement("New Game", ()=>{
-            this.board.reset(
-                this.spinW.props.value,
-                this.spinH.props.value,
-                this.spinC.props.value);
-        }))
-
-        this.appendChild(new DomElement("div", {className: game_style.padding}, []))
-
-        div = this.appendChild(new DomElement("div", {className: game_style.center_block}, []))
-        this.spinW = div.appendChild(new NumberInputElement(default_size));
-        this.spinH = div.appendChild(new NumberInputElement(default_size));
-        this.spinC = div.appendChild(new NumberInputElement(default_count));
-
-        this.appendChild(new DomElement("div", {className: game_style.padding}, []))
-
-        div = this.appendChild(new DomElement("div", {className: game_style.center_block}, []))
+        div = this.appendChild(new DomElement("div", {className: style.center_block}, []))
         div.appendChild(new TextElement("Tap / Left Click - Reveal"))
         div.appendChild(new DomElement("br", {}, []))
         div.appendChild(new TextElement("Right Click - Flag"))

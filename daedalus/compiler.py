@@ -159,8 +159,8 @@ def isalphanum(a, b):
         c2 = b[0]
 
 
-        return (c1.isalnum() or ord(c1) > 127) and \
-               (c2.isalnum() or ord(c2) > 127)
+        return (c1.isalnum() or c1 == '_' or ord(c1) > 127) and \
+               (c2.isalnum() or c2 == '_' or ord(c2) > 127)
     return False
 
 class Compiler(object):
@@ -589,7 +589,8 @@ class Compiler(object):
             self._compile(token.children[0], depth)
             if len(token.children[1].children) > 0:
                 self._write(Token(Token.T_KEYWORD, token.line, token.index, "extends"))
-                self._write(token.children[1].children[0])
+                #self._write(token.children[1].children[0])
+                self._compile(token.children[1].children[0], depth)
             self._compile(token.children[2], depth)
         elif token.type == Token.T_RETURN:
             self._write_line(depth)
@@ -660,7 +661,11 @@ class Compiler(object):
 def main():  # pragma: no cover
 
     text1 = """
-    const \u263A = 1
+    x?.y;;
+
+    x?.[0]
+
+    x?.(1)
     """
 
     #text1 = open("./res/daedalus/index.js").read()

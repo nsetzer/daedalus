@@ -407,7 +407,16 @@ class Builder(object):
         if name.endswith('.js'):
             path = self.find(name)
         else:
-            path = self.find(name.replace(".", "/") + "/index.js")
+            path_name = name.replace(".", "/")
+            try:
+                file_name = path_name.split("/")[-1]
+                path = self.find("%s/%s.js" % (path_name, file_name))
+            except FileNotFoundError:
+                path = None
+
+            if path is None:
+                path = self.find(path_name + "/index.js")
+
         return path
 
     def _discover(self, jsm):

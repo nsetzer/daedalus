@@ -109,6 +109,7 @@ class Parser(object):
 
         self.transform_grouping(mod, None)
         self.transform_flatten(mod, None)
+        self.transform_optional_chaining(mod, None)
 
         return mod
 
@@ -245,13 +246,50 @@ class Parser(object):
 
         token = tokens[index]
         # check for attribute operator or 'optional chaining' / elvis operator
-        if token.type == Token.T_SPECIAL and token.value in ('.', '?.'):
-            rhs = self.consume(tokens, token, index,  1)
+        if token.type == Token.T_SPECIAL and token.value == '.':
+
+            rhs = self.consume(tokens, token, index, 1)
             lhs = self.consume(tokens, token, index, -1)
+
             if rhs.type == Token.T_TEXT:
                 rhs.type = Token.T_ATTR
+
             token.type = Token.T_BINARY
             token.children = [lhs, rhs]
+            return self._offset
+
+        elif token.type == Token.T_SPECIAL and token.value == '?.':
+            i1 = self.peek_token(tokens, token, index, 1)
+
+
+            if i1 and tokens[i1].type == Token.T_GROUPING:
+
+                rhs = self.consume(tokens, token, index, 1)
+                lhs = self.consume(tokens, token, index, -1)
+
+                if rhs.value == '()':
+                    tok = Token(Token.T_FUNCTIONCALL, token.line, token.index, '()')
+                    tok.children = [lhs, rhs]
+                    token.children = [tok]
+                    rhs.type = Token.T_ARGLIST
+                    token.type = Token.T_OPTIONAL_CHAINING
+
+                if rhs.value == '[]':
+                    rhs.type = Token.T_SUBSCR
+                    rhs.children.insert(0, lhs)
+                    token.children = [rhs]
+                token.type = Token.T_OPTIONAL_CHAINING
+
+            else:
+
+                rhs = self.consume(tokens, token, index, 1)
+                lhs = self.consume(tokens, token, index, -1)
+
+                if rhs.type == Token.T_TEXT:
+                    rhs.type = Token.T_ATTR
+
+                token.type = Token.T_OPTIONAL_CHAINING
+                token.children = [lhs, rhs]
 
             return self._offset
 
@@ -1191,6 +1229,84 @@ class Parser(object):
                 else:
                     index += 1
 
+    def transform_optional_chaining(self, token, parent):
+
+        for child in token.children:
+            self.transform_optional_chaining(child, token)
+
+        if token.type != Token.T_OPTIONAL_CHAINING:
+            return
+
+        # Implement optional chaining for attribute access
+        #   x?.y :: ((x)||{}).y
+
+        if len(token.children) == 2:
+
+            token.type = Token.T_BINARY
+            token.value = "."
+            lhs, rhs = token.children
+            ln = token.line
+            idx = token.index
+
+            token.children = [
+            Token(Token.T_GROUPING, ln, idx, "()",
+                [Token(Token.T_BINARY, ln, idx, "||",
+                    [
+                        Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
+                        Token(Token.T_OBJECT, ln, idx, "{}")
+                    ]
+                )]
+            ), rhs]
+
+        # Implement optional chaining for function calls
+        #   x?.(...) :: ((x)||(()=>null))(...)
+
+        if len(token.children) == 1 and token.children[0].type == Token.T_FUNCTIONCALL:
+            token.type = Token.T_FUNCTIONCALL
+            token.value = ""
+            lhs, rhs = token.children[0].children
+            ln = token.line
+            idx = token.index
+
+            token.children = [
+            Token(Token.T_GROUPING, ln, idx, "()",
+                [Token(Token.T_BINARY, ln, idx, "||",
+                    [
+                        Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
+                        Token(Token.T_GROUPING, ln, idx, "()", [
+                                Token(Token.T_BINARY, ln, idx, "=>", [
+                                    Token(Token.T_ARGLIST, ln, idx, "()"),
+                                    Token(Token.T_KEYWORD, ln, idx, "null")
+                                ])
+                        ])
+                    ]
+                )]
+            ), rhs]
+
+        # Implement optional chaining for object subscript
+        #   x?.[...] :: ((x)||{})[...]
+
+        if len(token.children) == 1 and token.children[0].type == Token.T_SUBSCR:
+            token.type = Token.T_SUBSCR
+            token.value = "[]"
+            lhs, rhs = token.children[0].children
+            ln = token.line
+            idx = token.index
+
+            token.children = [
+            Token(Token.T_GROUPING, ln, idx, "()",
+                [Token(Token.T_BINARY, ln, idx, "||",
+                    [
+                        Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
+                        Token(Token.T_OBJECT, ln, idx, "{}")
+                    ]
+                )]
+            ), rhs]
+
+
+
+
+
 def main():  # pragma: no cover
 
     # TODO: let x,y,z
@@ -1201,14 +1317,14 @@ def main():  # pragma: no cover
 
     text1 = """
 
-   try {
-        throw 0;
-    } catch (ex) {
-        console.log(ex)
-    } finally {
-        console.log(ex)
+    //x[1]
+    x?.[1]
+    //x(1,2,3)
+    //x?.(1,2,3)
+    //x.y
+    //x?.y
 
-    }
+    //z = (6 + 7)?.y
 
     """
 
