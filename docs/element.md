@@ -123,6 +123,24 @@ elem.updateProps({className: myStyle})
 
 The `className` prop can be a string or a list of strings in order to assign multiple classes
 
+For an easier time manipulating the class names of an element, use the provided helper functions.
+
+The method *addClassName* will add a named class while checking to prevent duplicates.
+The *className* property will be promoted from a string to a list of strings if the element
+has more than one class.
+
+```javascript
+elem.addClassName(name)
+```
+
+The method *removeClassName* will remove a named class if it exists.
+
+```javascript
+elem.removeClassName(name)
+```
+
+## Inline Styles
+
 > inline styles are a security risk and should not be used
 
 the style prop for an element can either be a string or object. These are equivalent:
@@ -132,3 +150,4 @@ the style prop for an element can either be a string or object. These are equiva
 elem.updateProps({style: "display: block; background-color: red"})
 elem.updateProps({style: {display: 'block', background: {color: 'red'}})
 ````
+

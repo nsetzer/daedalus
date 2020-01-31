@@ -13,6 +13,7 @@ imports are complicated
 import sys
 import ast
 from .lexer import Lexer, Token, TokenError
+from .transform import TransformGrouping, TransformFlatten, TransformOptionalChaining, TransformNullCoalescing
 
 class ParseError(TokenError):
     pass
@@ -107,9 +108,10 @@ class Parser(object):
         mod = Token(Token.T_MODULE, 0, 0, "")
         mod.children = tokens
 
-        self.transform_grouping(mod, None)
-        self.transform_flatten(mod, None)
-        self.transform_optional_chaining(mod, None)
+        TransformGrouping().transform(mod)
+        TransformFlatten().transform(mod)
+        TransformOptionalChaining().transform(mod)
+        TransformNullCoalescing().transform(mod)
 
         return mod
 
@@ -1131,182 +1133,6 @@ class Parser(object):
         token.children = [rhs1, rhs2]
         token.type = Token.T_WHILE
 
-    def transform_grouping(self, token, parent):
-        """
-        transform any remaining instances of GROUPING{}
-        many will be transformed as part of collecting various keywords
-
-        """
-        for child in token.children:
-
-            if child.type == Token.T_GROUPING and child.value == "{}":
-
-                if (token.type == Token.T_MODULE) or \
-                   (token.type == Token.T_FUNCTIONDEF) or \
-                   (token.type == Token.T_CLASS) or \
-                   (token.type == Token.T_BLOCK) or \
-                   (token.type == Token.T_FINALLY) or \
-                   (token.type == Token.T_BINARY and token.value == "=>") or \
-                   (token.type == Token.T_GROUPING and token.value == "{}"):
-                    # next test this is not an object
-                    # objects:
-                    #   {} {a} {a:b} {...a} {a,b} {a:b,c:d}
-                    # not objects:
-                    #   {1} {a.b} {f()}
-                    ref = self._isObject(child)
-                    if ref is None:
-                        child.type = Token.T_OBJECT
-                    else:
-                        child.type = Token.T_BLOCK
-                else:
-
-                    ref = self._isObject(child)
-                    if ref is not None:
-                        print(token.type)
-                        raise ref
-                    child.type = Token.T_OBJECT
-
-            self.transform_grouping(child, token)
-
-    def _isObject(self, token):
-        # test if a token is an object, this is only valid
-        # if the object contents have not been flattened
-
-        if token.type != Token.T_GROUPING or token.value != "{}":
-            return ParseError(token, "expected object")
-
-        if len(token.children) > 1:
-            # likely there is a missing comma
-            # left-recursive drill down into the first non comma or colon
-            # that is usually the first token after a missing comma
-            child = token.children[1]
-            while child.type == Token.T_COMMA or (child.type == Token.T_BINARY and child.value == ':'):
-                child = child.children[0]
-            return ParseError(child, "malformed object. maybe a comma is missing?")
-
-        if len(token.children) == 0:
-            return None
-
-        child = token.children[0]
-        t = child.type
-        v = child.value
-
-        if (t == Token.T_TEXT) or \
-           (t == Token.T_PREFIX and v == '...') or \
-           (t == Token.T_BINARY and (v == ':')) or \
-           (t == Token.T_COMMA):
-            return None
-
-        return ParseError(token, "expected object")
-
-    def transform_flatten(self, token, parent):
-        """
-        Objects, Argument Lists, Parenthetical Grouping, and Lists
-        all uses commas to separate clauses. The comma can be removed
-        and the contents flattened into a single list of children
-        """
-
-        for child in token.children:
-            self.transform_flatten(child, token)
-
-        if token.type == Token.T_GROUPING and token.value != "()":
-            # either a {} block was incorrectly parsed
-            # or a [] block was not labeled list of subscr
-            raise ParseError(token, "invalid grouping node: " + token.value)
-
-        if token.type == Token.T_OBJECT or \
-           token.type == Token.T_ARGLIST or \
-           token.type == Token.T_LIST or \
-           token.type == Token.T_GROUPING:
-
-            chlst = token.children
-            index = 0;
-            while index < len(chlst):
-                if chlst[index].type == Token.T_COMMA:
-                    child = chlst.pop(index)
-                    for j in range(len(child.children)):
-                        chlst.insert(index+j, child.children[j])
-                else:
-                    index += 1
-
-    def transform_optional_chaining(self, token, parent):
-
-        for child in token.children:
-            self.transform_optional_chaining(child, token)
-
-        if token.type != Token.T_OPTIONAL_CHAINING:
-            return
-
-        # Implement optional chaining for attribute access
-        #   x?.y :: ((x)||{}).y
-
-        if len(token.children) == 2:
-
-            token.type = Token.T_BINARY
-            token.value = "."
-            lhs, rhs = token.children
-            ln = token.line
-            idx = token.index
-
-            token.children = [
-            Token(Token.T_GROUPING, ln, idx, "()",
-                [Token(Token.T_BINARY, ln, idx, "||",
-                    [
-                        Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
-                        Token(Token.T_OBJECT, ln, idx, "{}")
-                    ]
-                )]
-            ), rhs]
-
-        # Implement optional chaining for function calls
-        #   x?.(...) :: ((x)||(()=>null))(...)
-
-        if len(token.children) == 1 and token.children[0].type == Token.T_FUNCTIONCALL:
-            token.type = Token.T_FUNCTIONCALL
-            token.value = ""
-            lhs, rhs = token.children[0].children
-            ln = token.line
-            idx = token.index
-
-            token.children = [
-            Token(Token.T_GROUPING, ln, idx, "()",
-                [Token(Token.T_BINARY, ln, idx, "||",
-                    [
-                        Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
-                        Token(Token.T_GROUPING, ln, idx, "()", [
-                                Token(Token.T_BINARY, ln, idx, "=>", [
-                                    Token(Token.T_ARGLIST, ln, idx, "()"),
-                                    Token(Token.T_KEYWORD, ln, idx, "null")
-                                ])
-                        ])
-                    ]
-                )]
-            ), rhs]
-
-        # Implement optional chaining for object subscript
-        #   x?.[...] :: ((x)||{})[...]
-
-        if len(token.children) == 1 and token.children[0].type == Token.T_SUBSCR:
-            token.type = Token.T_SUBSCR
-            token.value = "[]"
-            lhs, rhs = token.children[0].children
-            ln = token.line
-            idx = token.index
-
-            token.children = [
-            Token(Token.T_GROUPING, ln, idx, "()",
-                [Token(Token.T_BINARY, ln, idx, "||",
-                    [
-                        Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
-                        Token(Token.T_OBJECT, ln, idx, "{}")
-                    ]
-                )]
-            ), rhs]
-
-
-
-
-
 def main():  # pragma: no cover
 
     # TODO: let x,y,z
@@ -1317,14 +1143,8 @@ def main():  # pragma: no cover
 
     text1 = """
 
-    //x[1]
-    x?.[1]
-    //x(1,2,3)
-    //x?.(1,2,3)
-    //x.y
-    //x?.y
 
-    //z = (6 + 7)?.y
+    x?.a
 
     """
 
