@@ -38,7 +38,7 @@ class Parser(object):
         R2L = -1
 
         self.precedence = [
-            (L2R, self.visit_grouping, ['(', '{', '[']),
+            #(L2R, self.visit_grouping, ['(', '{', '[']),
             (R2L, self.visit_unary_prefix, ['#']),
             (L2R, self.visit_grouping2, ['.', "?."]),  # also: x[], x()
             (L2R, self.visit_new, []),
@@ -212,7 +212,26 @@ class Parser(object):
             raise ParseError(tokens[index_tok1], "invalid token on %s of %s" % (side, token.value))
         raise ParseError(token, "missing token on %s" % side)
 
-    def group(self, tokens, parent=None):
+    def group(self, tokens):
+
+        #(L2R, self.visit_grouping, ['(', '{', '[']),
+
+        operators = ['(', '{', '[']
+        seq = [(None, tokens)]
+
+        i = 0
+        while i < len(seq):
+            parent, tokens = seq[i]
+            for j, _ in enumerate(tokens):
+                new_seq = self.visit_grouping(parent, tokens, j, operators)
+                if new_seq is not None:
+                    seq.append(new_seq)
+            i += 1
+
+        for parent, tokens in reversed(seq):
+            self.scan(parent, tokens)
+
+    def scan(self, parent, tokens):
 
         for direction, callback, operators in self.precedence:
             i = 0
@@ -230,7 +249,7 @@ class Parser(object):
         token = tokens[index]
 
         if token.value not in operators or token.type not in Token.T_SPECIAL:
-            return 1
+            return None
 
         pairs = {
             '(': ')',
@@ -238,11 +257,11 @@ class Parser(object):
             '{': '}',
         }
 
-        if token.value in pairs:
-            self.collect_grouping(tokens, index, token.value, pairs[token.value])
-            self.group(token.children, token)
-            return 1
-        return 1
+        if token.value not in pairs:
+            return None
+
+        self.collect_grouping(tokens, index, token.value, pairs[token.value])
+        return (token, token.children)
 
     def visit_grouping2(self, parent, tokens, index, operators):
 
@@ -262,7 +281,6 @@ class Parser(object):
 
         elif token.type == Token.T_SPECIAL and token.value == '?.':
             i1 = self.peek_token(tokens, token, index, 1)
-
 
             if i1 and tokens[i1].type == Token.T_GROUPING:
 
@@ -1144,7 +1162,9 @@ def main():  # pragma: no cover
     text1 = """
 
 
-    x?.a
+    for (const x of y) {
+        x
+    }
 
     """
 
