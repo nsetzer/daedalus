@@ -451,6 +451,68 @@ class CompilerTestCase(unittest.TestCase):
 
         self.assertEqual(output, expected)
 
+class CompilerStressTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        self.compiler = Compiler()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_001_wide_1(self):
+        # the lexer / parser / compiler should
+        # support a line that is longer than 4096 characters
+
+        text = "const %s=1" % ("x" * 8192)
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.compiler.compile(ast)
+
+        self.assertEqual(output, text)
+
+    def test_001_wide_2(self):
+        # the lexer / parser / compiler should
+        # support a line that is longer than 4096 characters
+        N = 819
+        text = "abc01" + ("+abc01"*N)
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.compiler.compile(ast)
+
+        self.assertEqual(output, text)
+
+    def test_002_deep(self):
+        # the lexer / parser / compiler should
+        # support an expression with a nesting depth
+        # deeper than 1000 tokens
+
+        # using a recursive compiler strategy
+        # at N == 973 maximum recursion depth is reached
+
+        # using a non-recursive strategy in the compiler
+        # pushes the problem onto the parser
+        # at N == 974 maximum recursion depth is reached
+
+        # switching to non-recursive parsing strategy opens
+        # up greater tree depth
+
+        N = 2000
+        text = "2" + ("+2"*N)
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.compiler.compile(ast)
+
+        self.assertEqual(output, text)
 def main():
     unittest.main()
 

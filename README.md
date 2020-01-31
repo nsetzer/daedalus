@@ -1,4 +1,7 @@
 # Daedalus
+
+[Live Demo](https://nsetzer.github.io/daedalus/)
+
 javascript web framework for building single page applications
 
 Daedalus is an unopinionated javascript web framework used for creating Single Page Applications.
@@ -14,7 +17,8 @@ python setup.py install
 ```
 
 ## Daedalus-JS Documentation
-[Element](./docs/element.md)
+* [Element](./docs/element.md)
+* [Javascript Changes](./docs/javascript.md)
 
 ### Daedalus-PY CLI Documentation
 

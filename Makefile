@@ -28,3 +28,7 @@ demo:
 .PHONY: serve_demo
 serve_demo:
 	python -m daedalus serve ./examples/minesweeper.js
+
+.PHONY: serve_demo
+serve_test:
+	python -m daedalus serve daedalus_test

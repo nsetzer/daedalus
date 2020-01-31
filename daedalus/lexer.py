@@ -417,10 +417,10 @@ class Lexer(LexerBase):
                 except StopIteration:
                     nc = None
 
-                if nc and nc == '.':
-                    # collect ?.
-
-                    self._putch(self._getch())
+                if nc:
+                    if nc == '.' or nc == '?':
+                        # collect ?. or ??
+                        self._putch(self._getch())
                     self._push()
                 else:
                     self._push()

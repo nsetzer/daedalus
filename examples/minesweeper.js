@@ -220,6 +220,7 @@ class GameBoard extends DomElement {
 
         this.attrs = {
             panel: new GamePanel(width, height, mineCount),
+            initialized: false,
         }
 
         this.reset(width, height, mineCount)
@@ -230,6 +231,8 @@ class GameBoard extends DomElement {
     reset(width, height, mineCount) {
 
         this.children = []
+
+        this.attrs.initialized = false
 
         this.updateState({
             width: width,
@@ -249,20 +252,21 @@ class GameBoard extends DomElement {
             row ++;
         }
 
-
         this.appendChild(this.attrs.panel)
         this.attrs.panel.setMineCount(mineCount)
 
-        this.placeMines()
-        this.computeCounts()
     }
 
-    placeMines() {
+    placeMines(mrow, mcol) {
         let placed = 0
         while (placed < this.state.mineCount) {
 
             let row = daedalus.util.randomInt(0, this.state.height-1);
             let col = daedalus.util.randomInt(0, this.state.width-1);
+            // don't place a mine where the user clicked
+            if (row == mrow && col == mcol) {
+                continue
+            }
             const cell = this.children[row].children[col];
             if (!cell.state.isMine) {
                 cell.updateState({isMine: true});
@@ -309,6 +313,12 @@ class GameBoard extends DomElement {
     }
 
     handleLeftClick(cell) {
+
+        if (!this.attrs.initialized) {
+            this.placeMines(cell.state.row, cell.state.col)
+            this.computeCounts()
+            this.attrs.initialized = true
+        }
         this.revealCell(cell.state.row, cell.state.col)
     }
 

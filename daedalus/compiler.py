@@ -182,77 +182,10 @@ class Compiler(object):
         self._null = Token(Token.T_NEWLINE, mod.line, mod.index, "")
         self._prev = self._null
         self._prev_char = ''
-        self._compile(mod)
+
+        self.tokens = self._compile(mod)
 
         return self._write_minified()
-
-    def _x_write_pretty(self):  # pragma: no cover
-        """
-        not so much pretty as 'not ugly'
-        """
-
-        # maximum length for any line is 4095 becuase of limitations
-        # of some javascript compilers
-        depth = 0
-        width=80
-        line_len = 0
-        prev_type = ""
-        prev_text = ""
-        for type, text in self.tokens:
-
-            if type == Token.T_NEWLINE:
-                if prev_type != Token.T_NEWLINE:
-                    self.stream.write("\n" + "  " * depth)
-                    line_len = 0
-                    prev_type = type
-                    prev_text = ""
-
-            elif type == Token.T_SPECIAL and text == ';':
-                if prev_type != Token.T_NEWLINE:
-                    self.stream.write(";")
-                if prev_type != Token.T_NEWLINE:
-                    self.stream.write("\n" + "  " * depth)
-                    line_len = 0
-                    prev_type = Token.T_NEWLINE
-                    prev_text = ""
-
-            elif type == Token.T_BLOCK_PUSH:
-                depth += 1
-                line_len += self.stream.write(text)
-            elif type == Token.T_BLOCK_POP:
-                depth -= 1
-
-                if prev_type != Token.T_NEWLINE:
-                    self.stream.write("\n" + "  " * depth)
-                    line_len = 0
-                    prev_type = Token.T_NEWLINE
-                    prev_text = ""
-
-                line_len += self.stream.write(text)
-
-                self.stream.write("\n" + "  " * depth)
-                line_len = 0
-                prev_type = Token.T_NEWLINE
-                prev_text = ""
-
-            else:
-
-                if isalphanum(prev_text, text):
-                    line_len += self.stream.write(" ")
-
-                line_len += self.stream.write(text)
-
-                prev_type = type
-                prev_text = text
-
-                if line_len > width and text in {'(', '{', '[', ';', ','}:
-                    self.stream.write("\n" + "  " * (depth+1))
-                    line_len = 0
-                    prev_type = Token.T_NEWLINE
-                    prev_text = ""
-
-
-        return self.stream.getvalue()
 
     def _write_minified(self):
 
@@ -278,394 +211,213 @@ class Compiler(object):
             prev_text = text
         return self.stream.getvalue()
 
-    def _x_compile_pretty(self, token, depth=0):  # pragma: no cover
+    def _compile(self, token):
+        """ non-recursive implementation of _compile
 
-        if token.type == Token.T_MODULE:
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(";")
-                self._compile(child, depth + 1)
-                insert = True
-        elif token.type in (Token.T_LIST, Token.T_GROUPING, Token.T_OBJECT, Token.T_ARGLIST):
-            # commas are implied between clauses
-            self._write_char(token.value[0])
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(",")
-                self._compile(child, depth + 1)
-                insert = True
-            self._write_char(token.value[1])
-        elif token.type == Token.T_BLOCK:
-            self._write_char(token.value[0], Token.T_BLOCK_PUSH)
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(";")
-                self._compile(child, depth + 1)
-                insert = True
-            self._write_char(token.value[1], Token.T_BLOCK_POP)
-        elif token.type == Token.T_PREFIX:
-            self._write(token)
-            self._compile(token.children[0], depth)
-        elif token.type == Token.T_POSTFIX:
-            self._compile(token.children[0], depth)
-            self._write(token)
-        elif token.type == Token.T_BINARY:
-            self._compile(token.children[0], depth)
-            if token.value.isalpha():
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, token.value))
+        for each node process the children in reverse order
+        """
+
+        seq = [(0, None, token)]
+        out = []
+
+        while seq:
+            depth, state, token = seq.pop()
+
+            if isinstance(token, str):
+
+                out.append((state, token))
+            elif token.type == Token.T_MODULE:
+                insert = False
+                for child in reversed(token.children):
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ";"))
+                    seq.append((depth+1, None, child))
+                    insert = True
+            elif token.type == Token.T_BLOCK:
+                seq.append((depth, Token.T_SPECIAL, token.value[1]))
+                first = True
+                for child in reversed(token.children):
+                    if child.type in (Token.T_CASE, Token.T_DEFAULT) or first:
+                        insert = False
+                    else:
+                        insert = True
+
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ";"))
+
+                    seq.append((depth+1, None, child))
+
+                    first = False
+                seq.append((depth, Token.T_SPECIAL, token.value[0]))
+            elif token.type in (Token.T_OBJECT, Token.T_LIST, Token.T_GROUPING, Token.T_ARGLIST):
+                # commas are implied between clauses
+                seq.append((depth, Token.T_SPECIAL, token.value[1]))
+                insert = False
+                for child in reversed(token.children):
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ","))
+                    seq.append((depth+1, None, child))
+                    insert = True
+                seq.append((depth, Token.T_SPECIAL, token.value[0]))
+            elif token.type == Token.T_BINARY:
+                seq.append((depth, None, token.children[1]))
+
+                if token.value.isalpha():
+                    seq.append((depth, Token.T_KEYWORD, token.value))
+                else:
+                    seq.append((depth, token.type, token.value))
+                seq.append((depth, None, token.children[0]))
+            elif token.type == Token.T_TERNARY:
+                seq.append((depth, None, token.children[2]))
+                seq.append((depth, Token.T_SPECIAL, ":"))
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, Token.T_SPECIAL, "?"))
+                seq.append((depth, None, token.children[0]))
+            elif token.type == Token.T_PREFIX:
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_POSTFIX:
+                seq.append((depth, token.type, token.value))
+                seq.append((depth, None, token.children[0]))
+            elif token.type == Token.T_COMMA:
+                if len(token.children) == 2:
+                    seq.append((depth, None, token.children[1]))
+                    seq.append((depth, Token.T_SPECIAL, ","))
+                    seq.append((depth, None, token.children[0]))
+                else:
+                    seq.append((depth, None, token.children[0]))
+            elif token.type == Token.T_TEXT:
+
+                out.append((token.type, token.value))
+            elif token.type == Token.T_NUMBER:
+
+                out.append((token.type, token.value))
+            elif token.type in (Token.T_STRING, Token.T_TEMPLATE_STRING):
+
+                out.append((token.type, token.value))
+            elif token.type == Token.T_KEYWORD:
+
+                out.append((token.type, token.value))
+            elif token.type == Token.T_ATTR:
+
+                out.append((token.type, token.value))
+            elif token.type == Token.T_DOCUMENTATION:
+
+                out.append((token.type, token.value))
+            elif token.type == Token.T_NEWLINE:
+
+                raise CompileError(token, "unexpected")
+            elif token.type == Token.T_VAR:
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_CLASS:
+
+                seq.append((depth, None, token.children[2]))
+                if len(token.children[1].children) > 0:
+                    seq.append((depth, None, token.children[1].children[0]))
+                    seq.append((depth, Token.T_KEYWORD, "extends"))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_FUNCTION:
+                seq.append((depth, None, token.children[2]))
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_FUNCTIONCALL:
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+            elif token.type == Token.T_FUNCTIONDEF:
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+            elif token.type == Token.T_IMPORT:
+
+                pass
+            elif token.type == Token.T_EXPORT:
+
+                pass
+            elif token.type == Token.T_SUBSCR:
+                seq.append((depth, Token.T_SPECIAL, "]"))
+                for child in reversed(token.children[1:]):
+                    seq.append((depth, None, child))
+                seq.append((depth, Token.T_SPECIAL, "["))
+                seq.append((depth, None, token.children[0]))
+            elif token.type == Token.T_BRANCH:
+                if len(token.children) == 3:
+                    seq.append((depth, None, token.children[2]))
+                    seq.append((depth, Token.T_KEYWORD, "else"))
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_FOR:
+                args, block = token.children
+
+                # this arglist is special, if there are multiple clauses
+                # separate them by semicolons instead of commas
+                seq.append((depth, None, block))
+                seq.append((depth, Token.T_SPECIAL, ')'))
+                insert = False
+                for child in reversed(args.children):
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ";"))
+                    seq.append((depth, None, child))
+                    insert = True
+                seq.append((depth, Token.T_SPECIAL, '('))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_DOWHILE:
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, Token.T_KEYWORD, "while"))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_WHILE:
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_SWITCH:
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_CASE:
+                seq.append((depth, Token.T_SPECIAL, ":"))
+                seq.append((depth, None, token.children[0]))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_DEFAULT:
+                seq.append((depth, Token.T_SPECIAL, ":"))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE:
+
+                out.append((token.type, token.value))
+            elif token.type == Token.T_RETURN:
+                for child in reversed(token.children): # length is zero or one
+                    seq.append((depth, None, child))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_NEW:
+                for child in reversed(token.children): # length is zero or one
+                    seq.append((depth, None, child))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_THROW:
+                for child in reversed(token.children): # length is zero or one
+                    seq.append((depth, None, child))
+                seq.append((depth, token.type, token.value))
+            elif token.type in (Token.T_TRY, Token.T_CATCH, Token.T_FINALLY):
+                # note that try will have one or more children
+                # while catch always has 2 and finally always has 1
+                for child in reversed(token.children): # length is zero or one
+                    seq.append((depth, None, child))
+                seq.append((depth, token.type, token.value))
             else:
-                self._write(token)
-            self._compile(token.children[1], depth)
-        elif token.type == Token.T_TERNARY:
-            self._compile(token.children[0], depth)
-            self._write_char("?")
-            self._compile(token.children[1], depth)
-            self._write_char(":")
-            self._compile(token.children[2], depth)
-        elif token.type == Token.T_VAR:
-            self._write(token)
-            self._compile(token.children[0], depth)
-        elif token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING):
-
-            self._write(token)
-        elif token.type == Token.T_FUNCTION:
-            self._write(token)
-            self._compile(token.children[0], depth)
-            self._compile(token.children[1], depth)
-            self._compile(token.children[2], depth)
-        elif token.type == Token.T_FUNCTIONCALL:
-            for child in token.children:
-                self._compile(child, depth)
-        elif token.type == Token.T_FUNCTIONDEF:
-            for child in token.children:
-                self._compile(child, depth)
-
-        elif token.type == Token.T_SUBSCR:
-            # this isnt strictly valid javascript
-            text = self._compile(token.children[0], depth) + "[" + \
-                ','.join([self._compile(child, depth) for child in token.children[1:]]) + \
-                "]"
-            return text
-        elif token.type == Token.T_BRANCH:
-            text = "if " + \
-                self._compile(token.children[0], depth) + \
-                self._compile(token.children[1], depth)
-
-            if len(token.children) == 3:
-                text += "else " + self._compile(token.children[2], depth)
-            return text
-        elif token.type == Token.T_FOR:
-            args, block = token.children
-            # this arglist is special, if there are multiple clauses
-            # separate them by semicolons instead of commas
-            text = "for(" + \
-                ';'.join([self._compile(child, depth) for child in args.children]) + \
-                ")" + self._compile(block, depth)
-            return text
-        elif token.type == Token.T_DOWHILE:
-            text = "do" + \
-                self._compile(token.children[0], depth) + \
-                "while" + \
-                self._compile(token.children[1], depth)
-            return text
-        elif token.type == Token.T_WHILE:
-            text = "while" + \
-                self._compile(token.children[0], depth) + \
-                self._compile(token.children[1], depth)
-            return text
-        elif token.type == Token.T_CLASS:
-
-            text = "class " + self._compile(token.children[0], depth)
-            if len(token.children[1].children) > 0:
-                text += " extends " + self._compile(token.children[1], depth)
-            text + self._compile(token.children[2], depth)
-            return text
-        elif token.type == Token.T_RETURN:
-            if token.children: # length is zero or one
-                return "return " + self._compile(token.children[0], depth)
-            return "return"
-        elif token.type == Token.T_COMMA:
-            if len(token.children) == 2:
-                a = self._compile(token.children[0], depth)
-                b = self._compile(token.children[1], depth)
-                return "%s,%s" % (a, b)
-            else:
-                return self._compile(token.children[0], depth)
-        elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE:
-
-            return token.text
-        elif token.type == Token.T_NEW:
-
-            return "new " + self._compile(token.children[0], depth)
-        elif token.type == Token.T_KEYWORD:
-            if token.children:
-                raise CompileError(token, "token has children")
-            return token.text
-        elif token.type == Token.T_ATTR:
-
-            return token.text
-        elif token.type == Token.T_DOCUMENTATION:
-
-            pass
-        elif token.type == Token.T_NEWLINE:
-
-            raise CompileError(token, "unexpected")
-        else:
-            raise CompileError(token, "unable to compile token")
-
-    def _compile(self, token, depth=0):
-
-        if token.type == Token.T_MODULE:
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(";")
-                self._compile(child, depth + 1)
-                insert = True
-        elif token.type in (Token.T_OBJECT,):
-            # commas are implied between clauses
-            #self._write_char("??")
-            self._write_char(token.value[0])
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(",")
-                self._write_line(depth)
-                self._compile(child, depth + 1)
-
-                insert = True
-            if token.children:
-                self._write_line(depth)
-            self._write_char(token.value[1])
-        elif token.type in (Token.T_LIST, Token.T_GROUPING, Token.T_ARGLIST):
-            # commas are implied between clauses
-            #self._write_char("??")
-            self._write_char(token.value[0])
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(",")
-                self._compile(child, depth + 1)
-                insert = True
-            self._write_char(token.value[1])
-        elif token.type == Token.T_BLOCK:
-            self._write_char(token.value[0], Token.T_BLOCK_PUSH)
-            self._write_line(depth+1)
-            insert = False
-            for child in token.children:
-                if insert:
-                    self._write_char(";")
-                self._compile(child, depth + 1)
-                insert = True
-            self._write_char(token.value[1], Token.T_BLOCK_POP)
-        elif token.type == Token.T_PREFIX:
-            self._write(token)
-            self._compile(token.children[0], depth)
-        elif token.type == Token.T_POSTFIX:
-            self._compile(token.children[0], depth)
-            self._write(token)
-        elif token.type == Token.T_BINARY:
-            self._compile(token.children[0], depth)
-            if token.value.isalpha():
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, token.value))
-            else:
-                self._write(token)
-            self._compile(token.children[1], depth)
-        elif token.type == Token.T_TERNARY:
-            self._compile(token.children[0], depth)
-            self._write_char("?")
-            self._compile(token.children[1], depth)
-            self._write_char(":")
-            self._compile(token.children[2], depth)
-        elif token.type == Token.T_VAR:
-            self._write(token)
-            self._compile(token.children[0], depth)
-            #self._write_char(";")
-        elif token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING, Token.T_TEMPLATE_STRING):
-
-            self._write(token)
-        elif token.type == Token.T_FUNCTION:
-            # TODO: resolve difference of T_FUNCTION T_FUNCTIONDEF
-            self._write(token)
-            self._compile(token.children[0], depth)
-            self._compile(token.children[1], depth)
-            self._compile(token.children[2], depth)
-        elif token.type == Token.T_FUNCTIONCALL:
-            for child in token.children:
-                self._compile(child, depth)
-        elif token.type == Token.T_FUNCTIONDEF:
-            self._write_line(depth)
-            for child in token.children:
-                self._compile(child, depth)
-        elif token.type == Token.T_IMPORT:
-            self._write(Token(Token.T_KEYWORD, token.line, token.index, "import"))
-            if token.value.endswith('.js'):
-                self._write(Token(Token.T_STRING, token.line, token.index, repr(token.value)))
-            else:
-                self._write(token)
-            if token.children[0].children:
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, "with"))
-                self._compile(token.children[0], depth)
-            self._write_line(depth)
-        elif token.type == Token.T_EXPORT:
-            pass
-        elif token.type == Token.T_SUBSCR:
-            self._compile(token.children[0], depth)
-            self._write_char("[")
-            for child in token.children[1:]:  # zero or one
-                self._compile(child, depth)
-            self._write_char("]")
-        elif token.type == Token.T_BRANCH:
-            self._write_line(depth)
-            self._write(token)
-            self._compile(token.children[0], depth)
-            self._compile(token.children[1], depth)
-            if len(token.children) == 3:
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, "else"))
-                index = len(self.tokens)
-                self._compile(token.children[2], depth)
-        elif token.type == Token.T_FOR:
-            self._write_line(depth)
-            self._write(token)
-            args, block = token.children
-
-            # this arglist is special, if there are multiple clauses
-            # separate them by semicolons instead of commas
-            self._write_char('(')
-            insert = False
-            for child in args.children:
-                if insert:
-                    self._write_char(";")
-                self._compile(child, depth)
-                insert = True
-            self._write_char(')')
-
-            self._compile(block, depth)
-        elif token.type == Token.T_DOWHILE:
-            self._write_line(depth)
-            self._write(token)
-            self._compile(token.children[0], depth)
-            self._write(Token(Token.T_KEYWORD, token.line, token.index, "while"))
-            self._compile(token.children[1], depth)
-        elif token.type == Token.T_WHILE:
-            self._write_line(depth)
-            self._write(token)
-            self._compile(token.children[0], depth)
-            self._compile(token.children[1], depth)
-        elif token.type == Token.T_SWITCH:
-            self._write(token)
-            self._compile(token.children[0], depth)
-
-            child = token.children[1]
-            self._write_char(child.value[0], Token.T_BLOCK_PUSH)
-            self._write_line(depth+1)
-            insert = False
-            for gchild in child.children:
-                if insert:
-                    self._write_char(";")
-                self._compile(gchild, depth + 1)
-                insert = True
-
-                if gchild.type in (Token.T_CASE, Token.T_DEFAULT):
-                    insert = False
-
-            self._write_char(child.value[1], Token.T_BLOCK_POP)
-
-        elif token.type == Token.T_CASE:
-            self._write(token)
-            self._compile(token.children[0], depth)
-            self._write_char(':')
-
-        elif token.type == Token.T_DEFAULT:
-            self._write(token)
-            self._write_char(':')
-
-        elif token.type == Token.T_CLASS:
-            self._write_line(depth)
-            self._write(token)
-            self._compile(token.children[0], depth)
-            if len(token.children[1].children) > 0:
-                self._write(Token(Token.T_KEYWORD, token.line, token.index, "extends"))
-                #self._write(token.children[1].children[0])
-                self._compile(token.children[1].children[0], depth)
-            self._compile(token.children[2], depth)
-        elif token.type == Token.T_RETURN:
-            self._write_line(depth)
-            self._write(token)
-            for child in token.children: # length is zero or one
-                self._compile(child, depth)
-        elif token.type == Token.T_COMMA:
-            if len(token.children) == 2:
-                self._compile(token.children[0], depth)
-                self._write_char(",")
-                self._compile(token.children[1], depth)
-            else:
-                self._compile(token.children[0], depth)
-        elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE:
-            self._write_line(depth)
-            self._write(token)
-        elif token.type == Token.T_NEW:
-            self._write(token)
-            for child in token.children:
-                self._compile(child, depth)
-        elif token.type == Token.T_THROW:
-            self._write(token)
-            for child in token.children:
-                self._compile(child, depth)
-        elif token.type in (Token.T_TRY, Token.T_CATCH, Token.T_FINALLY):
-            # note that try will have one or more children
-            # while catch always has 2 and finally always has 1
-            self._write(token)
-            for child in token.children:
-                self._compile(child, depth)
-        elif token.type == Token.T_KEYWORD:
-            if token.children:
-                raise CompileError(token, "token has children")
-            self._write(token)
-        elif token.type == Token.T_ATTR:
-
-            self._write(token)
-        elif token.type == Token.T_DOCUMENTATION:
-
-            pass
-        elif token.type == Token.T_NEWLINE:
-
-            raise CompileError(token, "unexpected")
-        else:
-            raise CompileError(token, "unable to compile token")
-
-    def _write(self, token):
-
-        self.tokens.append((token.type, token.value))
-
-    def _write_char(self, char, type=Token.T_SPECIAL):
-
-        if self.tokens:
-            t, c = self.tokens[-1]
-            if char == ';':
-                if t == Token.T_SPECIAL and c == ';':
-                    return
-                # this is valid when pretty printing, but not
-                # when minifying
-                #if t == Token.T_BLOCK_POP:
-                #    return
-
-        self.tokens.append((type, char))
-
-    def _write_line(self, depth):
-        self.tokens.append((Token.T_NEWLINE, ""))
+                raise CompileError(token, "token not supported")
+        return out
 
 def main():  # pragma: no cover
 
     text1 = """
-    x?.y;;
-
-    x?.[0]
-
-    x?.(1)
+    switch (value) {
+        case 0:
+        case 1:
+            blah
+        default:
+            blah;
+    }
     """
 
     #text1 = open("./res/daedalus/index.js").read()
