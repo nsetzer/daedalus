@@ -515,6 +515,7 @@ class CompilerStressTestCase(unittest.TestCase):
 
         self.assertEqual(output, text)
 
+    @unittest.skip("skip bench")
     def test_002_deep_bench(self):
 
 
