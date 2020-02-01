@@ -1,6 +1,6 @@
-
+#! cd .. && python -m tests.util
 from daedalus.lexer import Token
-
+import time, math
 def edit_distance(hyp, ref, eq=None):
     """
     given: two sequences hyp and ref (str, list, or bytes)
@@ -117,3 +117,99 @@ def parsecmp(expected, actual, debug=False):
 def TOKEN(t,v,*children):
     return Token(getattr(Token,t), 1, 0, v, children)
 
+def solve_linear(X, Y):
+    # solve y = m2*x*x + m1*x + b for m2, m1, b
+    # given two samples points along the line
+
+    m = (Y[1] - Y[0]) / (X[1] - X[0])
+    b = Y[0] - m * X[0]
+
+    return m, b
+
+def solve_quadratic(X, Y):
+
+    # solve y = m2*x*x + m1*x + b for m2, m1, b
+    # given three samples points along the line
+
+    v0 = (Y[1] - Y[0])
+    v1 = (X[1] - X[0])
+    v2 = (X[1]*X[1] - X[0]*X[0])
+    f0 = (Y[2] - Y[0])
+    f1 = (X[2] - X[0])
+    f2 = (X[2]*X[2] - X[0]*X[0])
+
+    # v0 = m2*v2 + m1*v1
+    # f0 = m2*f2 + m1*f1
+
+    # m2 = (v0 - m1*v1) / v2
+    # f0 = ((v0 - m1*v1) / v2)*f2 + m1*f1
+    # f0 = v0*f2/v2 - m1*v1*f2/v2 + m1*f1
+    # f0 - v0*f2/v2 = m1*f1 - m1*v1*f2/v2
+    # m1*(f1 - v1*f2/v2) = f0 - v0*f2/v2
+    # m1 = (f0 - v0*f2/v2) / (f1 - v1*f2/v2)
+
+    m1 = (f0 - v0*f2/v2) / (f1 - v1*f2/v2)
+    m2 = (v0 - m1*v1) / v2
+    b = Y[0] - m2 * X[0] * X[0] - m1 * X[0]
+
+    return (m2, m1, b)
+
+def benchmark(x1, x2, func):
+
+    # test the given function at 2 points on a line
+    X = [x1, x2]
+    Y = []
+
+    td1 = time.perf_counter()
+    for N in X:
+        t1 = time.perf_counter()
+        func(N)
+        t2 = time.perf_counter()
+        Y.append(t2 - t1)
+    td2 = time.perf_counter()
+
+    # compute y = m*x + b
+    # then decide if x is linear, quadratic, logarithmic
+    m, b = solve_linear(X, Y)
+
+    # define equations used to compare against measured value
+    eq1 = lambda n: m*n + b
+    eq2a = lambda n: m*n*n + b
+
+
+    eq3 = lambda n: m*n*math.log(n) + b
+
+    names = [
+        "n",
+        "n*n",
+        "n*log(n)",
+        # n*n + n
+        # n!
+    ]
+
+    # determine the percent error of the test function relative
+    # to what was observed.
+    error = [
+        abs(Y[0] - eq1(X[0])) / Y[0],
+        abs(Y[0] - eq2a(X[0])) / Y[0],
+        abs(Y[0] - eq3(X[0])) / Y[0]
+    ]
+
+    # total duration needs to be above some minimum to be valid
+    td = td2 - td1
+    index = error.index(min(error))
+    print(error)
+    print(error[index])
+    print(td)
+    print(" eq = %.6f * %s %s %.6f" % (
+        m, names[index], "-" if b < 0 else "+" ,abs(b)))
+
+
+if __name__ == '__main__':
+
+    eq = lambda x: 2*x*x + 3*x + 4
+
+    X = [10,20,30]
+    Y = [eq(x) for x in X]
+
+    fn = quadratic(X,Y)

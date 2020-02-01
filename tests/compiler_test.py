@@ -2,7 +2,6 @@
 
 import unittest
 from tests.util import edit_distance
-import time, math
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
@@ -477,7 +476,7 @@ class CompilerStressTestCase(unittest.TestCase):
         text = "const %s=1" % ("x" * 8192)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.compiler.compile(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
@@ -488,11 +487,11 @@ class CompilerStressTestCase(unittest.TestCase):
         text = "abc01" + ("+abc01"*N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.compiler.compile(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
-    def test_002_deep(self):
+    def test_002_deep_1(self):
         # the lexer / parser / compiler should
         # support an expression with a nesting depth
         # deeper than 1000 tokens
@@ -511,65 +510,21 @@ class CompilerStressTestCase(unittest.TestCase):
         text = "2" + ("+2"*N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.compiler.compile(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
-    @unittest.skip("skip bench")
-    def test_002_deep_bench(self):
+    def test_002_deep_2(self):
 
+        # mutual recursion in the parser limits the depth
 
-        X = [250, 1000]
-        Y = []
+        N = 487
+        text = ("(" * N) + (")" * N)
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.compiler.compile(ast).replace("\n", "")
 
-        td1 = time.perf_counter()
-        for N in X:
-            t1 = time.perf_counter()
-            text = ("(" * N) + (")" * N)
-            tokens = self.lexer.lex(text)
-            ast = self.parser.parse(tokens)
-            output = self.compiler.compile(ast).replace("\n", "")
-            self.assertEqual(output, text)
-            t2 = time.perf_counter()
-            Y.append(t2 - t1)
-        td2 = time.perf_counter()
-
-        m = (Y[1] - Y[0]) / (X[1] - X[0])
-        b = Y[0] - m * X[0]
-
-        eq1 = lambda n: m*n + b
-        eq2 = lambda n: m*n*n + b
-        eq3 = lambda n: m*n*math.log(n) + b
-
-        names = [
-            "n",
-            "n*n",
-            "nlogn",
-        ]
-
-        error = [
-            abs(Y[0] - eq1(X[0])),
-            abs(Y[0] - eq2(X[0])),
-            abs(Y[0] - eq3(X[0]))
-        ]
-
-        def imin(seq):
-            j = 0
-            v1 = seq[0]
-            for i, v in enumerate(seq):
-                if v < v1:
-                    v1 = v
-                    j = i
-            return j
-
-        # total duration needs to be above some minimum to be valid
-        td = td2 - td1
-        index = imin(error)
-        print(error)
-        print(error[index])
-        print(td)
-        print(" eq = %.6f * %s %s %.6f" % (
-            m, names[index], "-" if b < 0 else "+" ,abs(b)))
+        self.assertEqual(output, text)
 
 def main():
     unittest.main()
