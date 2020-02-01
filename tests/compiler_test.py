@@ -476,7 +476,7 @@ class CompilerStressTestCase(unittest.TestCase):
         text = "const %s=1" % ("x" * 8192)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.compiler.compile(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
@@ -487,11 +487,11 @@ class CompilerStressTestCase(unittest.TestCase):
         text = "abc01" + ("+abc01"*N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.compiler.compile(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
-    def test_002_deep(self):
+    def test_002_deep_1(self):
         # the lexer / parser / compiler should
         # support an expression with a nesting depth
         # deeper than 1000 tokens
@@ -510,7 +510,19 @@ class CompilerStressTestCase(unittest.TestCase):
         text = "2" + ("+2"*N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.compiler.compile(ast).replace("\n", "")
+
+        self.assertEqual(output, text)
+
+    def test_002_deep_2(self):
+
+        # mutual recursion in the parser limits the depth
+
+        N = 487
+        text = ("(" * N) + (")" * N)
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.compiler.compile(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 def main():
