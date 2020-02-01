@@ -38,9 +38,8 @@ class Parser(object):
         R2L = -1
 
         self.precedence = [
-            #(L2R, self.visit_grouping, ['(', '{', '[']),
             (R2L, self.visit_unary_prefix, ['#']),
-            (L2R, self.visit_grouping2, ['.', "?."]),  # also: x[], x()
+            (L2R, self.visit_attr, ['.', "?."]),  # also: x[], x()
             (L2R, self.visit_new, []),
             (L2R, self.visit_unary_postfix, ['++', '--']),
             (R2L, self.visit_unary_prefix, ['!', '~', '+', '-', '++', '--']),
@@ -212,26 +211,53 @@ class Parser(object):
             raise ParseError(tokens[index_tok1], "invalid token on %s of %s" % (side, token.value))
         raise ParseError(token, "missing token on %s" % side)
 
-    def group(self, tokens):
+    def group(self, initial_tokens):
 
-        #(L2R, self.visit_grouping, ['(', '{', '[']),
+        """
 
-        operators = ['(', '{', '[']
-        seq = [(None, tokens)]
+        This is a DFS algorithm that scans the document from top
+        to bottom and from the outer most nesting in.
+        """
 
-        i = 0
-        while i < len(seq):
-            parent, tokens = seq[i]
-            for j, _ in enumerate(tokens):
-                new_seq = self.visit_grouping(parent, tokens, j, operators)
-                if new_seq is not None:
-                    seq.append(new_seq)
-            i += 1
+        pairs = {
+            '(': ')',
+            '[': ']',
+            '{': '}',
+        }
 
-        for parent, tokens in reversed(seq):
-            self.scan(parent, tokens)
+        seq = [[None, initial_tokens, 0]]
+
+        while len(seq):
+
+            parent, tokens, i = seq[-1]
+            while i < len(tokens):
+
+                token = tokens[i]
+
+                if token.type == Token.T_SPECIAL and token.value in pairs:
+
+                    self.collect_grouping(tokens, i, token.value, pairs[token.value])
+
+                    if token is not None:
+                        # save the current state and continue processing the child
+                        seq[-1][2] = i
+                        seq.append([token, token.children, 0])
+                        break
+                i += 1
+
+            # remove the token when scanning has finished
+            if i >= len(tokens):
+                self.scan(parent, tokens)
+                seq.pop()
 
     def scan(self, parent, tokens):
+        """
+        scan each token in a sequence. tokens which produce nested
+        groups have already been processed. scanning can be done in
+        either direction: left-to-right or right-to-left.
+
+        the precedence decides how tokens combine together
+        """
 
         for direction, callback, operators in self.precedence:
             i = 0
@@ -244,26 +270,7 @@ class Parser(object):
 
                 i += callback(parent, tokens, j, operators)
 
-    def visit_grouping(self, parent, tokens, index, operators):
-
-        token = tokens[index]
-
-        if token.value not in operators or token.type not in Token.T_SPECIAL:
-            return None
-
-        pairs = {
-            '(': ')',
-            '[': ']',
-            '{': '}',
-        }
-
-        if token.value not in pairs:
-            return None
-
-        self.collect_grouping(tokens, index, token.value, pairs[token.value])
-        return (token, token.children)
-
-    def visit_grouping2(self, parent, tokens, index, operators):
+    def visit_attr(self, parent, tokens, index, operators):
 
         token = tokens[index]
         # check for attribute operator or 'optional chaining' / elvis operator
@@ -1039,7 +1046,7 @@ class Parser(object):
         rhs1 = self.consume(tokens, token, index, 1)
 
         if rhs1.type != Token.T_GROUPING:
-            raise ParseError(rs1, "expected function call")
+            raise ParseError(rhs1, "expected function call")
         else:
             rhs1.type = Token.T_ARGLIST
 
@@ -1161,11 +1168,11 @@ def main():  # pragma: no cover
 
     text1 = """
 
+    class A extends B {
+        onClick(event) {
 
-    for (const x of y) {
-        x
+        }
     }
-
     """
 
     tokens = Lexer({'preserve_documentation':True}).lex(text1)
