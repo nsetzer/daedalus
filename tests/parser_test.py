@@ -155,6 +155,26 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_divide_2(self):
+
+        text = "x = ((1/2)/3)"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_BINARY', '=',
+                TOKEN('T_TEXT', 'x'),
+                TOKEN('T_GROUPING', '()',
+                    TOKEN('T_BINARY', '/',
+                        TOKEN('T_GROUPING', '()',
+                            TOKEN('T_BINARY', '/',
+                                TOKEN('T_NUMBER', '1'),
+                                TOKEN('T_NUMBER', '2'))),
+                        TOKEN('T_NUMBER', '3'))))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
     def test_001_attribute(self):
 
         text = "a.b"

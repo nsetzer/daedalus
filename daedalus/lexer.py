@@ -195,7 +195,8 @@ class Token(object):
 
     @staticmethod
     def basicType(token):
-        return token and token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING)
+        return token and token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING) or \
+               token.type == Token.T_SPECIAL and token.value in "])"
 
     def clone(self):
 
@@ -681,7 +682,7 @@ def main():  # pragma: no cover
     #r.match(2/3)
 
     text1= """
-    x++
+    x = ((1/2)/3)
     """
 
     tokens = Lexer().lex(text1)
