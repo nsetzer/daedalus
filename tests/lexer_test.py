@@ -177,6 +177,26 @@ class LexerBasicTestCase(unittest.TestCase):
 
         self.assertFalse(lexcmp(expected, tokens, False))
 
+    def test_005_expr_division_2(self):
+        text = "x = ((1/2)/3)"
+        expected = [
+            Token(Token.T_TEXT, 1, 0, 'x'),
+            Token(Token.T_SPECIAL, 1, 2, '='),
+            Token(Token.T_SPECIAL, 1, 4, '('),
+            Token(Token.T_SPECIAL, 1, 5, '('),
+            Token(Token.T_NUMBER, 1, 6, '1'),
+            Token(Token.T_SPECIAL, 1, 8, '/'),
+            Token(Token.T_NUMBER, 1, 8, '2'),
+            Token(Token.T_SPECIAL, 1, 9, ')'),
+            Token(Token.T_SPECIAL, 1, 11, '/'),
+            Token(Token.T_NUMBER, 1, 11, '3'),
+            Token(Token.T_SPECIAL, 1, 12, ')')
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
+
+
     def test_006_expr_regex(self):
         text = "x = /a+/"
         expected = [

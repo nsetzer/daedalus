@@ -79,7 +79,7 @@ class Parser(object):
             Parser.W_UNSUPPORTED: "token not supported",
             Parser.W_EXPORT_DEFAULT: "meaningless export default",
             Parser.W_VAR_USED: "unsafe use of keyword var",
-            Parser.W_UNSAFE_BOOLEAN_TEST: "unsafe boolean test. use (!!x) or ((typeof x !== \"undefined\") && (x !== null)) instead of bare (x)",
+            Parser.W_UNSAFE_BOOLEAN_TEST: "unsafe boolean test. use (!!{token}) or (({token} !== undefined) && ({token} !== null))",
         }
 
         self.disabled_warnings = set()
@@ -91,7 +91,7 @@ class Parser(object):
         if type in self.disabled_warnings:
             return
 
-        text = self.warnings[type]
+        text = self.warnings[type].format(token=token.value)
         if message:
             text += ":" + message
 
