@@ -195,8 +195,8 @@ class Token(object):
 
     @staticmethod
     def basicType(token):
-        return token and token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING) or \
-               token.type == Token.T_SPECIAL and token.value in "])"
+        return token and (token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING) or \
+               token.type == Token.T_SPECIAL and token.value in "])")
 
     def clone(self):
 
@@ -561,6 +561,7 @@ class Lexer(LexerBase):
         comments produce no token
         """
 
+        self._maybe_push()
         c = self._peekch()
 
         if c == '/':
@@ -682,8 +683,9 @@ def main():  # pragma: no cover
     #r.match(2/3)
 
     text1= """
-    x = ((1/2)/3)
+    x >>= 0
     """
+
 
     tokens = Lexer().lex(text1)
     for token in tokens:

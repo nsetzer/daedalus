@@ -213,6 +213,7 @@ function commitRoot() {
     // is there anything to be gained by being able to pause
     // this whil loop and return to it?
     let unit = wipRoot.next
+    let next;
     while (unit) {
         commitWork(unit)
         next = unit.next

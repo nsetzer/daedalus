@@ -116,7 +116,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     for varname, names in imports.items():
         for src, dst in names.items():
             tok = TOKEN('T_BINARY', '=',
-                TOKEN('T_TEXT', dst),
+                TOKEN('T_VAR', 'const', TOKEN('T_TEXT', dst)),
                 TOKEN('T_BINARY', '.',
                     TOKEN('T_TEXT', varname),
                     TOKEN('T_ATTR', src)))
@@ -125,6 +125,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
 
     tok_ast = merge_ast(tok_imports, mod)
     tok_ast = merge_ast(tok_ast, tok_exports)
+    tok_ast.children.insert(0, TOKEN('T_STRING', '"use strict"'))
 
     tok_fundef = TOKEN('T_FUNCTION', 'function',
         TOKEN('T_TEXT', ''),

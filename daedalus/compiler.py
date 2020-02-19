@@ -411,13 +411,7 @@ class Compiler(object):
 def main():  # pragma: no cover
 
     text1 = """
-    switch (value) {
-        case 0:
-        case 1:
-            blah
-        default:
-            blah;
-    }
+    # x
     """
 
     #text1 = open("./res/daedalus/index.js").read()
