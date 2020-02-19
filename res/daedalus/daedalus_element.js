@@ -205,6 +205,10 @@ export class DomElement {
     disconnect(signal) {
         console.log("signal disconnect:" + signal._event_name)
     }
+
+    getDomNode() {
+        return this._fiber.dom
+    }
 }
 
 export class TextElement extends DomElement {
@@ -220,12 +224,14 @@ export class TextElement extends DomElement {
     getText() {
         return this.props.nodeValue;
     }
+
 }
 
-style_link = StyleSheet({cursor: 'pointer', color: 'blue'})
+
 export class LinkElement extends DomElement {
+
     constructor(text, url) {
-        super("div", {className: style_link, title:url}, [new TextElement(text)])
+        super("div", {className: LinkElement.style.link, title:url}, [new TextElement(text)])
 
         this.state = {
             url
@@ -240,6 +246,7 @@ export class LinkElement extends DomElement {
         }
     }
 }
+LinkElement.style = {link: StyleSheet({cursor: 'pointer', color: 'blue'})}
 
 export class ListElement extends DomElement {
     constructor() {
