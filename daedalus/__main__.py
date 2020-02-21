@@ -33,6 +33,7 @@ class BuildHtmlCLI(CLI):
 
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('--onefile', action='store_true')
         subparser.add_argument('index_js')
         subparser.add_argument('out_html')
@@ -71,6 +72,7 @@ class BuildCLI(CLI):
         subparser.add_argument('--minify', action='store_true')
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('--static', type=str, default=None)
         subparser.add_argument('index_js')
         subparser.add_argument('out')
@@ -139,6 +141,7 @@ class CompileCLI(CLI):
         subparser.add_argument('--standalone', action='store_true')
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('index_js')
         subparser.add_argument('out_js')
         subparser.add_argument('out_css')
@@ -179,7 +182,10 @@ class ServeCLI(CLI):
         subparser.add_argument('--host', default='0.0.0.0', type=str)
         subparser.add_argument('--port', default=4100, type=int)
         subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('--static', type=str, default="./static")
+        subparser.add_argument('--cert', type=str, default=None)
+        subparser.add_argument('--keyfile', type=str, default=None)
         subparser.add_argument('index_js')
 
     def execute(self, args):
@@ -193,7 +199,10 @@ class ServeCLI(CLI):
 
         static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
 
-        server = SampleServer(args.host, args.port, args.index_js, paths, static_data, args.static)
+        server = SampleServer(args.host, args.port,
+            args.index_js, paths,
+            static_data, args.static, platform=args.platform)
+        server.setCert(args.cert, args.keyfile)
         server.run()
 
 def getArgs():

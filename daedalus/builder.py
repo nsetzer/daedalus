@@ -169,7 +169,7 @@ class BuildError(Exception):
             self.column = token.index
 
 class JsFile(object):
-    def __init__(self, path, name=None, source_type=1):
+    def __init__(self, path, name=None, source_type=1, platform=None):
         super(JsFile, self).__init__()
         self.path = path
         self.imports = {}
@@ -181,6 +181,7 @@ class JsFile(object):
         self.ast = None
         self.styles = []
 
+        print(">>", platform, name, path)
         if not name:
             self.name = os.path.splitext(os.path.split(name)[1])[0]
         else:
@@ -189,9 +190,18 @@ class JsFile(object):
         if '.js' in self.name:
             raise Exception(self.name)
 
+        # if a platform specific implementation of this file
+        # exists use that file instead
+        self.source_path = path
+        if platform:
+            dir, _ = os.path.split(path)
+            platpath = os.path.join(dir, "%s.%s.js" % (name, platform))
+            if os.path.exists(platpath):
+                self.source_path = platpath
+
     def getSource(self):
 
-        with open(self.path, "r") as rf:
+        with open(self.source_path, "r") as rf:
             return rf.read()
 
     def load(self):
@@ -204,9 +214,9 @@ class JsFile(object):
         try:
             tokens = Lexer().lex(source)
             for token in tokens:
-                token.file = self.path
+                token.file = self.source_path
             ast = Parser().parse(tokens)
-            uid = TransformExtractStyleSheet.generateUid(self.path)
+            uid = TransformExtractStyleSheet.generateUid(self.source_path)
             tr1 = TransformExtractStyleSheet(uid)
             tr1.transform(ast)
             self.styles = tr1.getStyles()
@@ -218,7 +228,7 @@ class JsFile(object):
             a_lines = ["%4d: %s" % (i+1, source_lines[i]) for i in range(e.token.line,line_end)]
 
             lines = b_lines + ["      " + " " * e.token.index + "^"] + a_lines
-            error = BuildError(self.path, e.token, lines, e.original_message, str(e))
+            error = BuildError(self.source_path, e.token, lines, e.original_message, str(e))
 
         if error:
             raise error
@@ -227,9 +237,9 @@ class JsFile(object):
 
         t2 = time.time()
 
-        self.mtime = os.stat(self.path).st_mtime
+        self.mtime = os.stat(self.source_path).st_mtime
 
-        print("%10d %.2f %s" % (len(source), t2-t1, self.path))
+        print("%10d %.2f %s" % (len(source), t2-t1, self.source_path))
 
     def _get_imports_exports(self, ast):
         self.imports = {}
@@ -263,15 +273,15 @@ class JsFile(object):
         return ast
 
     def reload(self):
-        if self.path:
-            mtime = os.stat(self.path).st_mtime
+        if self.source_path:
+            mtime = os.stat(self.source_path).st_mtime
             if mtime > self.mtime:
                 self.load()
                 return True
         return False
 
 class JsModule(object):
-    def __init__(self, index_js):
+    def __init__(self, index_js, platform=None):
         super(JsModule, self).__init__()
         self.index_js = index_js
         self.files = {index_js.path: index_js}
@@ -283,6 +293,7 @@ class JsModule(object):
         self.ast = None
         self.source_size = 0
         self.uid = 0
+        self.platform = platform
 
     def _getFiles(self):
         jsf = self.index_js
@@ -330,7 +341,7 @@ class JsModule(object):
                     pass
                 elif path not in self.files:
                     tmp_name = os.path.splitext(os.path.split(path)[1])[0]
-                    queue.append(JsFile(path, tmp_name, 2))
+                    queue.append(JsFile(path, tmp_name, 2, platform=self.platform))
                     self.dirty = True
                 else:
                     queue.append(self.files[path])
@@ -392,13 +403,14 @@ class JsModule(object):
             self.static_data = None
 
 class Builder(object):
-    def __init__(self, search_paths, static_data):
+    def __init__(self, search_paths, static_data, platform=None):
         super(Builder, self).__init__()
         self.search_paths = search_paths
         self.static_data = static_data
         self.files = {}
         self.modules = {}
         self.source_types = {}
+        self.platform = platform
 
     def find(self, name):
         return findFile(name, self.search_paths)
@@ -434,10 +446,10 @@ class Builder(object):
                 if modpath not in self.files:
                     if modname.endswith(".js"):
                         modname = os.path.splitext(os.path.split(modpath)[1])[0]
-                    self.files[modpath] = JsFile(modpath, modname, 2)
+                    self.files[modpath] = JsFile(modpath, modname, 2, platform=self.platform)
 
                 if modpath not in self.modules:
-                    self.modules[modpath] = JsModule(self.files[modpath])
+                    self.modules[modpath] = JsModule(self.files[modpath], platform=self.platform)
                     self.modules[modpath].setStaticData(self.static_data.get(modname, None))
 
                 if modpath not in visited:
@@ -467,13 +479,13 @@ class Builder(object):
 
         if path not in self.files:
             name = os.path.splitext(os.path.split(path)[1])[0]
-            self.files[path] = JsFile(path, name, source_type)
+            self.files[path] = JsFile(path, name, source_type, platform=self.platform)
 
         if self.files[path].source_type != source_type:
             raise Exception("incompatible types")
 
         if path not in self.modules:
-            self.modules[path] = JsModule(self.files[path])
+            self.modules[path] = JsModule(self.files[path], platform=self.platform)
             self.modules[path].setStaticData(self.static_data.get(modname, None))
 
         self._discover(self.modules[path])

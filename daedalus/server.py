@@ -6,6 +6,7 @@ import os
 import sys
 import io
 import gzip
+import ssl
 from urllib.parse import urlparse, unquote
 import mimetypes
 
@@ -229,11 +230,43 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 class TcpServer(socketserver.TCPServer):
     allow_reuse_address = True
 
+    def __init__(self, addr, factory):
+        super().__init__(addr, factory)
+        self.certfile = None
+        self.keyfile = None
+
+    def setCert(self, certfile=None, keyfile=None):
+        self.certfile = certfile
+        self.keyfile = keyfile
+
+    def getProtocol(self):
+        return "http" if self.certfile is None and self.keyfile is None else "https"
+
+    def get_request(self):
+        socket, fromaddr = self.socket.accept()
+
+        if self.certfile is not None and self.keyfile is not None:
+            socket = ssl.wrap_socket(
+                socket,
+                server_side=True,
+                certfile=self.certfile,
+                keyfile=self.keyfile,
+                ssl_version=ssl.PROTOCOL_TLS
+            )
+
+        return socket, fromaddr
+
 class Server(object):
     def __init__(self, host, port):
         super(Server, self).__init__()
         self.host = host
         self.port = port
+        self.certfile = None
+        self.keyfile = None
+
+    def setCert(self, certfile=None, keyfile=None):
+        self.certfile = certfile
+        self.keyfile = keyfile
 
     def buildRouter(self):
         raise NotImplementedError()
@@ -245,16 +278,23 @@ class Server(object):
         # of the current router.
         factory = lambda *args: RequestHandler(router, *args)
         with TcpServer(addr, factory) as httpd:
+
+            httpd.setCert(self.certfile, self.keyfile)
+
             for endpoint in router.endpoints:
                 print("%-8s %s" % endpoint)
-            print(f"Daedalus Server listening on {self.host}:{self.port}. Not for production use!")
+
+            proto = httpd.getProtocol()
+
+            print(f"Daedalus Server listening on {proto}://{self.host}:{self.port}. Not for production use!")
+
             httpd.serve_forever()
 
 class SampleResource(Resource):
 
-    def __init__(self, index_js, search_path, static_data, static_path):
+    def __init__(self, index_js, search_path, static_data, static_path, platform):
         super(SampleResource, self).__init__()
-        self.builder = Builder(search_path, static_data)
+        self.builder = Builder(search_path, static_data, platform=platform)
         self.index_js = index_js
         self.style, self.source, self.html = self.builder.build(self.index_js)
         self.static_path = static_path
@@ -272,7 +312,6 @@ class SampleResource(Resource):
         """
         serve the compiled css
         """
-        print("got style", len(self.style))
         response = Response(payload=self.style, compress=request.acceptsGzip())
         response.headers['Content-Type'] = 'text/css'
         return response
@@ -324,16 +363,17 @@ class SampleResource(Resource):
 
 class SampleServer(Server):
 
-    def __init__(self, host, port, index_js, search_path, static_data=None, static_path="./static"):
+    def __init__(self, host, port, index_js, search_path, static_data=None, static_path="./static", platform=None):
         super(SampleServer, self).__init__(host, port)
         self.index_js = index_js
         self.search_path = search_path
         self.static_data = static_data
         self.static_path = static_path
+        self.platform = platform
 
     def buildRouter(self):
         router = Router()
-        res = SampleResource(self.index_js, self.search_path, self.static_data, self.static_path)
+        res = SampleResource(self.index_js, self.search_path, self.static_data, self.static_path, self.platform)
         router.registerEndpoints(res.endpoints())
         return router
 
