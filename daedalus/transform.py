@@ -1,4 +1,5 @@
 #! cd .. && python3 -m daedalus.transform
+import os
 import sys
 import io
 import ast
@@ -211,6 +212,41 @@ class TransformNullCoalescing(TransformBase):
 
         if token.type != Token.T_BINARY and token.value != "??":
             return
+
+class TransformMagicConstants(TransformBase):
+
+    def visit(self, token, parent):
+
+        """
+
+        transform
+            a ?? b
+        into
+            ((x,y)=>(x!==null&&x!==undefined)?x:y)(a,b)
+
+        """
+
+        if token.type != Token.T_TEXT:
+            return
+
+        if token.value == "__LINE__":
+            token.type = Token.T_NUMBER
+            token.value = str(token.line)
+
+        if token.value == "__COLUMN__":
+            token.type = Token.T_NUMBER
+            token.value = str(token.index)
+
+        if token.value == "__FILENAME__":
+
+            if token.file:
+                token.type = Token.T_STRING
+                token.value = "'%s'" % os.path.split(token.file)[1]
+            else:
+
+                token.type = Token.T_STRING
+                token.value = "'undefined'"
+
 
 class TransformExtractStyleSheet(TransformBase):
 

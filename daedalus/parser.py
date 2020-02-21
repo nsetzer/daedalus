@@ -13,7 +13,9 @@ imports are complicated
 import sys
 import ast
 from .lexer import Lexer, Token, TokenError
-from .transform import TransformGrouping, TransformFlatten, TransformOptionalChaining, TransformNullCoalescing
+from .transform import TransformGrouping, \
+    TransformFlatten, TransformOptionalChaining, TransformNullCoalescing, \
+    TransformMagicConstants
 
 class ParseError(TokenError):
     pass
@@ -60,7 +62,7 @@ class Parser(object):
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
             (L2R, self.visit_binary, ['=', '+=', '-=', '**=', '*=', '/=',
-                                      '&=', '<<=', '>>=', '>>>=', '&=', '^=',
+                                      '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
@@ -111,6 +113,7 @@ class Parser(object):
         TransformFlatten().transform(mod)
         TransformOptionalChaining().transform(mod)
         TransformNullCoalescing().transform(mod)
+        TransformMagicConstants().transform(mod)
 
         return mod
 
@@ -412,12 +415,15 @@ class Parser(object):
         i1 = self.peek_token(tokens, token, index, -1)
         i2 = self.peek_token(tokens, token, index, 1)
 
-        no_lhs = i1 is None or tokens[i1].type == Token.T_SPECIAL
+        no_lhs = i1 is None or tokens[i1].type in Token.T_SPECIAL
+
+        rv = 1
         if no_lhs and i2 is not None:
             token.children.append(self.consume(tokens, token, index, 1))
             token.type = Token.T_PREFIX
+            rv = 0
 
-        return 1
+        return rv
 
     def visit_prefix(self, parent, tokens, index, operators):
 
@@ -1168,11 +1174,7 @@ def main():  # pragma: no cover
 
     text1 = """
 
-    class A extends B {
-        onClick(event) {
-
-        }
-    }
+    x >>= 0
     """
 
     tokens = Lexer({'preserve_documentation':True}).lex(text1)
