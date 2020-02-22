@@ -172,10 +172,10 @@ export class DomElement {
         }
         // append the class to the list
         else if (Array.isArray(this.props.className)) {
-            props = {className: [...this.props.className, cls]};
+            props = {className: [cls, ...this.props.className]};
         // convert the class to a class list
         } else {
-            props = {className: [this.props.className, cls]};
+            props = {className: [cls, this.props.className]};
         }
         this.updateProps(props)
     }
@@ -183,16 +183,24 @@ export class DomElement {
     removeClassName(cls) {
         let props;
         if (Array.isArray(this.props.className)) {
-            props = {className: this.props.className.filter(x=>x===cls)}
-            if (props.length === this.props.className.length) {
+            props = {className: this.props.className.filter(x=>x!==cls)}
+            // the filter function did not remove anything
+            if (props.className.length === this.props.className.length) {
                 return;
             }
+            this.updateProps(props)
         } else if (this.props.className === cls) {
             props = {className: null}
-        } else {
-            return;
+            this.updateProps(props)
         }
-        this.updateProps(props)
+    }
+
+    hasClassName(cls) {
+        let props;
+        if (Array.isArray(this.props.className)) {
+            return this.props.className.filter(x=>x===cls).length === 1;
+        }
+        return this.props.className === cls;
     }
 
     connect(signal, callback) {
