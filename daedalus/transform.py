@@ -22,7 +22,9 @@ class TransformBase(object):
         tokens = [(token, token)]
 
         while tokens:
-            token, parent = tokens.pop()
+            # process tokens from left to right in the order they
+            # are found.
+            token, parent = tokens.pop(0)
 
             self.visit(token, parent)
 
@@ -247,7 +249,6 @@ class TransformMagicConstants(TransformBase):
                 token.type = Token.T_STRING
                 token.value = "'undefined'"
 
-
 class TransformExtractStyleSheet(TransformBase):
 
     def __init__(self, uid):
@@ -298,7 +299,8 @@ class TransformExtractStyleSheet(TransformBase):
         """ return a style rule for an object token """
 
         obj = self._object2style_helper("", token)
-        arr = ["  %s: %s;" % (k, v) for k, v in sorted(obj.items())]
+        # insert items in the order they were found in the document
+        arr = ["  %s: %s;" % (k, v) for k, v in obj.items()]
         body = "\n".join(arr)
         return "%s {\n%s\n}" % (selector, body)
 

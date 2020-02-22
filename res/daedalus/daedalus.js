@@ -159,7 +159,7 @@ function reconcileChildren(parentFiber) {
                 props: {...element.props},
                 children: element.children.slice(),
                 _fibers: [],
-                parent: parentFiber.partial? element._fiber.parent :parentFiber,
+                parent: (parentFiber.partial && oldFiber)? oldFiber.parent : parentFiber,
                 alternate: oldFiber,
                 dom: oldFiber ? oldFiber.dom : null,
                 signals: element.signals,
