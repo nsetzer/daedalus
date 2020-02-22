@@ -95,5 +95,6 @@ export const platform = {
     majorVersion,
     appName: navigator.appName,
     userAgent: navigator.userAgent,
-
+    platform: build_platform || 'web',
+    isAndroid: build_platform === 'android'
 }

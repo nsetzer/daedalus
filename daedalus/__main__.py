@@ -87,7 +87,7 @@ class BuildCLI(CLI):
         paths.insert(0, os.path.split(jspath)[0])
 
         static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
-        builder = Builder(paths, static_data)
+        builder = Builder(paths, static_data, platform=args.platform)
 
         css, js, html = builder.build(args.index_js, minify=args.minify)
 
