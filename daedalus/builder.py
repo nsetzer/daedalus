@@ -182,7 +182,6 @@ class JsFile(object):
         self.ast = None
         self.styles = []
 
-        print(">>", platform, name, path)
         if not name:
             self.name = os.path.splitext(os.path.split(name)[1])[0]
         else:
@@ -407,11 +406,21 @@ class Builder(object):
     def __init__(self, search_paths, static_data, platform=None):
         super(Builder, self).__init__()
         self.search_paths = search_paths
-        self.static_data = static_data
+
         self.files = {}
         self.modules = {}
         self.source_types = {}
+
+        if static_data is None:
+            static_data = {'daedalus': {}}
+
+        if platform is not None:
+            static_data['daedalus']['build_platform'] = platform
+        else:
+            static_data['daedalus']['build_platform'] = 'web'
+
         self.platform = platform
+        self.static_data = static_data
 
     def find(self, name):
         return findFile(name, self.search_paths)
@@ -648,21 +657,43 @@ class Builder(object):
         return '<title>Daedalus</title>'
 
     def getHtmlStyle(self, css, onefile):
+
+        # TODO: hardcoding the platform prefix for now
+        prefix = "file:///android_asset/site/" if self.platform == "android" else "/"
+
         if not css:
             return ""
         elif onefile:
             return '<style>\n%s\n</style>' % css
         else:
-            return '<link rel="stylesheet" href="/static/index.css">'
+            return f'<link rel="stylesheet" type="text/css" href="{prefix}static/index.css">'
 
     def getHtmlSource(self, js, onefile):
+
+        # TODO: hardcoding the platform prefix for now
+        prefix = "file:///android_asset/site/" if self.platform == "android" else "/"
+
         if onefile:
             return '<script type="text/javascript">\n%s\n</script>' % js
         else:
-            return '<script src="/static/index.js" type="text/javascript"></script>'
+            return f'<script src="{prefix}static/index.js" type="text/javascript"></script>'
 
     def getHtmlRender(self, render_function, root):
-        return ('<script type="text/javascript">' \
-            '%s(document.getElementById("root"), new %s())</script>') % (
-            render_function, root)
+        """
+        generate the script which will render the root element
+
+        the script removes all existing children of the root dom node
+        and then mounts the root element.
+        """
+        lines = [
+            '<script type="text/javascript">',
+            'const document_root = document.getElementById("root")',
+            'while (document_root.hasChildNodes()) {',
+            '    document_root.removeChild(document_root.lastChild);',
+            '}',
+            '%s(document_root, new %s())' % (render_function, root),
+            '</script>',
+        ]
+
+        return "\n".join(lines)
 
