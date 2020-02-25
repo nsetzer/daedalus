@@ -503,7 +503,11 @@ class Lexer(LexerBase):
                 break
 
     def _lex_string(self, string_terminal):
-        """ read a string from the stream, terminated by the given character"""
+        """ read a string from the stream, terminated by the given character
+
+        strings are read with no processing so that the compiler can produce
+        an identical string token.
+        """
 
         self._maybe_push()
         self._type = Token.T_TEMPLATE_STRING if string_terminal == '`' else Token.T_STRING
@@ -519,6 +523,20 @@ class Lexer(LexerBase):
 
             if c is None:
                 raise self._error("unterminated string")
+
+            elif c == "\\":
+                # expect exactly one character after an escape
+                # pass through unmodified, let the downstream
+                # parser/compiler handle string processing.
+                self._putch(c)
+                try:
+                    c = self._getch()
+                except StopIteration:
+                    c = None
+
+                if c is None:
+                    raise self._error("expected character")
+                self._putch(c)
 
             elif c == "\n":
                 raise self._error("unterminated string")
@@ -683,10 +701,13 @@ def main():  # pragma: no cover
     #r.match(2/3)
 
     text1= """
-    x >>= 0
+    x = "a\\"b c\\"d"
     """
 
+    if len(sys.argv) == 2 and sys.argv[1] == "-":
+        text1 = sys.stdin.read()
 
+    print(text1)
     tokens = Lexer().lex(text1)
     for token in tokens:
         print(token)

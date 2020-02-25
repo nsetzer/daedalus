@@ -614,6 +614,7 @@ class Builder(object):
         render_function = 'daedalus.render'
 
         html = html \
+            .replace("<!--FAVICON-->", self.getHtmlFavIcon()) \
             .replace("<!--TITLE-->", self.getHtmlTitle()) \
             .replace("<!--STYLE-->", self.getHtmlStyle(css, onefile)) \
             .replace("<!--SOURCE-->", self.getHtmlSource(js, onefile)) \
@@ -655,6 +656,10 @@ class Builder(object):
 
     def getHtmlTitle(self):
         return '<title>Daedalus</title>'
+
+    def getHtmlFavIcon(self):
+        url = "file:///android_asset/site/favicon.ico" if self.platform == "android" else "/favicon.ico"
+        return f'<link rel="icon" type="image/x-icon" href="{url}" />'
 
     def getHtmlStyle(self, css, onefile):
 
