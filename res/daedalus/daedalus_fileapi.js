@@ -1,4 +1,24 @@
 
+/**
+ * Daedalus File API
+ *
+ * Methods for uploading and downloading files to a webserver
+ *
+ * Compatability Notes:
+ *   uploadFile does not work for Android WebView.
+ *   Instead an API is needed for background file uploads using
+ *   Android APIs.
+ *
+ *   downloadFile does not work for Android WebView.
+ *   Instead generate an anchor tag with the href and download proptery.
+ *
+ *   e.g.
+ *      <a href="url" download="filename">Click Here</a>
+ *
+ *   Alternativley, an android API can be implemented to support downloads
+ *
+ */
+
 import './daedalus_util.js'
 
 function saveBlob(blob, fileName) {
@@ -165,7 +185,6 @@ function _uploadFileImpl(elem, urlbase, headers={}, params={}, success=null, fai
 // when the user selects a file dispatch an multi-part form upload
 
 export function uploadFile(urlbase, headers={}, params={}, success=null, failure=null, progress=null) {
-
     let element = document.createElement('input');
     element.type = 'file'
     element.hidden = true
