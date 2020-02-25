@@ -215,7 +215,11 @@ export class DomElement {
     }
 
     getDomNode() {
-        return this._fiber.dom
+        return this._fiber && this._fiber.dom
+    }
+
+    isMounted() {
+        return this._fiber !== null
     }
 }
 
