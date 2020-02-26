@@ -9,6 +9,7 @@ import './daedalus_platform.js'
 
 let workstack = [];
 let deletions = [];
+let deletions_removed = new Set();
 let updatequeue = [];
 let wipRoot = null;
 let currentRoot = null;
@@ -207,7 +208,16 @@ function reconcileChildren(parentFiber) {
 
 function commitRoot() {
 
+    deletions_removed = new Set();
     deletions.forEach(removeDomNode)
+
+    // unique elements which were removed by this action should
+    // have their unmounted callback called.
+    if(deletions_removed.size > 0) {
+        deletions_removed.forEach(elem => {
+            requestIdleCallback(elem.elementUnmounted.bind(elem))
+        })
+    }
 
     // consider moving this function into `workLoop`
     // is there anything to be gained by being able to pause
@@ -358,9 +368,15 @@ function updateDomNode(fiber) {
 // remove all traces of a fiber from the elements
 // in case the user wants to add this element later
 function _removeDomNode_elementFixUp(element) {
+
+    if (element.elementUnmounted) {
+        deletions_removed.add(element)
+    }
+
     element.children.forEach(child => {
         child._fiber = null;
         _removeDomNode_elementFixUp(child);
+
     })
 }
 
@@ -371,10 +387,6 @@ function removeDomNode(fiber) {
     //    return
     //}
     //
-    if (fiber.element.elementUnmounted) {
-        requestIdleCallback(fiber.element.elementUnmounted.bind(fiber.element))
-    }
-
 
     if (fiber.dom) {
         //if (fiber.parent.dom) {
