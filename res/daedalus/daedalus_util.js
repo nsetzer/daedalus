@@ -221,11 +221,11 @@ export function StyleSheet(...args) {
     }
     const text = object2style(style)
 
-    if (element) {
+    if (!!element) {
         name = element + "." + name
     }
 
-    if (psuedoclass) {
+    if (!!psuedoclass) {
         name = name + ":" + psuedoclass
     }
 

@@ -21,7 +21,7 @@ export class AuthenticateElement extends DomElement {
     }
 
     handleAuth(status) {
-        if (status) {
+        if (!!status) {
 
             // once authenticated, resolve the default element if required
             if (util.isFunction(this.element)) {
