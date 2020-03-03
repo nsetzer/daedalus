@@ -14,6 +14,8 @@ let updatequeue = [];
 let wipRoot = null;
 let currentRoot = null;
 
+let workCounter = 0;
+
 export function render(container, element) {
     wipRoot = {
         type: "ROOT",
@@ -51,6 +53,7 @@ function workLoop(deadline) {
     const initialWorkLength = workstack.length;
     const initialUpdateLength = updatequeue.length;
 
+    workCounter = 0
     while (!shouldYield) {
         while (workstack.length > 0 && !shouldYield) {
             let unit = workstack.pop();
@@ -73,11 +76,15 @@ function workLoop(deadline) {
     }
 
     debug = workstack.length > 1 || updatequeue.length > 1
-    if (debug) {
+    if (!!debug) {
         console.warn("workloop failed to finish",
             initialWorkLength, '->', workstack.length,
             initialUpdateLength, '->', updatequeue.length)
     }
+
+    //if (workCounter > 0) {
+    //    console.log(`updated ${workCounter} nodes`)
+    //}
 
     requestIdleCallback(workLoop);
     //let t1 = performance.now();
@@ -97,14 +104,14 @@ function performUnitOfWork(fiber) {
 }
 
 function reconcileChildren(parentFiber) {
-
+    workCounter += 1
     // tag old fibers to be deleted
     const oldParentFiber = parentFiber.alternate;
 
     // mark each child fiber for deletion, if it is processed below
     // unset this field
 
-    if (oldParentFiber) {
+    if (!!oldParentFiber) {
         oldParentFiber.children.forEach(child => {
             child._delete = true;
         })
@@ -141,9 +148,12 @@ function reconcileChildren(parentFiber) {
 
             let effect;
 
-            if (oldFiber) {
+            if (!!oldFiber) {
                 if (oldIndex == index && element.dirty === false) {
-                    effect = 'NONE';
+                    // effect = 'NONE';
+                    // Experiment: with nothing to do exit early
+                    // Require any children to have called update()
+                    return;
                 } else {
                     effect = 'UPDATE';
                 }
@@ -190,14 +200,17 @@ function reconcileChildren(parentFiber) {
 
             prev.next = newFiber;
             prev = newFiber;
+
+
             workstack.push(newFiber);
+
 
         }
     )
 
     // now that all children have been processed, mark fibers for deletion
 
-    if (oldParentFiber) {
+    if (!!oldParentFiber) {
         oldParentFiber.children.forEach(child => {
             if (child._delete) {
                 deletions.push(child._fiber);

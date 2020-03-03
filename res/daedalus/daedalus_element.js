@@ -16,7 +16,7 @@ export function Signal(element, name) {
 
     console.log("signal create:" + event_name)
 
-    if (element) {
+    if (!!element) {
         element.signals.push(signal)
     }
 
