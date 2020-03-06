@@ -29,7 +29,11 @@ export function render(container, element) {
 }
 
 export function render_update(element) {
-    if (!element.dirty) {
+    // update the element if it is not already dirty
+    // (an update has already been queued)
+    // do not update the element if it does not have a fiber
+    // (it has not been mounted and there is nothing to update)
+    if (!element.dirty && element._fiber !== null) {
         element.dirty = true
         const fiber = {
             effect: 'UPDATE',
@@ -180,7 +184,8 @@ function reconcileChildren(parentFiber) {
             };
 
             if (!newFiber.parent.dom) {
-                console.error("dom error", newFiber.parent)
+                console.error(`element parent is not mounted id: ${element.props.id} effect: ${effect}`);
+                return;
             }
 
             if (newFiber.props.style) {
@@ -251,7 +256,13 @@ function commitRoot() {
 
 function commitWork(fiber) {
 
+
     const parentDom = fiber.parent.dom;
+
+    if (!parentDom) {
+        console.warn(`element has no parent. effect: ${fiber.effect}`)
+        return
+    }
 
     if (fiber.effect === 'CREATE') {
 
@@ -260,6 +271,7 @@ function commitWork(fiber) {
         // of the parent, or if appendChild is used later on. if
         // insertChild is used after initial construction, insert the
         // child dom before the correct element
+
         const length = parentDom.children.length;
         const position = fiber.index;
 
