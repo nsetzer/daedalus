@@ -48,7 +48,7 @@ reserved_words = {
 # TODO: e.x. {public: 'abc123'} will fail since public is a keyword
 reserved_words_extra = {
     'private', 'protected', 'public', 'native',
-    'abstract', 'arguments', 'synchronized',
+    'abstract', 'arguments', 'synchronized', 'from', 'module'
 }
 
 # symbols for operators that have length 1
@@ -121,7 +121,10 @@ class Token(object):
     T_DEFAULT = "T_DEFAULT"
     T_DOWHILE = "T_DOWHILE"
     T_EXPORT = "T_EXPORT"
+    T_EXPORT_DEFAULT = "T_EXPORT_DEFAULT"
     T_IMPORT = "T_IMPORT"
+    T_IMPORT_MODULE = "T_IMPORT_MODULE"
+    T_INCLUDE = "T_INCLUDE"
     T_FINALLY = "T_FINALLY"
     T_FOR = "T_FOR"
     T_FUNCTION = "T_FUNCTION"
@@ -133,6 +136,9 @@ class Token(object):
     T_VAR = "T_VAR"
     T_WHILE = "T_WHILE"
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
+
+    # a token which stands for no token
+    T_EMPTY_TOKEN = "T_EMPTY_TOKEN"
 
     # tokens created by the compiler
     T_BLOCK_PUSH = "T_BLOCK_PUSH"
@@ -198,12 +204,13 @@ class Token(object):
         return token and (token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING) or \
                token.type == Token.T_SPECIAL and token.value in "])")
 
-    def clone(self):
+    def clone(self, **keys):
 
         tok = Token(self.type, self.line, self.index, self.value)
         tok.file = self.file
         tok.original_value = self.original_value
         tok.children = [c.clone() for c in self.children]
+        tok.__dict__.update(keys)
         return tok
 
 class LexerBase(object):

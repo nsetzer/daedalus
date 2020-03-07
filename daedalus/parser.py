@@ -636,7 +636,7 @@ class Parser(object):
         elif token.value == 'while':
             self.collect_keyword_while(tokens, index)
 
-        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null"):
+        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default"):
             pass
         else:
             self.warn(token, Parser.W_UNSUPPORTED)
@@ -646,7 +646,9 @@ class Parser(object):
     def visit_keyword_import_export(self, parent, tokens, index, operators):
 
         token = tokens[index]
-        if token.type != Token.T_KEYWORD:
+
+        if token.type != Token.T_KEYWORD and \
+           not (token.type == Token.T_TEXT and token.value in ('from', 'include')):
             return 1
 
         # --
@@ -657,6 +659,13 @@ class Parser(object):
 
         if token.value == 'import':
             self.collect_keyword_import(tokens, index)
+
+        if token.value == 'include':
+            self.collect_keyword_include(tokens, index)
+
+        if token.value == 'from':
+            self.collect_keyword_import_from(tokens, index)
+
 
         return 1
 
@@ -765,6 +774,12 @@ class Parser(object):
     def collect_keyword_switch_default(self, tokens, index):
         token = tokens[index]
 
+        # ignore the default keyword when it comes after the keyword 'export'
+        i = self.peek_keyword(tokens, token, index, -1)
+        if i is not None and i >= 0:
+            if tokens[i].type == Token.T_KEYWORD and tokens[i].value == 'export':
+                return 1
+
         rhs1 = self.consume(tokens, token, index, 1)
 
         if rhs1.type != Token.T_SPECIAL or rhs1.value != ":":
@@ -820,12 +835,13 @@ class Parser(object):
         token = tokens[index]
 
         # consume the word default, but don't do anything with it
+        kind = Token.T_EXPORT
         i1 = self.peek_keyword(tokens, token, index, 1)
         if i1 is not None and tokens[i1].type == Token.T_KEYWORD and tokens[i1].value == 'default':
-            self.consume(tokens, token, index, 1)
-            self.warn(token, Parser.W_EXPORT_DEFAULT)
+            self.consume_keyword(tokens, token, index, 1)
+            kind = Token.T_EXPORT_DEFAULT
 
-        child = self.consume(tokens, token, index, 1)
+        child = self.consume_keyword(tokens, token, index, 1)
 
         node = child
         while node:
@@ -845,13 +861,10 @@ class Parser(object):
             else:
                 raise ParseError(node, "unable to export token")
 
-        token.type = Token.T_EXPORT
+        token.type = kind
         token.children = [child]
 
-    def collect_keyword_import(self, tokens, index):
-        token = tokens[index]
-
-        module = self.consume(tokens, token, index, 1)
+    def _collect_keyword_import_get_name(self, module):
 
         if module.type == Token.T_BINARY:
             text = ""
@@ -872,15 +885,27 @@ class Parser(object):
                 else:
                     raise ParseError(node.children[0], "invalid")
 
-            token.value = text
+            return text
         elif module.type == Token.T_STRING:
-            token.value = ast.literal_eval(module.value)
+            return ast.literal_eval(module.value)
         elif module.type == Token.T_TEXT:
-            token.value = module.value
+            return module.value
         else:
             raise ParseError(module, "invalid module name")
 
-        token.type = Token.T_IMPORT
+    def collect_keyword_import(self, tokens, index):
+        token = tokens[index]
+
+        next_tok = self.consume(tokens, token, index, 1)
+
+        if next_tok.type == Token.T_TEXT and next_tok.value == 'module':
+            token.type = Token.T_IMPORT_MODULE
+            module = self.consume(tokens, token, index, 1)
+        else:
+            token.type = Token.T_IMPORT
+            module = next_tok
+
+        token.value = self._collect_keyword_import_get_name(module)
 
         i1 = self.peek_keyword(tokens, token, index, 1)
         if i1 is not None and tokens[i1].type == Token.T_KEYWORD and tokens[i1].value == 'with':
@@ -893,6 +918,44 @@ class Parser(object):
             token.children.append(fromlist)
         else:
             token.children.append(Token(Token.T_OBJECT, token.line, token.index, "{}"))
+
+    def collect_keyword_import_from(self, tokens, index):
+        token = tokens[index]
+
+        next_tok = self.consume(tokens, token, index, 1)
+
+        if next_tok.type == Token.T_TEXT and next_tok.value == 'module':
+            token.type = Token.T_IMPORT_MODULE
+            module = self.consume(tokens, token, index, 1)
+        else:
+            token.type = Token.T_IMPORT
+            module = next_tok
+
+        token.value = self._collect_keyword_import_get_name(module)
+
+        i1 = self.peek_keyword(tokens, token, index, 1)
+        if i1 is not None and tokens[i1].type == Token.T_KEYWORD and tokens[i1].value == 'import':
+            self.consume_keyword(tokens, token, index, 1)
+            fromlist = self.consume(tokens, token, index, 1)
+            if fromlist.type != Token.T_GROUPING:
+                raise ParseError(fromlist, "expected {} for fromlist")
+            else:
+                fromlist.type = Token.T_OBJECT
+            token.children.append(fromlist)
+        else:
+            raise ParseError(token, "expected keyword 'import'")
+
+    def collect_keyword_include(self, tokens, index):
+        token = tokens[index]
+
+        path = self.consume(tokens, token, index, 1)
+
+        if path.type != Token.T_STRING:
+            raise ParseError(module, "expect string for include path")
+
+        token.children.append(path)
+
+        token.type = Token.T_INCLUDE
 
     def collect_keyword_for(self, tokens, index):
         """
@@ -1174,7 +1237,25 @@ def main():  # pragma: no cover
 
     text1 = """
 
-    x >>= 0
+    from module foo.bar import {}
+    from foo.bar import {}
+    import module foo.bar
+    import foo.bar
+    include 'foo.js'
+    export a
+    export a = 1
+    export const a = 1
+    export let a = 1
+    export var a = 1
+    export function a () {}
+    export class a {}
+    export default a
+    export default a = 1
+    export default const a = 1
+    export default let a = 1
+    export default var a = 1
+    export default function a () {}
+    export default class a {}
     """
 
     tokens = Lexer({'preserve_documentation':True}).lex(text1)

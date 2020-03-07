@@ -404,6 +404,9 @@ class Compiler(object):
                 for child in reversed(token.children): # length is zero or one
                     seq.append((depth, None, child))
                 seq.append((depth, token.type, token.value))
+
+            elif token.type == Token.T_EMPTY_TOKEN:
+                pass
             else:
                 raise CompileError(token, "token not supported")
         return out

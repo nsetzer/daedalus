@@ -141,7 +141,7 @@ function splitext(name) {
 let css_sheet = null;
 let selector_names = {};
 
-function generateStyleSheetName(element, psuedoclass) {
+function generateStyleSheetName() {
     const chars = 'abcdefghijklmnopqrstuvwxyz';
 
     let name;
@@ -152,8 +152,6 @@ function generateStyleSheetName(element, psuedoclass) {
             name += c;
         }
     } while (selector_names[name]!==undefined);
-
-
 
     return name
 }
@@ -200,17 +198,16 @@ usage:
 export function StyleSheet(...args) {
 
     let name;
-    let element;
     let style;
-    let psuedoclass;
     let selector;
     if (args.length === 1) {
-        name = generateStyleSheetName(element, psuedoclass)
+        name = generateStyleSheetName()
         selector = "." + name
         style = args[0]
     } else if (args.length === 2) {
         selector = args[0]
         style = args[1]
+        name = selector
     }
 
     //https://stackoverflow.com/questions/1720320/how-to-dynamically-create-css-class-in-javascript-and-apply
@@ -221,16 +218,7 @@ export function StyleSheet(...args) {
     }
     const text = object2style(style)
 
-    if (!!element) {
-        name = element + "." + name
-    }
-
-    if (!!psuedoclass) {
-        name = name + ":" + psuedoclass
-    }
-
     selector_names[name] = style
-
 
     if(!(css_sheet.sheet||{}).insertRule){
         (css_sheet.styleSheet || css_sheet.sheet).addRule(selector, text);
