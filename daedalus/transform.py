@@ -22,13 +22,12 @@ class TransformBase(object):
         tokens = [(token, token)]
 
         while tokens:
-            # process tokens from left to right in the order they
-            # are found.
-            token, parent = tokens.pop(0)
+            # process tokens from in the order they are discovered. (DFS)
+            token, parent = tokens.pop()
 
             self.visit(token, parent)
 
-            for child in token.children:
+            for child in reversed(token.children):
                 tokens.append((child, token))
 
     def visit(self, token, parent):
@@ -67,9 +66,9 @@ class TransformGrouping(TransformBase):
 
                     ref = self._isObject(child)
                     if ref is not None:
-                        print(token.type)
                         raise ref
                     child.type = Token.T_OBJECT
+
 
     def _isObject(self, token):
         # test if a token is an object, this is only valid
@@ -125,6 +124,35 @@ class TransformFlatten(TransformBase):
                         chlst.insert(index+j, child.children[j])
                 else:
                     index += 1
+
+            if token.type == Token.T_OBJECT:
+                self._objectKeyFix(token)
+
+    def _objectKeyFix(self, token):
+        """
+        Non-Standard Javascript feature
+
+        The left-hand-side of an object literal must be a scalar value.
+        Check for cases where binary operators are used to separate text
+        values and merge them into a single string token
+
+        example:
+            {min-height:0} => {"min-height": 0}
+
+        TODO: put this behind a feature flag
+        """
+        for pair in token.children:
+            if pair.type == Token.T_BINARY and pair.value == ":":
+                tok_key = pair.children[0]
+                if tok_key.type == Token.T_BINARY:
+                    text = ""
+                    while tok_key.type == Token.T_BINARY:
+                        text = tok_key.value + tok_key.children[1].value + text
+                        tok_key = tok_key.children[0]
+                    text = tok_key.value + text
+                    # form a new token based on the original lhs attribute key
+                    org = pair.children[0].clone(type=Token.T_STRING, value=repr(text), children=[])
+                    pair.children[0] = org
 
 class TransformOptionalChaining(TransformBase):
 
@@ -249,6 +277,26 @@ class TransformMagicConstants(TransformBase):
                 token.type = Token.T_STRING
                 token.value = "'undefined'"
 
+def shell_format(text, vars):
+
+    pos = 0
+    s = text.find("${", pos)
+    e = text.find("}", pos)
+
+    while s < e:
+        varname = text[s+2:e]
+
+        if varname not in vars:
+            sys.stderr.write("warning: unable to find stylesheet variable: %s\n" % varname)
+            return None
+
+        text = text[:s] + vars[varname] + text[e+1:]
+
+        pos = s
+        s = text.find("${", pos)
+        e = text.find("}", pos)
+    return text
+
 class TransformExtractStyleSheet(TransformBase):
 
     def __init__(self, uid):
@@ -258,24 +306,82 @@ class TransformExtractStyleSheet(TransformBase):
         self.styles = []
         self.uid = uid
 
+        self.named_styles = {}
+
     def visit(self, token, parent):
 
         if token.type == Token.T_FUNCTIONCALL:
             child = token.children[0]
             if child.type == Token.T_TEXT and child.value == 'StyleSheet':
-                self._extract(token)
+                rv = self._extract(token, parent)
+                if not rv:
+                    sys.stderr.write("warning: failed to convert style sheet\n")
 
-    def _extract(self, token):
+    def _extract(self, token, parent):
 
         arglist = token.children[1]
 
-        if len(arglist.children) != 1:
-            return
+        style_name = None
+        if parent and parent.type == Token.T_BINARY and parent.value == ':':
+            key = parent.children[0]
+            if key.type == Token.T_STRING:
+                style_name = 'style.' + ast.literal_eval(key.value)
+            elif key.type == Token.T_TEXT:
+                style_name = 'style.' + key.value
 
-        arg0 = arglist.children[0]
+        if len(arglist.children) == 1:
+            arg0 = arglist.children[0]
 
-        if arg0.type != Token.T_OBJECT:
-            return
+            if arg0.type != Token.T_OBJECT:
+                return False
+
+            return self._extract_stylesheet(style_name, token, arg0)
+
+        elif len(arglist.children) == 2:
+            arg0 = arglist.children[0]
+            arg1 = arglist.children[1]
+
+            return self._extract_stylesheet_with_selector(style_name, token, arg0, arg1)
+
+        else:
+            return False
+
+    def _extract_stylesheet_with_selector(self, style_name, token, selector, obj):
+        """
+        TODO: only partial support for styles with selectors
+
+        the selector must either be a literal string or a template string
+        where variables are named 'style.<varname>'
+
+        example:
+
+            `${style.example}:hover`
+
+        """
+
+        selector_text = None
+        if selector.type == Token.T_STRING:
+            selector_text = ast.literal_eval(selector.value)
+        elif selector.type == Token.T_TEMPLATE_STRING:
+            selector_text = ast.literal_eval('"'+selector.value[1:-1]+'"')
+            selector_text = shell_format(selector_text, self.named_styles)
+
+        if not selector_text:
+            return False
+
+        style = self._object2style(selector_text, obj)
+        self.styles.append(style)
+
+        name = "dcs-%s-%d" % (self.uid, self.style_count)
+        self.style_count += 1
+
+        token.type = Token.T_STRING
+        token.value = repr(selector_text)
+        token.children = []
+
+        return True
+
+    def _extract_stylesheet(self, style_name, token, obj):
 
         try:
             # daedalus-compiled-style
@@ -283,17 +389,22 @@ class TransformExtractStyleSheet(TransformBase):
             # for the case of separately compiled files
             name = "dcs-%s-%d" % (self.uid, self.style_count)
             selector = "." + name
-            style = self._object2style(selector, arg0)
+            style = self._object2style(selector, obj)
             self.styles.append(style)
 
             token.type = Token.T_STRING
             token.value = repr(name)
             token.children = []
 
+            if style_name:
+                self.named_styles[style_name] = name
+
             self.style_count += 1
         except TransformError as e:
             # the style is not trivial and cannot be processed
-            pass
+            return False
+
+        return True
 
     def _object2style(self, selector, token):
         """ return a style rule for an object token """
@@ -319,7 +430,7 @@ class TransformExtractStyleSheet(TransformBase):
                 if lhs.type == Token.T_TEXT:
                     lhs_value = lhs.value
                 elif lhs.type == Token.T_STRING:
-                     lhs_value = ast.literal_eval(lhs.value)
+                    lhs_value = ast.literal_eval(lhs.value)
 
                 rhs_value = None
                 if rhs.type == Token.T_TEXT:
@@ -333,18 +444,18 @@ class TransformExtractStyleSheet(TransformBase):
                     if lhs_value is not None:
                         obj.update(self._object2style_helper(prefix + lhs_value + "-", rhs))
                     else:
-                        raise Exception(lhs.type)
+                        raise TransformError(lhs.type)
                     continue
                 else:
-                    raise Exception(rhs, "invalid token")
+                    raise TransformError(rhs, "invalid token1")
 
                 if lhs_value:
                     obj[prefix + lhs_value] = rhs_value
                 else:
-                    raise TransformError(lhs, "invalid token")
+                    raise TransformError(lhs, "invalid token2")
 
             else:
-                raise TransformError(child, "invalid token")
+                raise TransformError(child, "invalid token3")
 
         return obj
 
@@ -364,23 +475,27 @@ def main():
     from .parser import Parser
 
     text1 = """
-    x = StyleSheet({
-        padding: '.25em',
-        display: 'flex',
-        'border-bottom': {width: '1px', color: '#000000', 'style': 'solid'},
-        'flex-direction': 'column',
-        'justify-content': 'flex-start',
-        'align-items': 'flex-begin',
-    }),
+    const style = {
+        test: StyleSheet({
+            padding: '.25em',
+            display: 'flex',
+            border-bottom: {width: '1px', color: '#000000', 'style-x': 'solid'},
+            flex-direction: 'column',
+            justify-content: 'flex-start',
+            'align-items': 'flex-begin',
+        }),
+    };
+    StyleSheet(`${style.test}:hover`, {background: 'blue'})
     """
 
 
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
-    tr = TransformExtractStyleSheet()
+    tr = TransformExtractStyleSheet('example')
     tr.transform(mod)
+    print(tr.named_styles)
     print(mod.toString())
-    print(tr.getStyleSheet())
+    print("\n".join(tr.getStyles()))
 
 if __name__ == '__main__':
     main()

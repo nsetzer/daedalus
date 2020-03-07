@@ -8,7 +8,7 @@ from .lexer import Lexer, Token, TokenError
 from .parser import Parser
 from .transform import TransformExtractStyleSheet
 from .compiler import Compiler
-
+from ast import literal_eval
 def findFile(name, search_paths):
     """
     look for a file in a directory, if not found search the
@@ -175,6 +175,7 @@ class JsFile(object):
         self.path = path
         self.imports = {}
         self.module_imports = {}
+        self.default_export = None
         self.exports = []
         self.source_type = source_type
         self.mtime = 0
@@ -248,7 +249,21 @@ class JsFile(object):
         i = 0
         while i < len(ast.children):
             token = ast.children[i]
-            if token.type == Token.T_IMPORT:
+
+            if token.type == Token.T_INCLUDE:
+                if self.source_type != 2:
+                    sys.stdout.write("warning: include found in file that is not a daedalus module\n")
+
+                self.imports[literal_eval(token.children[0].value)] = []
+
+                ast.children.pop(0)
+
+            elif token.type == Token.T_IMPORT_MODULE:
+
+                ast.children.pop(0)
+
+            # deprecated !
+            elif token.type == Token.T_IMPORT:
                 fromlist = []
                 for child in token.children[0].children:
                     if child.type == Token.T_TEXT:
@@ -260,14 +275,31 @@ class JsFile(object):
                 else:
                     self.module_imports[token.value] = dict(fromlist)
                 ast.children.pop(0)
+
             elif token.type == Token.T_EXPORT:
                 self.exports.append(token.value)
                 child = token.children[0]
+                # remove the token entirely if it does not have any side effects
+                # otherwise remove the export keyword
                 if child.type == Token.T_TEXT:
                     ast.children.pop(0)
                 else:
                     ast.children[i] = token.children[0]
                     i += 1
+
+            elif token.type == Token.T_EXPORT_DEFAULT:
+                self.default_export = token.value
+                self.exports.append(token.value)
+                child = token.children[0]
+                # remove the token entirely if it does not have any side effects
+                # otherwise remove the export keyword
+                if child.type == Token.T_TEXT:
+                    ast.children.pop(0)
+                else:
+                    ast.children[i] = token.children[0]
+                    i += 1
+
+
             else:
                 i += 1
         return ast

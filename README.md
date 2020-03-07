@@ -8,6 +8,11 @@ Daedalus is an unopinionated javascript web framework used for creating Single P
 A javascript to javascript compiler written in python is used to merge javascript source code into a single file.
 A sample web server is also provided for testing and supports reloading of javascript source.
 
+Supports:
+* ES6
+* Basic Javascript minification (60% of original size)
+* Precompiled style sheets
+
 ### Install
 
 Installing the package will add the Daedalus CLI to the path
@@ -41,3 +46,8 @@ daedalus serve ./examples/minesweeper.js
 ```bash
 python examples/server.py
 ```
+
+### Roadmap
+
+* Enhance support for pre-compiled style sheets
+* Javascript Modules
