@@ -668,7 +668,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=>',
+            TOKEN('T_LAMBDA', '=>',
                 TOKEN('T_ARGLIST', '()'),
                 TOKEN('T_OBJECT', '{}'))
         )
@@ -681,7 +681,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=>',
+            TOKEN('T_LAMBDA', '=>',
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_TEXT', 'a'),
                     TOKEN('T_TEXT', 'b'),
@@ -697,7 +697,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=>',
+            TOKEN('T_LAMBDA', '=>',
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_TEXT', 'b'))
         )
