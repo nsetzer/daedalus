@@ -1,5 +1,6 @@
 #! cd .. && python3 -m daedalus.interpreter
 
+import threading
 import json
 import ast
 import dis
@@ -9,11 +10,13 @@ from collections import defaultdict
 
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser, ParseError
-
+from .util import parseNumber
 from .bytecode import dump, calcsize, \
     ConcreteBytecode2, \
     BytecodeInstr, BytecodeJumpInstr, \
     BytecodeRelJumpInstr, BytecodeContinueInstr, BytecodeBreakInstr
+
+import requests
 
 import faulthandler
 faulthandler.enable()
@@ -36,6 +39,23 @@ ST_STORE = 0x008 # compiling this token will pop an item from the stack
 ST_BRANCH_TRUE = 0x100
 ST_BRANCH_FALSE = 0x200
 
+ST_WHILE = 0x100
+
+
+def _dumps_impl(obj):
+    if isinstance(obj, types.FunctionType):
+        return "<Function>"
+    elif isinstance(obj, types.LambdaType):
+        return "<Lambda>"
+    elif isinstance(obj, JsObject):
+        return  obj._x_daeadalus_js_attrs
+    elif isinstance(obj, JsArray):
+        return  obj._x_daeadalus_js_seq
+    return obj
+
+def dumps(obj, indent=None):
+    return json.dumps(obj, default=_dumps_impl, indent=indent)
+
 class JsObjectBase(object):
     def __init__(self):
         super(JsObjectBase, self).__init__()
@@ -57,32 +77,55 @@ class JsUndefined(JsObjectBase):
 
 JsUndefined._instance = JsUndefined()
 
+class JsArray(JsObjectBase):
+    def __init__(self, seq):
+        super(JsArray, self).__init__()
+
+        self._x_daeadalus_js_seq = list(seq)
+
+    def __str__(self):
+        return dumps(self)
+
+    def __repr__(self):
+        return dumps(self)
+
+    def __getitem__(self, index):
+        return self._x_daeadalus_js_seq[index]
+
+    def __setitem__(self, index, value):
+        self._x_daeadalus_js_seq[index] = value
+
+    @property
+    def length(self):
+        return len(self._x_daeadalus_js_seq)
+
+JsArray.Token = Token(Token.T_TEXT, 0, 0, "JsArray")
+
 class JsObject(JsObjectBase):
     def __init__(self, attrs):
         super(JsObject, self).__init__()
 
-        super(JsObject, self).__setattr__('attrs', attrs)
+        super(JsObject, self).__setattr__('_x_daeadalus_js_attrs', attrs)
 
     def __str__(self):
-        return json.dumps(self.attrs)
+        return dumps(self)
 
     def __repr__(self):
-        return json.dumps(self.attrs)
+        return dumps(self)
 
     def __getattr__(self, name):
         try:
-            return self.attrs[name]
+            return self._x_daeadalus_js_attrs[name]
         except KeyError:
             raise AttributeError
 
     def __setattr__(self, name, value):
-        self.attrs[name] = value
+        self._x_daeadalus_js_attrs[name] = value
 
 JsObject.Token = Token(Token.T_TEXT, 0, 0, "JsObject")
 
 def JsNew(constructor, *args):
-    print("found constructor", constructor, args)
-    return None
+    return constructor(*args)
 
 JsNew.Token = Token(Token.T_TEXT, 0, 0, "JsNew")
 
@@ -102,10 +145,111 @@ class JsConsole(JsObject):
     def error(self, *args):
         sys.stderr.write('E: ' + ' '.join(str(arg) for arg in args) + "\n")
 
-class JsPromise(object):
+class JsPromise(JsObject):
     def __init__(self, fn):
-        super(JsPromise, self).__init__({})
-        self._fn = fn
+        attrs = {
+            'then': self._x_daeadalus_js_then,
+            'catch': self._x_daeadalus_js_catch
+        }
+        super(JsPromise, self).__init__(attrs)
+
+        self.accepted = False
+        self.value = None
+
+        #TODO: using threads for now to quickly implement a parity feature
+        #This should be revisited
+        #An event queue could be implemented to eliminate threads
+        lk = threading.Lock()
+        cv = threading.Condition(lk)
+        thread = threading.Thread(target=self._x_daeadalus_js_resolve)
+
+        super(JsObject, self).__setattr__('_x_daeadalus_js_fn', fn)
+        super(JsObject, self).__setattr__('_x_daeadalus_js_thread', thread)
+        super(JsObject, self).__setattr__('_x_daeadalus_js_lk', lk)
+        super(JsObject, self).__setattr__('_x_daeadalus_js_cv', cv)
+        super(JsObject, self).__setattr__('_x_daeadalus_js_finished', False)
+
+        thread.start()
+
+    def __str__(self):
+        return "Promise {}"
+
+    def __repr__(self):
+        return "Promise {}"
+
+    def _x_daeadalus_js_resolve(self):
+
+        try:
+            self._x_daeadalus_js_fn(
+                self._x_daeadalus_js_accept,
+                self._x_daeadalus_js_reject)
+        except Exception as e:
+            #TODO: design Js Exception
+            self._x_daeadalus_js_reject(e)
+
+    def _x_daeadalus_js_accept(self, value):
+        self._x_daeadalus_js_finalize(value, True)
+
+    def _x_daeadalus_js_reject(self, value):
+        self._x_daeadalus_js_finalize(value, False)
+
+    def _x_daeadalus_js_finalize(self, value, accepted):
+
+        with self._x_daeadalus_js_lk:
+            self.value = value
+            self.accepted = accepted
+            super(JsObject, self).__setattr__('_x_daeadalus_js_finished', True)
+            self._x_daeadalus_js_cv.notify_all()
+
+    def _x_daeadalus_js_then(self, fnOnAccept, fnOnReject=None):
+
+        return JsPromise(lambda fnAccept, fnReject:
+            self._x_daeadalus_js_then_impl(
+                fnAccept, fnReject, fnOnAccept, fnOnReject))
+
+    def _x_daeadalus_js_then_impl(self, fnAccept, fnReject, fnOnAccept, fnOnReject):
+
+        with self._x_daeadalus_js_lk:
+            while not self._x_daeadalus_js_finished:
+                self._x_daeadalus_js_cv.wait()
+
+            if self.accepted:
+                if fnOnAccept:
+                    fnAccept(fnOnAccept(self.value))
+            else:
+                if fnOnReject:
+                    fnReject(fnOnReject(self.value))
+
+    def _x_daeadalus_js_catch(self, fn):
+
+        return JsPromise(lambda fnAccept, fnReject:
+            self._x_daeadalus_js_catch_impl(
+                fnReject, fnOnReject))
+
+    def _x_daeadalus_js_catch_impl(self, fnReject, onOnReject):
+        with self._x_daeadalus_js_lk:
+            while not self._x_daeadalus_js_finished:
+                self._x_daeadalus_js_cv.wait()
+
+            if not self.accepted:
+                if fnOnReject:
+                    fnReject(fnOnReject(self.value))
+
+class JsFetchResponse(JsObject):
+    def __init__(self, response):
+        super(JsFetchResponse, self).__init__({
+            'status_code': 200,
+            'text': lambda: response.text,
+            'ok': 200 <= response.status_code <= 300
+        })
+
+def JsFetch(url, opts=None):
+
+    def JsFetchImpl(accept, reject):
+        response = requests.get(url)
+        accept(JsFetchResponse(response))
+
+    return JsPromise(JsFetchImpl)
 
 class Interpreter(object):
 
@@ -113,7 +257,7 @@ class Interpreter(object):
     CF_REPL      = 2
     CF_NO_FAST   = 4
 
-    def __init__(self, name="__main__", filename="<string>", flags=0):
+    def __init__(self, name="__main__", filename="<string>", globals=None, flags=0):
         super(Interpreter, self).__init__()
 
         if not isinstance(name, str):
@@ -122,6 +266,10 @@ class Interpreter(object):
             raise TypeError(filename)
 
         self.seq = []
+
+        # traversal methods are called the first time a Token
+        # is visited. Trivial Tokens can be directly 'compiled'
+        # to produce opcodes
 
         self.traverse_mapping = {
             Token.T_MODULE: self._traverse_module,
@@ -132,8 +280,12 @@ class Interpreter(object):
             Token.T_LAMBDA: self._traverse_lambda,
             Token.T_GROUPING: self._traverse_grouping,
             Token.T_BRANCH: self._traverse_branch,
+            Token.T_WHILE: self._traverse_while,
             Token.T_OBJECT: self._traverse_object,
+            Token.T_LIST: self._traverse_list,
             Token.T_NEW: self._traverse_new,
+            Token.T_RETURN: self._traverse_return,
+            Token.T_SUBSCR: self._traverse_subscr,
 
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
@@ -141,12 +293,23 @@ class Interpreter(object):
             Token.T_ATTR: self._compile_attr,
         }
 
+        # compile methods produce opcodes after the token has
+        # been traversed
         self.compile_mapping = {
             Token.T_BINARY: self._compile_binary,
             Token.T_FUNCTIONCALL: self._compile_functioncall,
             Token.T_BRANCH: self._compile_branch,
+            Token.T_WHILE: self._compile_while,
             Token.T_OBJECT: self._compile_object,
+            Token.T_LIST: self._compile_list,
             Token.T_NEW: self._compile_new,
+            Token.T_RETURN: self._compile_return,
+            Token.T_SUBSCR: self._compile_subscr,
+
+            Token.T_NUMBER: self._compile_literal_number,
+            Token.T_STRING: self._compile_literal_string,
+            Token.T_TEXT: self._compile_text,
+            Token.T_ATTR: self._compile_attr,
         }
 
         self.bc = ConcreteBytecode2()
@@ -157,18 +320,28 @@ class Interpreter(object):
         self.bc.consts = [None]
 
         self.flags = flags
+
         self.globals = {
             'console': JsConsole(),
+            'true': True,
+            'false': False,
             'undefined': JsUndefined._instance,
+            'null': None,
             'JsObject': JsObject,
+            'JsArray': JsArray,
             'JsNew': JsNew,
+            'Promise': JsPromise,
+            'fetch': JsFetch,
         }
+        if globals:
+            self.globals.update(globals)
+
         self.module_globals = set()
 
         self.next_label = 0
 
     def execute(self):
-        rv = self.function_body()
+        return self.function_body()
 
     def compile(self, ast):
 
@@ -282,13 +455,18 @@ class Interpreter(object):
 
     def _traverse_binary(self, depth, state, token):
 
-        flag1 = ST_TRAVERSE|ST_LOAD
 
         flag0 = ST_TRAVERSE
         if token.value == "=":
             flag0 |= ST_STORE
         else:
             flag0 |= ST_LOAD
+
+        flag1 = ST_TRAVERSE
+        if token.value == "." and state&ST_STORE:
+            flag1 |= ST_STORE
+        else:
+            flag1 |= ST_LOAD
 
         self._push(depth, ST_COMPILE, token)
 
@@ -346,12 +524,17 @@ class Interpreter(object):
         pos_kwarg_count = 0
         extra_args = [] # *args or **kwargs
         argcount = 0
-        for arg in arglist.children:
-            if arg.type == Token.T_TEXT:
-                if disable_positional:
-                    raise CompilerError(arg, "positional after keyword argument")
-                sub.bc.varnames.append(arg.value)
-                argcount += 1
+
+        if arglist.type == Token.T_TEXT:
+            sub.bc.varnames.append(arglist.value)
+            argcount += 1
+        else:
+            for arg in arglist.children:
+                if arg.type == Token.T_TEXT:
+                    if disable_positional:
+                        raise CompilerError(arg, "positional after keyword argument")
+                    sub.bc.varnames.append(arg.value)
+                    argcount += 1
         sub.bc.varnames.extend(extra_args)
 
         sub.compile(block)
@@ -396,7 +579,20 @@ class Interpreter(object):
 
         arglist = token.children[0]
         self._push(depth, ST_COMPILE|ST_BRANCH_TRUE, token)
-        self._push(depth, ST_TRAVERSE|ST_LOAD, arglist)
+        self._push(depth+1, ST_TRAVERSE|ST_LOAD, arglist)
+
+    def _traverse_while(self, depth, state, token):
+
+        token.label_begin = self._make_label()
+        token.label_end = self._make_label()
+
+        nop = BytecodeInstr('NOP')
+        self.bc.append(nop)
+        nop.add_label(token.label_begin)
+
+        arglist = token.children[0]
+        self._push(depth, ST_COMPILE|ST_WHILE, token)
+        self._push(depth+1, ST_TRAVERSE|ST_LOAD, arglist)
 
     def _traverse_object(self, depth, state, token):
 
@@ -405,16 +601,42 @@ class Interpreter(object):
 
         self._push(depth, ST_COMPILE, token)
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE, child)
+            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
+
+    def _traverse_list(self, depth, state, token):
+
+        kind, index = self._token2index(JsArray.Token, True)
+        self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+
+        self._push(depth, ST_COMPILE, token)
+        for child in reversed(token.children):
+            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
 
     def _traverse_new(self, depth, state, token):
 
         kind, index = self._token2index(JsNew.Token, True)
         self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
 
+        child = token.children[0]
+        self._push(depth, ST_COMPILE, token)
+
+        if child.type == Token.T_FUNCTIONCALL:
+            for child in reversed(child.children):
+                self._push(depth+1, ST_TRAVERSE, child)
+        else:
+            self._push(depth+1, ST_TRAVERSE, child)
+
+    def _traverse_return(self, depth, state, token):
+
         self._push(depth, ST_COMPILE, token)
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE, child)
+            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
+
+    def _traverse_subscr(self, depth, state, token):
+
+        self._push(depth, ST_COMPILE, token)
+        for child in reversed(token.children):
+            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
 
     # -------------------------------------------------------------------------
 
@@ -462,6 +684,11 @@ class Interpreter(object):
 
         elif token.value in binop:
             self.bc.append(BytecodeInstr(binop[token.value]))
+        elif token.value in binop_store:
+            self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
+
+            # TODO: this has side effects if LHS is complicated
+            self._push(depth, ST_COMPILE|ST_STORE, token.children[0])
         else:
             raise InterpreterError(token, "not supported")
 
@@ -477,7 +704,9 @@ class Interpreter(object):
 
     def _compile_attr(self, depth, state, token):
         _, index = self._token2index_name(token, load=True)
-        self.bc.append(BytecodeInstr('LOAD_ATTR', index, lineno=token.line))
+
+        opcode = "STORE_ATTR" if state&ST_STORE else "LOAD_ATTR"
+        self.bc.append(BytecodeInstr(opcode, index, lineno=token.line))
 
     def _compile_literal_number(self, depth, state, token):
         kind, index = self._token2index(token, True)
@@ -504,6 +733,8 @@ class Interpreter(object):
         The branch node will be visited several times to handle
         initialization, running the true branch, and then conditionally
         running the false branch
+
+        the state flag controls which opcodes will be produced
         """
         if state & ST_BRANCH_TRUE:
 
@@ -539,12 +770,56 @@ class Interpreter(object):
             self.bc.append(nop)
             nop.add_label(token.label_false)
 
+    def _compile_while(self, depth, state, token):
+
+        if state & ST_WHILE:
+
+            token.label_false = self._make_label()
+            instr = BytecodeJumpInstr('POP_JUMP_IF_FALSE', token.label_end)
+            self.bc.append(instr)
+
+
+            self._push(depth, ST_COMPILE, token)
+            self._push(depth, ST_TRAVERSE, token.children[1])
+
+        else:
+            self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', token.label_begin))
+
+            nop = BytecodeInstr('NOP')
+            self.bc.append(nop)
+            nop.add_label(token.label_end)
+
     def _compile_object(self, depth, state, token):
+        """
+        build the object as a native python type then call JsObject to
+        wrap the list in a type that mimics the array api
+        """
         self.bc.append(BytecodeInstr("BUILD_MAP", len(token.children), lineno=token.line))
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
 
-    def _compile_new(self, depth, state, token):
+    def _compile_list(self, depth, state, token):
+        """
+        build the list as a native python type then call JsArray to
+        wrap the list in a type that mimics the array api
+        """
+        self.bc.append(BytecodeInstr("BUILD_LIST", len(token.children), lineno=token.line))
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
+
+    def _compile_new(self, depth, state, token):
+
+        N = 1
+        child = token.children[0]
+        if child.type == Token.T_FUNCTIONCALL:
+            N += len(child.children) - 1
+
+        self.bc.append(BytecodeInstr('CALL_FUNCTION', N))
+
+    def _compile_return(self, depth, state, token):
+
+        self.bc.append(BytecodeInstr('RETURN_VALUE'))
+
+    def _compile_subscr(self, depth, state, token):
+        self.bc.append(BytecodeInstr('STORE_SUBSCR', lineno=token.line))
 
     # -------------------------------------------------------------------------
 
@@ -558,8 +833,7 @@ class Interpreter(object):
     def _token2index(self, tok, load=False):
 
         if tok.type == Token.T_NUMBER:
-            # value = parseNumber(tok)
-            value = int(tok.value)
+            value = parseNumber(tok)
             if value not in self.bc.consts:
                 self.bc.consts.append(value)
             index = self.bc.consts.index(value)
@@ -609,11 +883,23 @@ class Interpreter(object):
 def main():  # pragma: no cover
 
     text1 = """
-       //console.log((() => 5)())
-       //console.warn(((a,b)=>a+b)(1,2))
-       Object = () => {}
-       x = new Object
+        //console.log((() => 5)())
+        //console.warn(((a,b)=>a+b)(1,2))
+        //fetch('https://www.example.com')
+        //    .then(response => {
+        //        console.log('on then1', response)
+        //        return response.text()
+        //    })
+        //    .then(text => {
+        //        console.log('on then2', text.__len__())
+        //        return text
+        //    })
 
+        i = 0
+        while (i < 5) {
+            i += 1
+            console.log(i)
+        }
     """
 
     tokens = Lexer().lex(text1)
@@ -627,8 +913,7 @@ def main():  # pragma: no cover
 
     interp.dump()
 
-    interp.execute()
-
+    print(interp.execute())
 
 if __name__ == '__main__':  # pragma: no cover
     main()

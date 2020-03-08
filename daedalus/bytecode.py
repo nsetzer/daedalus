@@ -111,6 +111,11 @@ def _dump_bytecode(bc):
             target = repr(bc.names[instr.arg])
         elif instr.name == 'LOAD_BUILD_CLASS':
             target = ""
+        elif instr.name == 'STORE_SUBSCR':
+            target = ""
+        elif instr.name == 'COMPARE_OP':
+            tag = "    arg: "
+            target = str(dis.cmp_op[instr.arg])
         elif instr.name.startswith("LOAD_") or instr.name.startswith("STORE_") or instr.name.startswith("DELETE_"):
             try:
                 kind = instr.name.split("_")[-1]

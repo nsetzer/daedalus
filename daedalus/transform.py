@@ -50,7 +50,7 @@ class TransformGrouping(TransformBase):
                    (token.type == Token.T_CLASS) or \
                    (token.type == Token.T_BLOCK) or \
                    (token.type == Token.T_FINALLY) or \
-                   (token.type == Token.T_BINARY and token.value == "=>") or \
+                   (token.type == Token.T_LAMBDA) or \
                    (token.type == Token.T_GROUPING and token.value == "{}"):
                     # next test this is not an object
                     # objects:
@@ -198,7 +198,7 @@ class TransformOptionalChaining(TransformBase):
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_GROUPING, ln, idx, "()", [
-                                Token(Token.T_BINARY, ln, idx, "=>", [
+                                Token(Token.T_LAMBDA, ln, idx, "=>", [
                                     Token(Token.T_ARGLIST, ln, idx, "()"),
                                     Token(Token.T_KEYWORD, ln, idx, "null")
                                 ])
