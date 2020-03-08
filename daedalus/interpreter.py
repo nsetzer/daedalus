@@ -36,10 +36,15 @@ ST_TRAVERSE = 0x001 # the token has not yet been visited
 ST_COMPILE = 0x002  # the token has been visited, commit to the output stream
 ST_LOAD = 0x004 # compiling this token should push a value on the stack
 ST_STORE = 0x008 # compiling this token will pop an item from the stack
+
+# states starting at 0x100 are used to count the compiliation phase
+# and can be reused between token types.
 ST_BRANCH_TRUE = 0x100
 ST_BRANCH_FALSE = 0x200
 
 ST_WHILE = 0x100
+
+
 
 
 def _dumps_impl(obj):
@@ -51,10 +56,44 @@ def _dumps_impl(obj):
         return  obj._x_daeadalus_js_attrs
     elif isinstance(obj, JsArray):
         return  obj._x_daeadalus_js_seq
+    elif isinstance(obj, JsUndefined):
+        return "undefined"
+
+    # default Js Object
+    elif isinstance(obj, JsObjectBase):
+        return  "[Object]"
     return obj
 
 def dumps(obj, indent=None):
     return json.dumps(obj, default=_dumps_impl, indent=indent)
+
+def jsstr(obj):
+    if isinstance(obj, types.FunctionType):
+        return "<Function>"
+    elif isinstance(obj, types.LambdaType):
+        return "<Lambda>"
+    elif isinstance(obj, JsObject):
+        text = "{"
+        for key, val in obj._x_daeadalus_js_attrs.items():
+            text += dumps(key) + ":" + jsstr(val)
+        text += "}"
+        return  dumps(obj._x_daeadalus_js_attrs)
+    elif isinstance(obj, JsArray):
+        return  dumps(obj._x_daeadalus_js_seq)
+    elif isinstance(obj, JsUndefined):
+        return "undefined"
+
+    # default Js Object
+    elif isinstance(obj, JsObjectBase):
+        return  "[Object]"
+
+    elif obj is None:
+        return "null"
+    elif obj is True:
+        return "true"
+    elif obj is False:
+        return "false"
+    return str(obj)
 
 class JsObjectBase(object):
     def __init__(self):
@@ -76,6 +115,7 @@ class JsUndefined(JsObjectBase):
         return "undefined"
 
 JsUndefined._instance = JsUndefined()
+JsUndefined.Token = Token(Token.T_TEXT, 0, 0, "undefined")
 
 class JsArray(JsObjectBase):
     def __init__(self, seq):
@@ -134,22 +174,23 @@ class JsConsole(JsObject):
         super(JsConsole, self).__init__({})
 
     def log(self, *args):
-        sys.stdout.write(' '.join(str(arg) for arg in args) + "\n")
+        sys.stdout.write(' '.join(jsstr(arg) for arg in args) + "\n")
 
     def info(self, *args):
-        sys.stderr.write('I: ' + ' '.join(str(arg) for arg in args) + "\n")
+        sys.stderr.write('I: ' + ' '.join(jsstr(arg) for arg in args) + "\n")
 
     def warn(self, *args):
-        sys.stderr.write('W: ' + ' '.join(str(arg) for arg in args) + "\n")
+        sys.stderr.write('W: ' + ' '.join(jsstr(arg) for arg in args) + "\n")
 
     def error(self, *args):
-        sys.stderr.write('E: ' + ' '.join(str(arg) for arg in args) + "\n")
+        sys.stderr.write('E: ' + ' '.join(jsstr(arg) for arg in args) + "\n")
 
 class JsPromise(JsObject):
     def __init__(self, fn):
         attrs = {
             'then': self._x_daeadalus_js_then,
-            'catch': self._x_daeadalus_js_catch
+            'catch': self._x_daeadalus_js_catch,
+            'catch_': self._x_daeadalus_js_catch
         }
         super(JsPromise, self).__init__(attrs)
 
@@ -216,17 +257,21 @@ class JsPromise(JsObject):
             if self.accepted:
                 if fnOnAccept:
                     fnAccept(fnOnAccept(self.value))
+                else:
+                    fnAccept(self.value)
             else:
                 if fnOnReject:
                     fnReject(fnOnReject(self.value))
+                else:
+                    fnReject(self.value)
 
-    def _x_daeadalus_js_catch(self, fn):
+    def _x_daeadalus_js_catch(self, fnOnReject):
 
         return JsPromise(lambda fnAccept, fnReject:
             self._x_daeadalus_js_catch_impl(
                 fnReject, fnOnReject))
 
-    def _x_daeadalus_js_catch_impl(self, fnReject, onOnReject):
+    def _x_daeadalus_js_catch_impl(self, fnReject, fnOnReject):
         with self._x_daeadalus_js_lk:
             while not self._x_daeadalus_js_finished:
                 self._x_daeadalus_js_cv.wait()
@@ -234,6 +279,8 @@ class JsPromise(JsObject):
             if not self.accepted:
                 if fnOnReject:
                     fnReject(fnOnReject(self.value))
+                else:
+                    fnReject(self.value)
 
 class JsFetchResponse(JsObject):
     def __init__(self, response):
@@ -246,8 +293,11 @@ class JsFetchResponse(JsObject):
 def JsFetch(url, opts=None):
 
     def JsFetchImpl(accept, reject):
-        response = requests.get(url)
-        accept(JsFetchResponse(response))
+        try:
+            response = requests.get(url)
+            accept(JsFetchResponse(response))
+        except Exception as e:
+            reject(e)
 
     return JsPromise(JsFetchImpl)
 
@@ -265,6 +315,7 @@ class Interpreter(object):
         if not isinstance(filename, str):
             raise TypeError(filename)
 
+        # the token stack
         self.seq = []
 
         # traversal methods are called the first time a Token
@@ -518,24 +569,20 @@ class Interpreter(object):
         flags = 0
         sub = Interpreter(lambda_qualified_name, self.bc.filename, flags)
 
-        disable_positional = False
-        disable_keyword = False
-        pos_kwarg_instr = []
-        pos_kwarg_count = 0
-        extra_args = [] # *args or **kwargs
-        argcount = 0
-
+        arglabels = []
         if arglist.type == Token.T_TEXT:
-            sub.bc.varnames.append(arglist.value)
-            argcount += 1
+            arglabels.append(arglist.value)
         else:
             for arg in arglist.children:
-                if arg.type == Token.T_TEXT:
-                    if disable_positional:
-                        raise CompilerError(arg, "positional after keyword argument")
-                    sub.bc.varnames.append(arg.value)
-                    argcount += 1
-        sub.bc.varnames.extend(extra_args)
+                arglabels.append(arg.value)
+
+        argcount = len(arglabels)
+
+        kind, index = self._token2index(JsUndefined.Token, True)
+        for arglabel in arglabels:
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+            sub.bc.varnames.append(arglabel)
+        self.bc.append(BytecodeInstr('BUILD_TUPLE', argcount, lineno=token.line))
 
         sub.compile(block)
         sub.bc.argcount = argcount
@@ -552,19 +599,10 @@ class Interpreter(object):
         index_name = len(self.bc.consts)
         self.bc.consts.append(lambda_qualified_name)
 
-        flg = 0
+        # flag indicating positional args have a default value
+        flg = 0x01
 
-        if pos_kwarg_count:
-            # TODO
-            flg |= 0x01
 
-        if False:
-            # push kwarg only arguments tuple
-            flg |= 0x02
-
-        if False:
-            # push annotated dictionary
-            flg |= 0x04
 
         self.bc.append(BytecodeInstr('LOAD_CONST', index_code, lineno=token.line))
         self.bc.append(BytecodeInstr('LOAD_CONST', index_name, lineno=token.line))
@@ -679,6 +717,15 @@ class Interpreter(object):
             pass
         elif token.value == ':':
             pass
+
+        elif token.value == "===":
+            # TODO: define correct behavior for === and ==
+            self.bc.append(BytecodeInstr('COMPARE_OP', dis.cmp_op.index("=="), lineno=token.line))
+
+        elif token.value == "!==":
+            # TODO: define correct behavior for !== and !=
+            self.bc.append(BytecodeInstr('COMPARE_OP', dis.cmp_op.index("!="), lineno=token.line))
+
         elif token.value in dis.cmp_op:
             self.bc.append(BytecodeInstr('COMPARE_OP', dis.cmp_op.index(token.value), lineno=token.line))
 
@@ -895,11 +942,22 @@ def main():  # pragma: no cover
         //        return text
         //    })
 
-        i = 0
-        while (i < 5) {
-            i += 1
-            console.log(i)
+        get_text = (url, parameters) => {
+
+            if (parameters === undefined) {
+                parameters = {}
+            }
+
+            parameters.method = "GET"
+
+            return fetch(url, parameters).then((response) => {
+                return response.text()
+            })
         }
+
+        get_text("www.example.com")
+            .then(text => console.log(text))
+            .catch_(error => console.error(error))
     """
 
     tokens = Lexer().lex(text1)
