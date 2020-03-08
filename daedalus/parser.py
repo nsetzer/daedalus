@@ -61,13 +61,14 @@ class Parser(object):
             (L2R, self.visit_ternary, ['?']),
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
+            (L2R, self.visit_lambda, ['=>']),
             (L2R, self.visit_binary, ['=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_binary, [':']),
-            (L2R, self.visit_lambda, ['=>']),
+            #(L2R, self.visit_lambda, ['=>']),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword, []),
             (L2R, self.visit_keyword_import_export, []),
@@ -481,7 +482,7 @@ class Parser(object):
         lhs = self.consume(tokens, token, index, -1)
         token.children.append(lhs)
         token.children.append(rhs)
-        token.type = Token.T_BINARY
+        token.type = Token.T_LAMBDA
 
         if lhs.type == Token.T_GROUPING:
             lhs.type = Token.T_ARGLIST
@@ -1256,6 +1257,10 @@ def main():  # pragma: no cover
     export default var a = 1
     export default function a () {}
     export default class a {}
+    """
+
+    text1 = """
+        Object = () => {}
     """
 
     tokens = Lexer({'preserve_documentation':True}).lex(text1)

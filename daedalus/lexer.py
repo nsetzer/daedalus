@@ -136,6 +136,7 @@ class Token(object):
     T_VAR = "T_VAR"
     T_WHILE = "T_WHILE"
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
+    T_LAMBDA = "T_LAMBDA"
 
     # a token which stands for no token
     T_EMPTY_TOKEN = "T_EMPTY_TOKEN"

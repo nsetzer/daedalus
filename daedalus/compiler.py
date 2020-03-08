@@ -259,6 +259,14 @@ class Compiler(object):
                     seq.append((depth+1, None, child))
                     insert = True
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
+            elif token.type == Token.T_LAMBDA:
+                seq.append((depth, None, token.children[1]))
+
+                if token.value.isalpha():
+                    seq.append((depth, Token.T_KEYWORD, token.value))
+                else:
+                    seq.append((depth, token.type, token.value))
+                seq.append((depth, None, token.children[0]))
             elif token.type == Token.T_BINARY:
                 seq.append((depth, None, token.children[1]))
 
@@ -414,7 +422,7 @@ class Compiler(object):
 def main():  # pragma: no cover
 
     text1 = """
-    # x
+    x = () => {}
     """
 
     #text1 = open("./res/daedalus/index.js").read()
