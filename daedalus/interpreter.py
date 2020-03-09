@@ -37,15 +37,12 @@ ST_COMPILE = 0x002  # the token has been visited, commit to the output stream
 ST_LOAD = 0x004 # compiling this token should push a value on the stack
 ST_STORE = 0x008 # compiling this token will pop an item from the stack
 
-# states starting at 0x100 are used to count the compiliation phase
+# states starting at 0x100 are used to count the compilation phase
 # and can be reused between token types.
 ST_BRANCH_TRUE = 0x100
 ST_BRANCH_FALSE = 0x200
 
 ST_WHILE = 0x100
-
-
-
 
 def _dumps_impl(obj):
     if isinstance(obj, types.FunctionType):
@@ -139,6 +136,77 @@ class JsArray(JsObjectBase):
     def length(self):
         return len(self._x_daeadalus_js_seq)
 
+    def push(self, item):
+        self._x_daeadalus_js_seq.append(item)
+
+    def pop(self):
+        return self._x_daeadalus_js_seq.pop()
+
+    def shift(self):
+        return self._x_daeadalus_js_seq.pop(0)
+
+    def unshift(self, item):
+        self._x_daeadalus_js_seq.insert(0, item)
+        return len(self._x_daeadalus_js_seq)
+
+    def indexOf(self, item):
+        return self._x_daeadalus_js_seq.find(item)
+
+    def splice(self, pos, count=0, item=JsUndefined._instance):
+        end = pos + count
+        rv = self._x_daeadalus_js_seq[pos:end]
+        if item is not JsUndefined._instance:
+            self._x_daeadalus_js_seq = self._x_daeadalus_js_seq[:pos] + [item] + self._x_daeadalus_js_seq[end:]
+        else:
+            self._x_daeadalus_js_seq = self._x_daeadalus_js_seq[:pos] + self._x_daeadalus_js_seq[end:]
+        return rv
+
+    def slice(self, begin=JsUndefined._instance, end=JsUndefined._instance):
+        if begin is JsUndefined._instance and end is JsUndefined._instance:
+            return JsArray(self._x_daeadalus_js_seq)
+        elif end is JsUndefined._instance:
+            return JsArray(self._x_daeadalus_js_seq[begin:])
+        elif begin is JsUndefined._instance:
+            return JsArray(self._x_daeadalus_js_seq[:end])
+        return JsArray(self._x_daeadalus_js_seq[begin:end])
+
+    def forEach(self, fn):
+        argcount = fn.__code__.co_argcount
+
+        for index, item in enumerate(self._x_daeadalus_js_seq):
+            args = []
+            if argcount >= 1:
+                args.append(item)
+            if argcount >= 2:
+                args.append(index)
+            if argcount >= 3:
+                args.append(self)
+
+            fn(*args)
+
+    def filter(self, fn, this=JsUndefined._instance):
+        #TODO: unused: this
+        argcount = fn.__code__.co_argcount
+
+        out = []
+        for index, item in enumerate(self._x_daeadalus_js_seq):
+            args = []
+            if argcount >= 1:
+                args.append(item)
+            if argcount >= 2:
+                args.append(index)
+            if argcount >= 3:
+                args.append(self)
+
+            if fn(*args):
+                out.append(item)
+
+        return JsArray(out)
+
+    def join(self, sep):
+        # TODO: stringify each element
+        return sep.join(self._x_daeadalus_js_seq)
+
 JsArray.Token = Token(Token.T_TEXT, 0, 0, "JsArray")
 
 class JsObject(JsObjectBase):
@@ -161,6 +229,25 @@ class JsObject(JsObjectBase):
 
     def __setattr__(self, name, value):
         self._x_daeadalus_js_attrs[name] = value
+
+    @property
+    def length(self):
+        return len(self._x_daeadalus_js_attrs)
+
+    @staticmethod
+    def keys(inst):
+        return JsArray([key
+            for key in inst._x_daeadalus_js_attrs.keys()
+            if isinstance(key, str)])
+
+    @staticmethod
+    def values(inst):
+        return JsArray([inst._x_daeadalus_js_attrs[key]
+            for key in inst._x_daeadalus_js_attrs.keys()
+            if isinstance(key, str)])
+
+# workaround the 'is' keyword by setting the attribute directly
+setattr(JsObject, 'is', lambda a, b: a is b)
 
 JsObject.Token = Token(Token.T_TEXT, 0, 0, "JsObject")
 
@@ -329,6 +416,7 @@ class Interpreter(object):
             Token.T_ARGLIST: self._traverse_arglist,
             Token.T_BLOCK: self._traverse_block,
             Token.T_LAMBDA: self._traverse_lambda,
+            Token.T_FUNCTION: self._traverse_function,
             Token.T_GROUPING: self._traverse_grouping,
             Token.T_BRANCH: self._traverse_branch,
             Token.T_WHILE: self._traverse_while,
@@ -379,6 +467,7 @@ class Interpreter(object):
             'undefined': JsUndefined._instance,
             'null': None,
             'JsObject': JsObject,
+            'Object': JsObject,
             'JsArray': JsArray,
             'JsNew': JsNew,
             'Promise': JsPromise,
@@ -439,9 +528,28 @@ class Interpreter(object):
                 else:
                     raise InterpreterError(token, "token not supported")
 
-        if flg & ST_LOAD:
+
+        # print(ast.children[-1])
+        #kind, index = self._token2index(Token(Token.T_TEXT, 1, 0, "_"), load=False)
+        #self.bc.append(BytecodeInstr('STORE_' + kind, index))
+
+        if self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE:
+            instr = []
+            for name in sorted(self.module_globals):
+                tok1 = Token(Token.T_STRING, 0, 0, repr(name))
+                kind1, index1 = self._token2index(tok1, load=True)
+                tok2 = Token(Token.T_TEXT, 0, 0, name)
+                kind2, index2 = self._token2index(tok2, load=True)
+                self.bc.append(BytecodeInstr('LOAD_' + kind1, index1))
+                self.bc.append(BytecodeInstr('LOAD_' + kind2, index2))
+            self.bc.append(BytecodeInstr('BUILD_MAP', len(self.module_globals)))
+            self.bc.append(BytecodeInstr('RETURN_VALUE'))
+
+        elif flg & ST_LOAD:
             if len(self.bc) > 0:
                 self.bc.append(BytecodeInstr('RETURN_VALUE'))
+
+        # --------
 
         if not len(self.bc) or self.bc[-1].name != 'RETURN_VALUE':
             self.bc.append(BytecodeInstr('LOAD_CONST', 0))
@@ -497,6 +605,8 @@ class Interpreter(object):
             if again is False and retry is False:
                 again = True
                 retry = True
+
+
 
     # -------------------------------------------------------------------------
 
@@ -566,8 +676,24 @@ class Interpreter(object):
         arglist = token.children[0]
         block = token.children[1]
 
+        self._build_function(token, lambda_qualified_name, arglist, block)
+
+    def _traverse_function(self, depth, state, token):
+
+        name = token.children[0].value
+        arglist = token.children[1]
+        block = token.children[2]
+
+        self._build_function(token, name, arglist, block)
+
+
+        kind, index = self._token2index(Token(Token.T_TEXT, token.line, token.index, name), False)
+        self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
+
+    def _build_function(self, token, name, arglist, block):
+
         flags = 0
-        sub = Interpreter(lambda_qualified_name, self.bc.filename, flags)
+        sub = Interpreter(name, self.bc.filename, flags)
 
         arglabels = []
         if arglist.type == Token.T_TEXT:
@@ -597,12 +723,10 @@ class Interpreter(object):
         index_code = len(self.bc.consts)
         self.bc.consts.append(code)
         index_name = len(self.bc.consts)
-        self.bc.consts.append(lambda_qualified_name)
+        self.bc.consts.append(name)
 
         # flag indicating positional args have a default value
         flg = 0x01
-
-
 
         self.bc.append(BytecodeInstr('LOAD_CONST', index_code, lineno=token.line))
         self.bc.append(BytecodeInstr('LOAD_CONST', index_name, lineno=token.line))
@@ -740,7 +864,7 @@ class Interpreter(object):
             raise InterpreterError(token, "not supported")
 
     def _compile_text(self, depth, state, token):
-        kind, index = self._token2index(token, True)
+        kind, index = self._token2index(token, state&ST_LOAD)
 
         if state & ST_STORE:
             mode = 'STORE_'
@@ -878,6 +1002,11 @@ class Interpreter(object):
         return self.next_label
 
     def _token2index(self, tok, load=False):
+        """ get the index for a token in the constants table for the code object
+
+        each token may be stored in one of the global/name/fast tables
+
+        """
 
         if tok.type == Token.T_NUMBER:
             value = parseNumber(tok)
@@ -894,6 +1023,9 @@ class Interpreter(object):
             return 'CONST', index
 
         elif tok.type == Token.T_TEXT:
+
+            if not load and (self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE):
+                self.module_globals.add(tok.value)
 
             if tok.value in self.globals:
 
@@ -942,22 +1074,21 @@ def main():  # pragma: no cover
         //        return text
         //    })
 
-        get_text = (url, parameters) => {
+        //get_text = (url, parameters) => {
+        //    if (parameters === undefined) {
+        //        parameters = {}
+        //    }
+        //    parameters.method = "GET"
+        //    return fetch(url, parameters).then((response) => {
+        //        return response.text()
+        //    })
+        //}
+        //get_text("www.example.com")
+        //    .then(text => console.log(text))
+        //    .catch_(error => console.error(error))
 
-            if (parameters === undefined) {
-                parameters = {}
-            }
+        x = [1,2,3]
 
-            parameters.method = "GET"
-
-            return fetch(url, parameters).then((response) => {
-                return response.text()
-            })
-        }
-
-        get_text("www.example.com")
-            .then(text => console.log(text))
-            .catch_(error => console.error(error))
     """
 
     tokens = Lexer().lex(text1)
@@ -965,7 +1096,7 @@ def main():  # pragma: no cover
 
     print(ast.toString())
 
-    interp = Interpreter()
+    interp = Interpreter(flags=Interpreter.CF_REPL)
 
     interp.compile(ast)
 
