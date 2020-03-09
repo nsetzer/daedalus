@@ -6,6 +6,7 @@ import ast
 import dis
 import types
 import sys
+import inspect
 from collections import defaultdict
 
 from .lexer import Lexer, Token, TokenError
@@ -50,9 +51,9 @@ def _dumps_impl(obj):
     elif isinstance(obj, types.LambdaType):
         return "<Lambda>"
     elif isinstance(obj, JsObject):
-        return  obj._x_daeadalus_js_attrs
+        return  obj._x_daedalus_js_attrs
     elif isinstance(obj, JsArray):
-        return  obj._x_daeadalus_js_seq
+        return  obj._x_daedalus_js_seq
     elif isinstance(obj, JsUndefined):
         return "undefined"
 
@@ -71,12 +72,12 @@ def jsstr(obj):
         return "<Lambda>"
     elif isinstance(obj, JsObject):
         text = "{"
-        for key, val in obj._x_daeadalus_js_attrs.items():
+        for key, val in obj._x_daedalus_js_attrs.items():
             text += dumps(key) + ":" + jsstr(val)
         text += "}"
-        return  dumps(obj._x_daeadalus_js_attrs)
+        return  dumps(obj._x_daedalus_js_attrs)
     elif isinstance(obj, JsArray):
-        return  dumps(obj._x_daeadalus_js_seq)
+        return  dumps(obj._x_daedalus_js_seq)
     elif isinstance(obj, JsUndefined):
         return "undefined"
 
@@ -118,7 +119,7 @@ class JsArray(JsObjectBase):
     def __init__(self, seq):
         super(JsArray, self).__init__()
 
-        self._x_daeadalus_js_seq = list(seq)
+        self._x_daedalus_js_seq = list(seq)
 
     def __str__(self):
         return dumps(self)
@@ -127,53 +128,53 @@ class JsArray(JsObjectBase):
         return dumps(self)
 
     def __getitem__(self, index):
-        return self._x_daeadalus_js_seq[index]
+        return self._x_daedalus_js_seq[index]
 
     def __setitem__(self, index, value):
-        self._x_daeadalus_js_seq[index] = value
+        self._x_daedalus_js_seq[index] = value
 
     @property
     def length(self):
-        return len(self._x_daeadalus_js_seq)
+        return len(self._x_daedalus_js_seq)
 
     def push(self, item):
-        self._x_daeadalus_js_seq.append(item)
+        self._x_daedalus_js_seq.append(item)
 
     def pop(self):
-        return self._x_daeadalus_js_seq.pop()
+        return self._x_daedalus_js_seq.pop()
 
     def shift(self):
-        return self._x_daeadalus_js_seq.pop(0)
+        return self._x_daedalus_js_seq.pop(0)
 
     def unshift(self, item):
-        self._x_daeadalus_js_seq.insert(0, item)
-        return len(self._x_daeadalus_js_seq)
+        self._x_daedalus_js_seq.insert(0, item)
+        return len(self._x_daedalus_js_seq)
 
     def indexOf(self, item):
-        return self._x_daeadalus_js_seq.find(item)
+        return self._x_daedalus_js_seq.find(item)
 
     def splice(self, pos, count=0, item=JsUndefined._instance):
         end = pos + count
-        rv = self._x_daeadalus_js_seq[pos:end]
+        rv = self._x_daedalus_js_seq[pos:end]
         if item is not JsUndefined._instance:
-            self._x_daeadalus_js_seq = self._x_daeadalus_js_seq[:pos] + [item] + self._x_daeadalus_js_seq[end:]
+            self._x_daedalus_js_seq = self._x_daedalus_js_seq[:pos] + [item] + self._x_daedalus_js_seq[end:]
         else:
-            self._x_daeadalus_js_seq = self._x_daeadalus_js_seq[:pos] + self._x_daeadalus_js_seq[end:]
+            self._x_daedalus_js_seq = self._x_daedalus_js_seq[:pos] + self._x_daedalus_js_seq[end:]
         return rv
 
     def slice(self, begin=JsUndefined._instance, end=JsUndefined._instance):
         if begin is JsUndefined._instance and end is JsUndefined._instance:
-            return JsArray(self._x_daeadalus_js_seq)
+            return JsArray(self._x_daedalus_js_seq)
         elif end is JsUndefined._instance:
-            return JsArray(self._x_daeadalus_js_seq[begin:])
+            return JsArray(self._x_daedalus_js_seq[begin:])
         elif begin is JsUndefined._instance:
-            return JsArray(self._x_daeadalus_js_seq[:end])
-        return JsArray(self._x_daeadalus_js_seq[begin:end])
+            return JsArray(self._x_daedalus_js_seq[:end])
+        return JsArray(self._x_daedalus_js_seq[begin:end])
 
     def forEach(self, fn):
         argcount = fn.__code__.co_argcount
 
-        for index, item in enumerate(self._x_daeadalus_js_seq):
+        for index, item in enumerate(self._x_daedalus_js_seq):
             args = []
             if argcount >= 1:
                 args.append(item)
@@ -189,7 +190,7 @@ class JsArray(JsObjectBase):
         argcount = fn.__code__.co_argcount
 
         out = []
-        for index, item in enumerate(self._x_daeadalus_js_seq):
+        for index, item in enumerate(self._x_daedalus_js_seq):
             args = []
             if argcount >= 1:
                 args.append(item)
@@ -205,7 +206,7 @@ class JsArray(JsObjectBase):
 
     def join(self, sep):
         # TODO: stringify each element
-        return sep.join(self._x_daeadalus_js_seq)
+        return sep.join(self._x_daedalus_js_seq)
 
 JsArray.Token = Token(Token.T_TEXT, 0, 0, "JsArray")
 
@@ -213,7 +214,7 @@ class JsObject(JsObjectBase):
     def __init__(self, attrs):
         super(JsObject, self).__init__()
 
-        super(JsObject, self).__setattr__('_x_daeadalus_js_attrs', attrs)
+        super(JsObject, self).__setattr__('_x_daedalus_js_attrs', attrs)
 
     def __str__(self):
         return dumps(self)
@@ -223,27 +224,27 @@ class JsObject(JsObjectBase):
 
     def __getattr__(self, name):
         try:
-            return self._x_daeadalus_js_attrs[name]
+            return self._x_daedalus_js_attrs[name]
         except KeyError:
             raise AttributeError
 
     def __setattr__(self, name, value):
-        self._x_daeadalus_js_attrs[name] = value
+        self._x_daedalus_js_attrs[name] = value
 
     @property
     def length(self):
-        return len(self._x_daeadalus_js_attrs)
+        return len(self._x_daedalus_js_attrs)
 
     @staticmethod
     def keys(inst):
         return JsArray([key
-            for key in inst._x_daeadalus_js_attrs.keys()
+            for key in inst._x_daedalus_js_attrs.keys()
             if isinstance(key, str)])
 
     @staticmethod
     def values(inst):
-        return JsArray([inst._x_daeadalus_js_attrs[key]
-            for key in inst._x_daeadalus_js_attrs.keys()
+        return JsArray([inst._x_daedalus_js_attrs[key]
+            for key in inst._x_daedalus_js_attrs.keys()
             if isinstance(key, str)])
 
 # workaround the 'is' keyword by setting the attribute directly
@@ -255,6 +256,87 @@ def JsNew(constructor, *args):
     return constructor(*args)
 
 JsNew.Token = Token(Token.T_TEXT, 0, 0, "JsNew")
+
+class JsFunction(JsObjectBase):
+    def __init__(self, fn, this=None):
+        super(JsFunction, self).__init__()
+        self.fn = fn
+        self.this = this
+
+    def __call__(self, *args):
+        return self.fn(self.this, *args)
+
+class JsArguments(JsObjectBase):
+    """ Access function arguments through array-like syntax
+
+    In Javascript the built-in variable 'arguments' can access
+    the arguments of the current function. Using stack
+    inspection this can be implemented in python without
+    needing to modify the creation of functions
+
+    """
+    def __init__(self):
+        super(JsArguments, self).__init__()
+
+    def __getitem__(self, index=0):
+        """ inspect the previous stack frame and retrieve the value
+        of the argument for the given index. return undefined if the
+        index does not exist
+        """
+        rv = JsUndefined._instance
+
+        if index < 0:
+            return rv
+
+        frame = inspect.currentframe()
+        try:
+            code = frame.f_back.f_code
+            code_locals = frame.f_back.f_locals
+            nvars = len(code.co_varnames)
+
+            if len(code.co_varnames) > 0 and code.co_varnames[-1] == '_x_daedalus_js_args':
+                nvars -= 1
+
+            if index < nvars:
+                rv = code_locals[code.co_varnames[index]]
+            else:
+                # javascript functions store extra arguments inside
+                # this magic variable
+                if '_x_daedalus_js_args' in code_locals:
+                    values = code_locals['_x_daedalus_js_args']
+                    i = index - nvars
+                    if i < len(values):
+                        rv = values[i]
+
+        finally:
+            del frame
+
+        return rv
+
+    @property
+    def length(self):
+        """ inspect the previous stack frame and count the number of
+        positional arguments passed in to that function
+
+        """
+
+        nvars = 0
+        frame = inspect.currentframe()
+        try:
+            code = frame.f_back.f_code
+            code_locals = frame.f_back.f_locals
+            nvars = len(code.co_varnames)
+
+            if len(code.co_varnames) > 0 and code.co_varnames[-1] == '_x_daedalus_js_args':
+                nvars -= 1
+
+            if '_x_daedalus_js_args' in code_locals:
+                nvars += len(code_locals['_x_daedalus_js_args'])
+
+        finally:
+            del frame
+
+        return nvars
 
 class JsConsole(JsObject):
     def __init__(self):
@@ -275,9 +357,9 @@ class JsConsole(JsObject):
 class JsPromise(JsObject):
     def __init__(self, fn):
         attrs = {
-            'then': self._x_daeadalus_js_then,
-            'catch': self._x_daeadalus_js_catch,
-            'catch_': self._x_daeadalus_js_catch
+            'then': self._x_daedalus_js_then,
+            'catch': self._x_daedalus_js_catch,
+            'catch_': self._x_daedalus_js_catch
         }
         super(JsPromise, self).__init__(attrs)
 
@@ -289,13 +371,13 @@ class JsPromise(JsObject):
         #An event queue could be implemented to eliminate threads
         lk = threading.Lock()
         cv = threading.Condition(lk)
-        thread = threading.Thread(target=self._x_daeadalus_js_resolve)
+        thread = threading.Thread(target=self._x_daedalus_js_resolve)
 
-        super(JsObject, self).__setattr__('_x_daeadalus_js_fn', fn)
-        super(JsObject, self).__setattr__('_x_daeadalus_js_thread', thread)
-        super(JsObject, self).__setattr__('_x_daeadalus_js_lk', lk)
-        super(JsObject, self).__setattr__('_x_daeadalus_js_cv', cv)
-        super(JsObject, self).__setattr__('_x_daeadalus_js_finished', False)
+        super(JsObject, self).__setattr__('_x_daedalus_js_fn', fn)
+        super(JsObject, self).__setattr__('_x_daedalus_js_thread', thread)
+        super(JsObject, self).__setattr__('_x_daedalus_js_lk', lk)
+        super(JsObject, self).__setattr__('_x_daedalus_js_cv', cv)
+        super(JsObject, self).__setattr__('_x_daedalus_js_finished', False)
 
         thread.start()
 
@@ -305,41 +387,41 @@ class JsPromise(JsObject):
     def __repr__(self):
         return "Promise {}"
 
-    def _x_daeadalus_js_resolve(self):
+    def _x_daedalus_js_resolve(self):
 
         try:
-            self._x_daeadalus_js_fn(
-                self._x_daeadalus_js_accept,
-                self._x_daeadalus_js_reject)
+            self._x_daedalus_js_fn(
+                self._x_daedalus_js_accept,
+                self._x_daedalus_js_reject)
         except Exception as e:
             #TODO: design Js Exception
-            self._x_daeadalus_js_reject(e)
+            self._x_daedalus_js_reject(e)
 
-    def _x_daeadalus_js_accept(self, value):
-        self._x_daeadalus_js_finalize(value, True)
+    def _x_daedalus_js_accept(self, value):
+        self._x_daedalus_js_finalize(value, True)
 
-    def _x_daeadalus_js_reject(self, value):
-        self._x_daeadalus_js_finalize(value, False)
+    def _x_daedalus_js_reject(self, value):
+        self._x_daedalus_js_finalize(value, False)
 
-    def _x_daeadalus_js_finalize(self, value, accepted):
+    def _x_daedalus_js_finalize(self, value, accepted):
 
-        with self._x_daeadalus_js_lk:
+        with self._x_daedalus_js_lk:
             self.value = value
             self.accepted = accepted
-            super(JsObject, self).__setattr__('_x_daeadalus_js_finished', True)
-            self._x_daeadalus_js_cv.notify_all()
+            super(JsObject, self).__setattr__('_x_daedalus_js_finished', True)
+            self._x_daedalus_js_cv.notify_all()
 
-    def _x_daeadalus_js_then(self, fnOnAccept, fnOnReject=None):
+    def _x_daedalus_js_then(self, fnOnAccept, fnOnReject=None):
 
         return JsPromise(lambda fnAccept, fnReject:
-            self._x_daeadalus_js_then_impl(
+            self._x_daedalus_js_then_impl(
                 fnAccept, fnReject, fnOnAccept, fnOnReject))
 
-    def _x_daeadalus_js_then_impl(self, fnAccept, fnReject, fnOnAccept, fnOnReject):
+    def _x_daedalus_js_then_impl(self, fnAccept, fnReject, fnOnAccept, fnOnReject):
 
-        with self._x_daeadalus_js_lk:
-            while not self._x_daeadalus_js_finished:
-                self._x_daeadalus_js_cv.wait()
+        with self._x_daedalus_js_lk:
+            while not self._x_daedalus_js_finished:
+                self._x_daedalus_js_cv.wait()
 
             if self.accepted:
                 if fnOnAccept:
@@ -352,16 +434,16 @@ class JsPromise(JsObject):
                 else:
                     fnReject(self.value)
 
-    def _x_daeadalus_js_catch(self, fnOnReject):
+    def _x_daedalus_js_catch(self, fnOnReject):
 
         return JsPromise(lambda fnAccept, fnReject:
-            self._x_daeadalus_js_catch_impl(
+            self._x_daedalus_js_catch_impl(
                 fnReject, fnOnReject))
 
-    def _x_daeadalus_js_catch_impl(self, fnReject, fnOnReject):
-        with self._x_daeadalus_js_lk:
-            while not self._x_daeadalus_js_finished:
-                self._x_daeadalus_js_cv.wait()
+    def _x_daedalus_js_catch_impl(self, fnReject, fnOnReject):
+        with self._x_daedalus_js_lk:
+            while not self._x_daedalus_js_finished:
+                self._x_daedalus_js_cv.wait()
 
             if not self.accepted:
                 if fnOnReject:
@@ -387,6 +469,9 @@ def JsFetch(url, opts=None):
             reject(e)
 
     return JsPromise(JsFetchImpl)
+
+
+
 
 class Interpreter(object):
 
@@ -472,6 +557,7 @@ class Interpreter(object):
             'JsNew': JsNew,
             'Promise': JsPromise,
             'fetch': JsFetch,
+            'arguments': JsArguments(),
         }
         if globals:
             self.globals.update(globals)
@@ -691,10 +777,17 @@ class Interpreter(object):
         self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
 
     def _build_function(self, token, name, arglist, block):
+        """ Create a new function
 
+        Use a new Interpreter to compile the function. the name and code
+        object are stored as constants inside the current scope
+        """
         flags = 0
         sub = Interpreter(name, self.bc.filename, flags)
 
+
+
+        # get user defined positional arguments
         arglabels = []
         if arglist.type == Token.T_TEXT:
             arglabels.append(arglist.value)
@@ -704,12 +797,19 @@ class Interpreter(object):
 
         argcount = len(arglabels)
 
+        # set the default value of user defined arguments to be JS `undefined`
         kind, index = self._token2index(JsUndefined.Token, True)
         for arglabel in arglabels:
             self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
             sub.bc.varnames.append(arglabel)
         self.bc.append(BytecodeInstr('BUILD_TUPLE', argcount, lineno=token.line))
 
+        # allow a variable number of arguments
+        # python `def f(*args)`
+        sub.bc.flags |= CO_VARARGS
+        sub.bc.varnames.append("_x_daedalus_js_args")
+
+        # finally compile the function, get the code object
         sub.compile(block)
         sub.bc.argcount = argcount
 
@@ -796,7 +896,8 @@ class Interpreter(object):
 
     def _traverse_subscr(self, depth, state, token):
 
-        self._push(depth, ST_COMPILE, token)
+        flg = ST_COMPILE|((ST_LOAD|ST_STORE)&state)
+        self._push(depth, flg, token)
         for child in reversed(token.children):
             self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
 
@@ -990,7 +1091,8 @@ class Interpreter(object):
         self.bc.append(BytecodeInstr('RETURN_VALUE'))
 
     def _compile_subscr(self, depth, state, token):
-        self.bc.append(BytecodeInstr('STORE_SUBSCR', lineno=token.line))
+        opcode = "BINARY_SUBSCR" if state&ST_LOAD else "STORE_SUBSCR"
+        self.bc.append(BytecodeInstr(opcode, lineno=token.line))
 
     # -------------------------------------------------------------------------
 
@@ -1087,7 +1189,16 @@ def main():  # pragma: no cover
         //    .then(text => console.log(text))
         //    .catch_(error => console.error(error))
 
-        x = [1,2,3]
+        function f(arg0) {
+            console.log('arg', arguments.length)
+            console.log('arg', arguments[0])
+            console.log('arg', arguments[1])
+            console.log('arg', arguments[2])
+            console.log('arg', arguments[3])
+        }
+
+        // console.log(f(1,2,3))
+        console.log(0f_2BAD_2BAD)
 
     """
 

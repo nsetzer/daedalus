@@ -78,7 +78,6 @@ def parseNumber(token):
 
     value = None
     if base == -1:
-        text = text[2:]
         try:
             value = int(text, 16)
         except Exception as e:
