@@ -198,6 +198,35 @@ class InterpreterTestCase(unittest.TestCase):
         self.assertEqual(result[1], 10)
         self.assertEqual(result[2], JsUndefined._instance)
 
+
+    def test_evaljs_new_function_constructor(self):
+
+        text = """
+            function Shape() {
+                this.width = 5;
+                this.height = 10;
+            }
+            return new Shape()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsObject)
+        self.assertEqual(result.length, 2)
+        self.assertEqual(result.width, 5)
+        self.assertEqual(result.height, 10)
+
+    def test_evaljs_new_function_constructor_fn(self):
+
+        text = """
+            function Shape() {
+                this.width = 5;
+                this.height = 10;
+                this.area = () => this.width * this.height
+            }
+            return (new Shape()).area()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 50)
+
 def main():
     unittest.main()
 

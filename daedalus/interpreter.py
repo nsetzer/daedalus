@@ -211,8 +211,11 @@ class JsArray(JsObjectBase):
 JsArray.Token = Token(Token.T_TEXT, 0, 0, "JsArray")
 
 class JsObject(JsObjectBase):
-    def __init__(self, attrs):
+    def __init__(self, attrs=None):
         super(JsObject, self).__init__()
+
+        if attrs is None:
+            attrs = {}
 
         super(JsObject, self).__setattr__('_x_daedalus_js_attrs', attrs)
 
@@ -226,7 +229,7 @@ class JsObject(JsObjectBase):
         try:
             return self._x_daedalus_js_attrs[name]
         except KeyError:
-            raise AttributeError
+            return JsUndefined._instance
 
     def __setattr__(self, name, value):
         self._x_daedalus_js_attrs[name] = value
@@ -253,7 +256,13 @@ setattr(JsObject, 'is', lambda a, b: a is b)
 JsObject.Token = Token(Token.T_TEXT, 0, 0, "JsObject")
 
 def JsNew(constructor, *args):
-    return constructor(*args)
+
+    if isinstance(constructor, JsFunction):
+        obj = JsObject()
+        constructor.fn(*args, this=obj)
+        return obj
+    else:
+        return constructor(*args)
 
 JsNew.Token = Token(Token.T_TEXT, 0, 0, "JsNew")
 
@@ -264,7 +273,12 @@ class JsFunction(JsObjectBase):
         self.this = this
 
     def __call__(self, *args):
-        return self.fn(self.this, *args)
+        return self.fn(*args, this=self.this)
+
+    def bind(self, obj):
+        return JsFunction(self.fn, obj)
+
+JsFunction.Token = Token(Token.T_TEXT, 0, 0, "JsFunction")
 
 class JsArguments(JsObjectBase):
     """ Access function arguments through array-like syntax
@@ -292,10 +306,7 @@ class JsArguments(JsObjectBase):
         try:
             code = frame.f_back.f_code
             code_locals = frame.f_back.f_locals
-            nvars = len(code.co_varnames)
-
-            if len(code.co_varnames) > 0 and code.co_varnames[-1] == '_x_daedalus_js_args':
-                nvars -= 1
+            nvars = code.co_argcount
 
             if index < nvars:
                 rv = code_locals[code.co_varnames[index]]
@@ -325,10 +336,7 @@ class JsArguments(JsObjectBase):
         try:
             code = frame.f_back.f_code
             code_locals = frame.f_back.f_locals
-            nvars = len(code.co_varnames)
-
-            if len(code.co_varnames) > 0 and code.co_varnames[-1] == '_x_daedalus_js_args':
-                nvars -= 1
+            nvars = code.co_argcount
 
             if '_x_daedalus_js_args' in code_locals:
                 nvars += len(code_locals['_x_daedalus_js_args'])
@@ -470,7 +478,20 @@ def JsFetch(url, opts=None):
 
     return JsPromise(JsFetchImpl)
 
+class JsJSON(JsObjectBase):
+    def __init__(self):
+        super(JsJSON, self).__init__()
 
+    @staticmethod
+    def stringify(obj):
+        return dumps(obj)
+
+    @staticmethod
+    def parse(string):
+        # TODO: every array and map needs to be replaced
+        # with the Js* type
+        # this should be possible with a custom loader
+        return json.loads(string)
 
 
 class Interpreter(object):
@@ -515,6 +536,7 @@ class Interpreter(object):
             Token.T_STRING: self._compile_literal_string,
             Token.T_TEXT: self._compile_text,
             Token.T_ATTR: self._compile_attr,
+            Token.T_KEYWORD: self._compile_keyword,
         }
 
         # compile methods produce opcodes after the token has
@@ -558,6 +580,8 @@ class Interpreter(object):
             'Promise': JsPromise,
             'fetch': JsFetch,
             'arguments': JsArguments(),
+            'JsFunction': JsFunction,
+            'JSON': JsJSON,
         }
         if globals:
             self.globals.update(globals)
@@ -591,8 +615,21 @@ class Interpreter(object):
         for each node process the children in reverse order
         """
 
+        # init the JS runtime
+
+        # create a default 'this' so that arrow functions have something
+        # to inherit
+
+        if ast.type == Token.T_MODULE:
+            kind, index = self._token2index(JsUndefined.Token, load=True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+            kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), load=False)
+            self.bc.append(BytecodeInstr('STORE_' + kind, index))
+
+        # compile userland code
+
         flg = ST_TRAVERSE
-        if ast.type not in (Token.T_MODULE, Token.T_GROUPING):
+        if ast.type not in (Token.T_MODULE, Token.T_GROUPING, Token.T_BLOCK):
             flg |= ST_LOAD
 
         self.seq = [(0, flg, ast)]
@@ -613,11 +650,6 @@ class Interpreter(object):
                     fn(depth, state, token)
                 else:
                     raise InterpreterError(token, "token not supported")
-
-
-        # print(ast.children[-1])
-        #kind, index = self._token2index(Token(Token.T_TEXT, 1, 0, "_"), load=False)
-        #self.bc.append(BytecodeInstr('STORE_' + kind, index))
 
         if self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE:
             instr = []
@@ -770,13 +802,13 @@ class Interpreter(object):
         arglist = token.children[1]
         block = token.children[2]
 
-        self._build_function(token, name, arglist, block)
+        self._build_function(token, name, arglist, block, autobind=False)
 
 
         kind, index = self._token2index(Token(Token.T_TEXT, token.line, token.index, name), False)
         self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
 
-    def _build_function(self, token, name, arglist, block):
+    def _build_function(self, token, name, arglist, block, autobind=True):
         """ Create a new function
 
         Use a new Interpreter to compile the function. the name and code
@@ -785,6 +817,12 @@ class Interpreter(object):
         flags = 0
         sub = Interpreter(name, self.bc.filename, flags)
 
+
+        pos_kwarg_count = 0
+
+
+        kind, index = self._token2index(JsFunction.Token, True)
+        self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
 
 
         # get user defined positional arguments
@@ -798,20 +836,37 @@ class Interpreter(object):
         argcount = len(arglabels)
 
         # set the default value of user defined arguments to be JS `undefined`
-        kind, index = self._token2index(JsUndefined.Token, True)
+        undef_kind, undef_index = self._token2index(JsUndefined.Token, True)
         for arglabel in arglabels:
-            self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+            self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
             sub.bc.varnames.append(arglabel)
+
+        # add 'this' as an optional keyword argument defaulting to 'undefined'
+        # add '_x_daedalus_js_args' to collect all extra positional arguments
+        # if the function is called with too many arguments they get dumped
+        # into the magic variable.
+
+        sub.bc.flags |= CO_VARARGS
+        sub.bc.varnames.append("this")
+        sub.bc.varnames.append("_x_daedalus_js_args")
+        pos_kwarg_count += 1
+        #argcount += 1
+
+        # argcount is 1 less so that 'this' gets set to undefined
+        # and so that _x_daedalus_js_args collects all extra positional args
+        #self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
         self.bc.append(BytecodeInstr('BUILD_TUPLE', argcount, lineno=token.line))
 
-        # allow a variable number of arguments
-        # python `def f(*args)`
-        sub.bc.flags |= CO_VARARGS
-        sub.bc.varnames.append("_x_daedalus_js_args")
+        kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), True)
+        self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+        self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
+        self.bc.append(BytecodeInstr('BUILD_MAP', 1, lineno=token.line))
+
 
         # finally compile the function, get the code object
         sub.compile(block)
         sub.bc.argcount = argcount
+        sub.bc.kwonlyargcount = 1
 
         stacksize = calcsize(sub.bc)
         try:
@@ -827,11 +882,23 @@ class Interpreter(object):
 
         # flag indicating positional args have a default value
         flg = 0x01
+        # flag indicating a dictionary is being passed for keyword
+        # only arguments
+        flg |= 0x02
 
         self.bc.append(BytecodeInstr('LOAD_CONST', index_code, lineno=token.line))
         self.bc.append(BytecodeInstr('LOAD_CONST', index_name, lineno=token.line))
 
         self.bc.append(BytecodeInstr('MAKE_FUNCTION', flg, lineno=token.line))
+
+        argcount = 1
+        if autobind:
+            kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+            argcount += 1
+
+        #TODO: pop top if state&ST_LOAD is false
+        self.bc.append(BytecodeInstr('CALL_FUNCTION', argcount, lineno=token.line))
 
     def _traverse_grouping(self, depth, state, token):
         for child in reversed(token.children):
@@ -998,6 +1065,7 @@ class Interpreter(object):
 
         arglist = token.children[1]
         argcount = len(arglist.children)
+        #TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', argcount))
 
     def _compile_branch(self, depth, state, token):
@@ -1067,6 +1135,7 @@ class Interpreter(object):
         wrap the list in a type that mimics the array api
         """
         self.bc.append(BytecodeInstr("BUILD_MAP", len(token.children), lineno=token.line))
+        #TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
 
     def _compile_list(self, depth, state, token):
@@ -1082,8 +1151,8 @@ class Interpreter(object):
         N = 1
         child = token.children[0]
         if child.type == Token.T_FUNCTIONCALL:
-            N += len(child.children) - 1
-
+            N = len(child.children) - 1
+        #TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', N))
 
     def _compile_return(self, depth, state, token):
@@ -1093,6 +1162,13 @@ class Interpreter(object):
     def _compile_subscr(self, depth, state, token):
         opcode = "BINARY_SUBSCR" if state&ST_LOAD else "STORE_SUBSCR"
         self.bc.append(BytecodeInstr(opcode, lineno=token.line))
+
+    def _compile_keyword(self, depth, state, token):
+
+        if token.value in ['this',]:
+            return self._compile_text(depth, state, token)
+        else:
+            raise InterpreterError(token, "Unsupported keyword")
 
     # -------------------------------------------------------------------------
 
@@ -1124,7 +1200,7 @@ class Interpreter(object):
             index = self.bc.consts.index(value)
             return 'CONST', index
 
-        elif tok.type == Token.T_TEXT:
+        elif tok.type == Token.T_TEXT or tok.type == Token.T_KEYWORD:
 
             if not load and (self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE):
                 self.module_globals.add(tok.value)
@@ -1151,6 +1227,8 @@ class Interpreter(object):
             self.bc.varnames.append(tok.value)
             return 'FAST', index
 
+        raise InterpreterError(token, "unable to map token")
+
     def _token2index_name(self, tok, load=False):
 
         try:
@@ -1160,6 +1238,7 @@ class Interpreter(object):
             index = len(self.bc.names)
             self.bc.names.append(tok.value)
             return 'NAME', index
+
 
 def main():  # pragma: no cover
 
@@ -1189,16 +1268,33 @@ def main():  # pragma: no cover
         //    .then(text => console.log(text))
         //    .catch_(error => console.error(error))
 
-        function f(arg0) {
-            console.log('arg', arguments.length)
-            console.log('arg', arguments[0])
-            console.log('arg', arguments[1])
-            console.log('arg', arguments[2])
-            console.log('arg', arguments[3])
-        }
+        //function f(arg0) {
+        //    console.log('arg', arguments.length)
+        //    console.log('arg', arguments[0])
+        //    console.log('arg', arguments[1])
+        //    console.log('arg', arguments[2])
+        //    console.log('arg', arguments[3])
+        //}
 
         // console.log(f(1,2,3))
-        console.log(0f_2BAD_2BAD)
+        //x = (a) => {
+        //    i = 0;
+        //    while (i < arguments.length) {
+        //        console.info(i, arguments[i])
+        //        i+=1
+        //    }
+        //    console.log("this", this)
+        //}
+        //x(100, 200)
+
+        function Shape() {
+            this.width = 5;
+            this.height = 5;
+            this.area = () => this.width * this.height
+            //console.log("init", this)
+        }
+        shape = new Shape()
+        console.log(shape.area())
 
     """
 
