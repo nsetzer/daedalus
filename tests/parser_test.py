@@ -54,7 +54,7 @@ class ParserUnaryOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=',
+            TOKEN('T_ASSIGN', '=',
                 TOKEN('T_TEXT', 'x'),
                 TOKEN('T_PREFIX', '+',
                     TOKEN('T_NUMBER', '1')))
@@ -68,7 +68,7 @@ class ParserUnaryOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=',
+            TOKEN('T_ASSIGN', '=',
                 TOKEN('T_TEXT', 'x'),
                 TOKEN('T_PREFIX', '-',
                     TOKEN('T_NUMBER', '1')))
@@ -109,7 +109,7 @@ class ParserBinOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=',
+            TOKEN('T_ASSIGN', '=',
                 TOKEN('T_TEXT', 'x'),
                 TOKEN('T_NUMBER', '1'))
         )
@@ -161,7 +161,7 @@ class ParserBinOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=',
+            TOKEN('T_ASSIGN', '=',
                 TOKEN('T_TEXT', 'x'),
                 TOKEN('T_GROUPING', '()',
                     TOKEN('T_BINARY', '/',
@@ -274,7 +274,7 @@ class ParserKeywordTestCase(unittest.TestCase):
             TOKEN('T_VAR', 'let',
                 TOKEN('T_COMMA', ',',
                     TOKEN('T_TEXT', 'x'),
-                    TOKEN('T_BINARY', '=',
+                    TOKEN('T_ASSIGN', '=',
                         TOKEN('T_TEXT', 'y'),
                         TOKEN('T_NUMBER', '1'))))
         )
@@ -320,12 +320,12 @@ class ParserKeywordTestCase(unittest.TestCase):
                 TOKEN('T_BLOCK', '{}',
                     TOKEN('T_CASE', 'case',
                         TOKEN('T_NUMBER', '0')),
-                    TOKEN('T_BINARY', '=',
+                    TOKEN('T_ASSIGN', '=',
                         TOKEN('T_TEXT', 'x'),
                         TOKEN('T_NUMBER', '0')),
                     TOKEN('T_BREAK', 'break'),
                     TOKEN('T_DEFAULT', 'default'),
-                    TOKEN('T_BINARY', '=',
+                    TOKEN('T_ASSIGN', '=',
                         TOKEN('T_TEXT', 'x'),
                         TOKEN('T_NUMBER', '1')),
                     TOKEN('T_BREAK', 'break')))
@@ -464,7 +464,7 @@ class ParserKeywordTestCase(unittest.TestCase):
             TOKEN('T_FOR', 'for',
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_VAR', 'let',
-                        TOKEN('T_BINARY', '=',
+                        TOKEN('T_ASSIGN', '=',
                             TOKEN('T_TEXT', 'x'),
                             TOKEN('T_NUMBER', '0'))),
                     TOKEN('T_BINARY', '<',
@@ -523,7 +523,7 @@ class ParserKeywordTestCase(unittest.TestCase):
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'v1',
                 TOKEN('T_VAR', 'const',
-                    TOKEN('T_BINARY', '=',
+                    TOKEN('T_ASSIGN', '=',
                         TOKEN('T_TEXT', 'v1'),
                         TOKEN('T_KEYWORD', 'null'))))
         )
@@ -634,7 +634,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_FUNCTIONDEF', '',
+            TOKEN('T_ANONYMOUS_FUNCTION', '',
                 TOKEN('T_KEYWORD', 'function'),
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_TEXT', 'x')),
@@ -766,7 +766,7 @@ class ParserClassTestCase(unittest.TestCase):
                 TOKEN('T_KEYWORD', 'extends',
                     TOKEN('T_TEXT', 'B')),
                 TOKEN('T_BLOCK', '{}',
-                    TOKEN('T_FUNCTIONDEF', '',
+                    TOKEN('T_ANONYMOUS_FUNCTION', '',
                         TOKEN('T_TEXT', 'onClick'),
                         TOKEN('T_ARGLIST', '()',
                             TOKEN('T_TEXT', 'event')),

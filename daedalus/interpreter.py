@@ -11,6 +11,7 @@ from collections import defaultdict
 
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser, ParseError
+from .transform import TransformAssignScope, TransformClassToFunction
 from .util import parseNumber
 from .bytecode import dump, calcsize, \
     ConcreteBytecode2, \
@@ -96,6 +97,18 @@ def jsstr(obj):
 class JsObjectBase(object):
     def __init__(self):
         super(JsObjectBase, self).__init__()
+
+class JsStr(str):
+
+    def __add__(self, other):
+        if not isinstance(other, str):
+            other = str(other)
+        return JsStr(super().__add__(other))
+
+    def __radd__(self, other):
+        if not isinstance(other, str):
+            other = str(other)
+        return JsStr(super().__radd__(other))
 
 class JsUndefined(JsObjectBase):
     _instance = None
@@ -233,6 +246,12 @@ class JsObject(JsObjectBase):
 
     def __setattr__(self, name, value):
         self._x_daedalus_js_attrs[name] = value
+
+    def __getitem__(self, key):
+        return self._x_daedalus_js_attrs[key]
+
+    def __setitem__(self, key, value):
+        self._x_daedalus_js_attrs[key] = value
 
     @property
     def length(self):
@@ -493,7 +512,6 @@ class JsJSON(JsObjectBase):
         # this should be possible with a custom loader
         return json.loads(string)
 
-
 class Interpreter(object):
 
     CF_MODULE    = 1
@@ -518,11 +536,13 @@ class Interpreter(object):
         self.traverse_mapping = {
             Token.T_MODULE: self._traverse_module,
             Token.T_BINARY: self._traverse_binary,
+            Token.T_ASSIGN: self._traverse_assign,
             Token.T_FUNCTIONCALL: self._traverse_functioncall,
             Token.T_ARGLIST: self._traverse_arglist,
             Token.T_BLOCK: self._traverse_block,
             Token.T_LAMBDA: self._traverse_lambda,
             Token.T_FUNCTION: self._traverse_function,
+            Token.T_ANONYMOUS_FUNCTION: self._traverse_anonymous_function,
             Token.T_GROUPING: self._traverse_grouping,
             Token.T_BRANCH: self._traverse_branch,
             Token.T_WHILE: self._traverse_while,
@@ -543,6 +563,7 @@ class Interpreter(object):
         # been traversed
         self.compile_mapping = {
             Token.T_BINARY: self._compile_binary,
+            Token.T_ASSIGN: self._compile_assign,
             Token.T_FUNCTIONCALL: self._compile_functioncall,
             Token.T_BRANCH: self._compile_branch,
             Token.T_WHILE: self._compile_while,
@@ -594,6 +615,9 @@ class Interpreter(object):
         return self.function_body()
 
     def compile(self, ast):
+
+        #TransformClassToFunction().transform(ast)
+        #TransformAssignScope().transform(ast)
 
         self._compile(ast)
         self._finalize()
@@ -724,16 +748,14 @@ class Interpreter(object):
                 again = True
                 retry = True
 
-
-
     # -------------------------------------------------------------------------
 
     def _traverse_module(self, depth, state, token):
+
         for child in reversed(token.children):
             self._push(depth+1, ST_TRAVERSE, child)
 
     def _traverse_binary(self, depth, state, token):
-
 
         flag0 = ST_TRAVERSE
         if token.value == "=":
@@ -747,19 +769,25 @@ class Interpreter(object):
         else:
             flag1 |= ST_LOAD
 
-        self._push(depth, ST_COMPILE, token)
+        self._push(depth, ST_COMPILE|(state&(ST_STORE|ST_LOAD)), token)
 
         if token.value == ':':
             if token.children[0].type == Token.T_TEXT:
                 token.children[0].type = Token.T_STRING
                 token.children[0].value = repr(token.children[0].value)
 
-        if flag0&ST_STORE:
-            self._push(depth, flag0, token.children[0])
-            self._push(depth, flag1, token.children[1])
+        self._push(depth, flag1, token.children[1])
+        self._push(depth, flag0, token.children[0])
+
+    def _traverse_assign(self, depth, state, token):
+
+        self._push(depth, ST_COMPILE|(state&(ST_STORE|ST_LOAD)), token)
+        if token.value == "=":
+            self._push(depth, ST_TRAVERSE|ST_STORE, token.children[0])
+            self._push(depth, ST_TRAVERSE|ST_LOAD, token.children[1])
         else:
-            self._push(depth, flag1, token.children[1])
-            self._push(depth, flag0, token.children[0])
+            self._push(depth, ST_TRAVERSE|ST_LOAD, token.children[0])
+            self._push(depth, ST_TRAVERSE|ST_LOAD, token.children[1])
 
     def _traverse_functioncall(self, depth, state, token):
         self._push(depth, ST_COMPILE, token)
@@ -788,15 +816,16 @@ class Interpreter(object):
         default value should be force to JsUndefined
         """
 
-        lambda_qualified_name = 'Anonymous_%d_%d_%d' % (
+        name = 'Anonymous_%d_%d_%d' % (
                 token.line, token.index, depth)
 
         arglist = token.children[0]
         block = token.children[1]
 
-        self._build_function(token, lambda_qualified_name, arglist, block)
+        self._build_function(token, name, arglist, block)
 
     def _traverse_function(self, depth, state, token):
+
 
         name = token.children[0].value
         arglist = token.children[1]
@@ -804,9 +833,16 @@ class Interpreter(object):
 
         self._build_function(token, name, arglist, block, autobind=False)
 
-
         kind, index = self._token2index(Token(Token.T_TEXT, token.line, token.index, name), False)
         self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
+
+    def _traverse_anonymous_function(self, depth, state, token):
+
+        name = 'Anonymous_%d_%d_%d' % (token.line, token.index, depth)
+        arglist = token.children[1]
+        block = token.children[2]
+
+        self._build_function(token, name, arglist, block, autobind=False)
 
     def _build_function(self, token, name, arglist, block, autobind=True):
         """ Create a new function
@@ -987,26 +1023,11 @@ class Interpreter(object):
             "|": "BINARY_OR",
         }
 
-        binop_store = {
-            "+=": "BINARY_ADD",
-            "*=": "BINARY_MULTIPLY",
-            "@=": "BINARY_MATRIX_MULTIPLY",
-            "//=": "BINARY_FLOOR_DIVIDE",
-            "/=": "BINARY_TRUE_DIVIDE",
-            "%=": "BINARY_MODULO",
-            "-=": "BINARY_SUBTRACT",
-            "**=": "BINARY_POWER",
-            "<<=": "BINARY_LSHIFT",
-            ">>=": "BINARY_RSHIFT",
-            "&=": "BINARY_AND",
-            "^=": "BINARY_XOR",
-            "|=": "BINARY_OR",
-        }
+
 
         if token.value == '.':
             pass
-        elif token.value == '=':
-            pass
+
         elif token.value == ':':
             pass
 
@@ -1023,13 +1044,36 @@ class Interpreter(object):
 
         elif token.value in binop:
             self.bc.append(BytecodeInstr(binop[token.value]))
-        elif token.value in binop_store:
+
+        else:
+            raise InterpreterError(token, "not supported")
+
+    def _compile_assign(self, depth, state, token):
+
+        binop_store = {
+            "+=": "INPLACE_ADD",
+            "*=": "INPLACE_MULTIPLY",
+            "@=": "INPLACE_MATRIX_MULTIPLY",
+            "//=": "INPLACE_FLOOR_DIVIDE",
+            "/=": "INPLACE_TRUE_DIVIDE",
+            "%=": "INPLACE_MODULO",
+            "-=": "INPLACE_SUBTRACT",
+            "**=": "INPLACE_POWER",
+            "<<=": "INPLACE_LSHIFT",
+            ">>=": "INPLACE_RSHIFT",
+            "&=": "INPLACE_AND",
+            "^=": "INPLACE_XOR",
+            "|=": "INPLACE_OR",
+        }
+
+        if token.value == '=':
+            pass
+
+        if token.value in binop_store:
             self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
 
             # TODO: this has side effects if LHS is complicated
             self._push(depth, ST_COMPILE|ST_STORE, token.children[0])
-        else:
-            raise InterpreterError(token, "not supported")
 
     def _compile_text(self, depth, state, token):
         kind, index = self._token2index(token, state&ST_LOAD)
@@ -1194,7 +1238,7 @@ class Interpreter(object):
             return 'CONST', index
 
         elif tok.type == Token.T_STRING:
-            value = ast.literal_eval(tok.value)
+            value = JsStr(ast.literal_eval(tok.value))
             if tok.value not in self.bc.consts:
                 self.bc.consts.append(value)
             index = self.bc.consts.index(value)
@@ -1238,6 +1282,7 @@ class Interpreter(object):
             index = len(self.bc.names)
             self.bc.names.append(tok.value)
             return 'NAME', index
+
 
 
 def main():  # pragma: no cover
@@ -1287,15 +1332,19 @@ def main():  # pragma: no cover
         //}
         //x(100, 200)
 
-        function Shape() {
-            this.width = 5;
-            this.height = 5;
-            this.area = () => this.width * this.height
-            //console.log("init", this)
-        }
-        shape = new Shape()
-        console.log(shape.area())
+        //class Shape() {
+        //    constructor() {
+        //        this.width = 5
+        //        this.height = 10
+        //    }
+        //    area() {
+        //        return this.width * this.height
+        //    }
+        //}
 
+        x = 2
+        x += 3
+        x *= 3
     """
 
     tokens = Lexer().lex(text1)

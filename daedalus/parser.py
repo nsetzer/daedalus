@@ -62,7 +62,7 @@ class Parser(object):
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
             (L2R, self.visit_lambda, ['=>']),
-            (L2R, self.visit_binary, ['=', '+=', '-=', '**=', '*=', '/=',
+            (L2R, self.visit_assign, ['=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
             (R2L, self.visit_unary, ['yield', 'yield*']),
@@ -330,12 +330,12 @@ class Parser(object):
             if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
                 lhs = self.consume(tokens, token, index, -1)
                 if lhs.type == Token.T_KEYWORD:
-                    tok1 = Token(Token.T_FUNCTIONDEF, token.line, token.index, "")
+                    tok1 = Token(Token.T_ANONYMOUS_FUNCTION, token.line, token.index, "")
                 else:
                     tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
                 tok1.children = [lhs, token]
 
-                if tok1.type == Token.T_FUNCTIONDEF:
+                if tok1.type == Token.T_ANONYMOUS_FUNCTION:
                     tok1.children.append(self.consume(tokens, token, index+self._offset-1, 1))
 
                 token.type = Token.T_ARGLIST
@@ -464,6 +464,21 @@ class Parser(object):
         token.children.append(lhs)
         token.children.append(rhs)
         token.type = Token.T_BINARY
+
+        return self._offset
+
+    def visit_assign(self, parent, tokens, index, operators):
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+        rhs = self.consume(tokens, token, index, 1)
+        lhs = self.consume(tokens, token, index, -1)
+        token.children.append(lhs)
+        token.children.append(rhs)
+        token.type = Token.T_ASSIGN
 
         return self._offset
 
@@ -757,7 +772,7 @@ class Parser(object):
 
         for i, child in enumerate(rhs1.children):
             if child.type == Token.T_FUNCTIONCALL:
-                child.type = Token.T_FUNCTIONDEF
+                child.type = Token.T_ANONYMOUS_FUNCTION
                 child.children.append(self.consume(rhs1.children, child, i, 1))
 
     def collect_keyword_switch_case(self, tokens, index):
@@ -851,7 +866,7 @@ class Parser(object):
                     raise ParseError(token, "unable to export anonymous entity")
                 token.value = node.value
                 break
-            elif node.type == Token.T_BINARY and node.value == "=":
+            elif node.type == Token.T_ASSIGN and node.value == "=":
                 node = node.children[0]
             elif node.type == Token.T_VAR:
                 node = node.children[0]

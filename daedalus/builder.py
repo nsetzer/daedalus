@@ -71,7 +71,7 @@ def buildFileIIFI(mod, exports):
 
     # invoke that function and assign return values in current scope
     tok_iifi = TOKEN('T_MODULE', '',
-        TOKEN('T_BINARY', '=',
+        TOKEN('T_ASSIGN', '=',
             TOKEN('T_VAR', "const", TOKEN('T_LIST', '[]', *tok_export_names)),
             TOKEN('T_FUNCTIONCALL', '',
                 TOKEN('T_GROUPING', '()', tok_fundef),
@@ -115,7 +115,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     tok_imports1 = []
     for varname, names in imports.items():
         for src, dst in names.items():
-            tok = TOKEN('T_BINARY', '=',
+            tok = TOKEN('T_ASSIGN', '=',
                 TOKEN('T_VAR', 'const', TOKEN('T_TEXT', dst)),
                 TOKEN('T_BINARY', '.',
                     TOKEN('T_TEXT', varname),
@@ -146,7 +146,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
 
     else:
         tok_iifi = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=',
+            TOKEN('T_ASSIGN', '=',
                 TOKEN('T_TEXT', modname),
                 TOKEN('T_FUNCTIONCALL', '',
                     TOKEN('T_GROUPING', '()', tok_fundef),

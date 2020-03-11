@@ -17,7 +17,7 @@ class FileIIFIOpTestCase(unittest.TestCase):
 
         mod = buildFileIIFI(ast, ["x"])
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '=',
+            TOKEN('T_ASSIGN', '=',
                 TOKEN('T_VAR', 'const',
                     TOKEN('T_LIST', '[]',
                         TOKEN('T_TEXT', 'x'))),
@@ -27,7 +27,7 @@ class FileIIFIOpTestCase(unittest.TestCase):
                             TOKEN('T_TEXT', ''),
                             TOKEN('T_ARGLIST', '()'),
                             TOKEN('T_BLOCK', '{}',
-                                TOKEN('T_BINARY', '=',
+                                TOKEN('T_ASSIGN', '=',
                                     TOKEN('T_TEXT', 'x'),
                                     TOKEN('T_NUMBER', '1')),
                                 TOKEN('T_RETURN', 'return',
