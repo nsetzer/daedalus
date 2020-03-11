@@ -198,6 +198,16 @@ class InterpreterTestCase(unittest.TestCase):
         self.assertEqual(result[1], 10)
         self.assertEqual(result[2], JsUndefined._instance)
 
+    def test_evaljs_anonymous_function(self):
+
+        text = """
+            fn = function () {
+                return 123
+            }
+            return fn()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 123)
 
     def test_evaljs_new_function_constructor(self):
 

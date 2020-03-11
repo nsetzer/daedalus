@@ -275,6 +275,16 @@ class Compiler(object):
                 else:
                     seq.append((depth, token.type, token.value))
                 seq.append((depth, None, token.children[0]))
+
+            elif token.type == Token.T_ASSIGN:
+                seq.append((depth, None, token.children[1]))
+
+                if token.value.isalpha():
+                    seq.append((depth, Token.T_KEYWORD, token.value))
+                else:
+                    seq.append((depth, token.type, token.value))
+                seq.append((depth, None, token.children[0]))
+
             elif token.type == Token.T_TERNARY:
                 seq.append((depth, None, token.children[2]))
                 seq.append((depth, Token.T_SPECIAL, ":"))
@@ -334,7 +344,7 @@ class Compiler(object):
             elif token.type == Token.T_FUNCTIONCALL:
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
-            elif token.type == Token.T_FUNCTIONDEF:
+            elif token.type == Token.T_ANONYMOUS_FUNCTION:
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
             elif token.type == Token.T_IMPORT:
@@ -422,7 +432,7 @@ class Compiler(object):
 def main():  # pragma: no cover
 
     text1 = """
-    x = () => {}
+    x |= () => {}
     """
 
     #text1 = open("./res/daedalus/index.js").read()

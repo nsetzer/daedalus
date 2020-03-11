@@ -46,7 +46,7 @@ class TransformGrouping(TransformBase):
             if child.type == Token.T_GROUPING and child.value == "{}":
 
                 if (token.type == Token.T_MODULE) or \
-                   (token.type == Token.T_FUNCTIONDEF) or \
+                   (token.type == Token.T_ANONYMOUS_FUNCTION) or \
                    (token.type == Token.T_CLASS) or \
                    (token.type == Token.T_BLOCK) or \
                    (token.type == Token.T_FINALLY) or \
@@ -469,7 +469,223 @@ class TransformExtractStyleSheet(TransformBase):
         m.update(text.encode('utf-8'))
         return m.hexdigest()[:8]
 
-def main():
+class VariableScope(object):
+    # require three scope instances, for global, function and block scope
+    def __init__(self, parent=None):
+        super(VariableScope, self).__init__()
+        self.parent = parent
+
+        if parent:
+            self.depth = parent.depth + 1
+        else:
+            self.depth = 0
+
+    def load(self, token):
+        return self._load_store(token, True)
+
+    def store(self, token):
+        return self._load_store(token, False)
+
+
+ST_VISIT = 1
+ST_FINALIZE = 2
+
+class TransformAssignScope(object):
+
+    """
+    Assign scoping rules to variables
+
+    var: function scoped
+    let: block scoped
+    const: block scoped
+
+    Variable Hoisting
+
+        hoisting can be implemented by automatically detecting variables
+        used before they are defined and inserting a node at the top
+        of the function scope that initializes the variable
+
+    Name Mangling
+
+        variables declared with let are block scoped. to allow for
+        overlap definitions in sub blocks of the same module or function
+        scope will be tagged. python variables can contain any string.
+
+        The tag is a pound sign followed by a counter for the block depth
+
+        Example 1:
+            let x = 1           =>      let x = 1
+            {                   =>      {
+              let x = 2;        =>        let x#1 = 2;
+              console.log(x)    =>        console.log(x#1)
+            }                   =>      }
+            console.log(x)      =>      console.log(x)
+
+        Output:
+            > 2
+            > 1
+
+        Example 2:
+
+            var x = 1;          =>      var x = 1;                // GLOBAL
+            function main() {   =>      function main() {
+              var x = 2         =>        var x = 2               // FAST
+              console.log(x);   =>        console.log(x);         // FAST
+            }                   =>      }
+            main()              =>      main()
+            console.log(x)      =>      console.log(x)            // GLOBAL
+
+        Output:
+            > 2
+            > 1
+
+    Block Scoping
+
+        At the end of a block a node is inserted to delete any variable
+        defined within that block
+
+        Variables defined using let or const are block scoped
+
+        Example 1:
+            {                   =>      {
+              let x = 2;        =>        let x = 2;
+                                =>        del x
+            }                   =>      }
+            console.log(x)      =>      console.log(x)  // x is undefined here
+
+    Variable Scoping
+
+        No special transformation is needed in python to support var
+
+        Variables defined using var are function scoped
+
+        Example 1:
+
+    Misc:
+
+        legal:
+            var x=1;
+            {
+                let x=2
+            }
+
+            var x=1;
+            {
+                var x=2
+            }
+
+        illegal:
+            let x=1;
+            {
+                var x=2
+            }
+
+            let x=1;
+            {
+                let x=2
+            }
+
+        illegal:
+            const x = 1
+            const x = 2
+
+            const x = 1
+            x = 2
+
+    TODO:
+        = and variants must have a unique token type T_VARIALE_ASSIGMENT
+
+    """
+
+    def __init__(self):
+        super(TransformAssignScope, self).__init__()
+
+    def transform(self, ast):
+
+        self.scan(ast)
+
+    def scan(self, token):
+
+        initial_fnscope = VariableScope()
+        initial_blscope = VariableScope()
+
+        self.seq = [(ST_VISIT, initial_fnscope, initial_blscope, token, None)]
+
+        while self.seq:
+            # process tokens from in the order they are discovered. (DFS)
+            flags, scope, token, parent = self.seq.pop()
+
+            if flags & ST_VISIT:
+                self.visit(flags, scope, token, parent)
+            else:
+                self.finalize(flags, scope, token, parent)
+
+    def visit(self, flags, fnscope, blscope, token, parent):
+        # decide pathological case of a user defining
+        # a variable twice in once scope but using fn or bl
+        """
+
+
+        """
+
+        next_fnscope = fnscope
+        next_blscope = blscope
+        next_flags = ST_VISIT
+
+        if token.type == Token.T_BINARY and token.value == "=":
+            lhs = token.children[0]
+
+            if lhs.type == Token.T_TEXT:
+                print('define', lhs.value, lhs.line, lhs.index)
+
+        if token.type == Token.T_FUNCTION:
+            lhs = token.children[0]
+            print('define', lhs.value, lhs.line, lhs.index)
+
+
+        if token.type == Token.T_BLOCK:
+            self.seq.append((ST_FINALIZE, next_scope, token, parent))
+
+        for child in reversed(token.children):
+            self.seq.append((next_flags, next_scope, child, token))
+
+    def finalize(self, flags, scope, token, parent):
+        print('finalize', token.value, token.line, token.index)
+
+
+class TransformClassToFunction(TransformBase):
+    """
+
+    Given:
+        class Shape() {
+            constructor() {
+                this.width = 5
+                this.height = 5
+            }
+
+            area() {
+                return this.width * this.height
+            }
+        }
+
+    Transform:
+
+        function Shape() {
+            this.area = () => { return this.width * this.height }
+
+            this.width = 5
+            this.height = 5
+
+        }
+
+    Use the constructor as a function body and insert arrow functions
+    into the body of the function
+    """
+    def visit(self, token, parent):
+
+        pass
+
+def main_css():
 
 
     from .parser import Parser
@@ -497,5 +713,28 @@ def main():
     print(mod.toString())
     print("\n".join(tr.getStyles()))
 
+def main_var():
+
+
+    from .parser import Parser
+
+    text1 = """
+    let x = 1
+    {
+        let x = 2
+        console.log(x, y)
+    }
+    console.log(x)
+    """
+
+
+    tokens = Lexer().lex(text1)
+    ast = Parser().parse(tokens)
+    print(ast.toString())
+
+    tr = TransformAssignScope()
+    tr.transform(ast)
+    print(ast.toString())
+
 if __name__ == '__main__':
-    main()
+    main_var()

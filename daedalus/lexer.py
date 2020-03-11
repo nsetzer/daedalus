@@ -72,7 +72,7 @@ operators2 = {
 
 # the set of all valid operators for this language
 # if an operator is not in this list, then it is a syntax error
-operators3 = operators1 | operators2 | set(["?", "==", "!="])
+operators3 = operators1 | operators2 | set(["?", "==", "!=", "**"])
 
 def char_reader(f):
     # convert a file like object into a character generator
@@ -100,7 +100,7 @@ class Token(object):
     T_GROUPING = "T_GROUPING"
     T_ARGLIST = "T_ARGLIST"
     T_FUNCTIONCALL = "T_FUNCTIONCALL"
-    T_FUNCTIONDEF = "T_FUNCTIONDEF"
+    T_ANONYMOUS_FUNCTION = "T_ANONYMOUS_FUNCTION"
     T_SUBSCR = "T_SUBSCR"
     T_BLOCK = "T_BLOCK"
     T_LIST = "T_LIST"
@@ -137,6 +137,7 @@ class Token(object):
     T_WHILE = "T_WHILE"
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
     T_LAMBDA = "T_LAMBDA"
+    T_ASSIGN = "T_ASSIGN"
 
     # a token which stands for no token
     T_EMPTY_TOKEN = "T_EMPTY_TOKEN"
@@ -709,7 +710,10 @@ def main():  # pragma: no cover
     #r.match(2/3)
 
     text1= """
-    x = "a\\"b c\\"d"
+    6 * 7
+    6 *= 7
+    6 ** 7
+    x **= 5
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":
