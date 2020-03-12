@@ -336,6 +336,7 @@ class Parser(object):
                 tok1.children = [lhs, token]
 
                 if tok1.type == Token.T_ANONYMOUS_FUNCTION:
+                    tok1.children.insert(0, Token(Token.T_TEXT, token.line, token.index, "Anonymous"))
                     tok1.children.append(self.consume(tokens, token, index+self._offset-1, 1))
 
                 token.type = Token.T_ARGLIST
@@ -495,6 +496,7 @@ class Parser(object):
 
         rhs = self.consume_keyword(tokens, token, index, 1)
         lhs = self.consume(tokens, token, index, -1)
+        token.children.append(Token(Token.T_TEXT, token.line, token.index, "Anonymous"))
         token.children.append(lhs)
         token.children.append(rhs)
         token.type = Token.T_LAMBDA
@@ -772,7 +774,7 @@ class Parser(object):
 
         for i, child in enumerate(rhs1.children):
             if child.type == Token.T_FUNCTIONCALL:
-                child.type = Token.T_ANONYMOUS_FUNCTION
+                child.type = Token.T_METHOD
                 child.children.append(self.consume(rhs1.children, child, i, 1))
 
     def collect_keyword_switch_case(self, tokens, index):

@@ -555,8 +555,12 @@ class Interpreter(object):
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
             Token.T_TEXT: self._compile_text,
+            Token.T_LOCAL_VAR: self._compile_text,
+            Token.T_GLOBAL_VAR: self._compile_text,
+            Token.T_FREE_VAR: self._compile_text,
             Token.T_ATTR: self._compile_attr,
             Token.T_KEYWORD: self._compile_keyword,
+            Token.T_DELETE_VAR: self._compile_delete_var,
         }
 
         # compile methods produce opcodes after the token has
@@ -576,7 +580,11 @@ class Interpreter(object):
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
             Token.T_TEXT: self._compile_text,
+            Token.T_LOCAL_VAR: self._compile_text,
+            Token.T_GLOBAL_VAR: self._compile_text,
+            Token.T_FREE_VAR: self._compile_text,
             Token.T_ATTR: self._compile_attr,
+            Token.T_DELETE_VAR: self._compile_delete_var,
         }
 
         self.bc = ConcreteBytecode2()
@@ -616,15 +624,12 @@ class Interpreter(object):
 
     def compile(self, ast):
 
-        #TransformClassToFunction().transform(ast)
-        #TransformAssignScope().transform(ast)
 
         self._compile(ast)
         self._finalize()
 
         stacksize = calcsize(self.bc)
         code = self.bc.to_code(stacksize)
-
         self.function_body = types.FunctionType(code, self.globals, self.bc.name)
 
     def dump(self):
@@ -816,42 +821,49 @@ class Interpreter(object):
         default value should be force to JsUndefined
         """
 
-        name = 'Anonymous_%d_%d_%d' % (
+        name = token.children[0]
+        name.value = 'Lambda_%d_%d_%d' % (
                 token.line, token.index, depth)
 
-        arglist = token.children[0]
-        block = token.children[1]
+        arglist = token.children[1]
+        block = token.children[2]
+        closure = token.children[3]
 
-        self._build_function(token, name, arglist, block)
+        self._build_function(token, name, arglist, closure, block)
 
     def _traverse_function(self, depth, state, token):
 
 
-        name = token.children[0].value
+        name = token.children[0]
         arglist = token.children[1]
         block = token.children[2]
+        closure = token.children[3]
 
-        self._build_function(token, name, arglist, block, autobind=False)
+        self._build_function(token, name, arglist, block, closure, autobind=False)
 
-        kind, index = self._token2index(Token(Token.T_TEXT, token.line, token.index, name), False)
+        kind, index = self._token2index(name, False)
         self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
 
     def _traverse_anonymous_function(self, depth, state, token):
 
-        name = 'Anonymous_%d_%d_%d' % (token.line, token.index, depth)
+        name = token.children[0]
+        name.value = 'Anonymous_%d_%d_%d' % (
+                token.line, token.index, depth)
+
         arglist = token.children[1]
         block = token.children[2]
+        closure = token.children[3]
 
-        self._build_function(token, name, arglist, block, autobind=False)
+        self._build_function(token, name, arglist, block, closure, autobind=False)
 
-    def _build_function(self, token, name, arglist, block, autobind=True):
+    def _build_function(self, token, name, arglist, block, closure, autobind=True):
         """ Create a new function
 
         Use a new Interpreter to compile the function. the name and code
         object are stored as constants inside the current scope
         """
         flags = 0
-        sub = Interpreter(name, self.bc.filename, flags)
+        sub = Interpreter(name.value, self.bc.filename, flags)
 
 
         pos_kwarg_count = 0
@@ -898,9 +910,33 @@ class Interpreter(object):
         self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
         self.bc.append(BytecodeInstr('BUILD_MAP', 1, lineno=token.line))
 
+        # flag indicating positional args have a default value
+        flg = 0x01
+        # flag indicating a dictionary is being passed for keyword
+        # only arguments
+        flg |= 0x02
+
+        if closure.children:
+            flg |= 0x08
+
+            closure_count = 0;
+            for child in closure.children:
+                if child.type == Token.T_FREE_VAR:
+                    sub.bc.freevars.append(child.value)
+                    kind, index = self._token2index(child, True)
+                    self.bc.append(BytecodeInstr('LOAD_CLOSURE', index, lineno=token.line))
+                    closure_count += 1
+                elif child.type == Token.T_CELL_VAR:
+                    sub.bc.cellvars.append(child.value)
+                else:
+                    raise TokenError(child, "expected cell or free var")
+
+            self.bc.append(BytecodeInstr('BUILD_TUPLE', closure_count, lineno=token.line))
 
         # finally compile the function, get the code object
-        sub.compile(block)
+        sub._compile(block)
+        sub._finalize()
+
         sub.bc.argcount = argcount
         sub.bc.kwonlyargcount = 1
 
@@ -914,13 +950,7 @@ class Interpreter(object):
         index_code = len(self.bc.consts)
         self.bc.consts.append(code)
         index_name = len(self.bc.consts)
-        self.bc.consts.append(name)
-
-        # flag indicating positional args have a default value
-        flg = 0x01
-        # flag indicating a dictionary is being passed for keyword
-        # only arguments
-        flg |= 0x02
+        self.bc.consts.append(name.value)
 
         self.bc.append(BytecodeInstr('LOAD_CONST', index_code, lineno=token.line))
         self.bc.append(BytecodeInstr('LOAD_CONST', index_name, lineno=token.line))
@@ -1214,6 +1244,9 @@ class Interpreter(object):
         else:
             raise InterpreterError(token, "Unsupported keyword")
 
+    def _compile_delete_var(self, depth, state, token):
+        pass
+
     # -------------------------------------------------------------------------
 
     def _push(self, depth, state, token):
@@ -1244,6 +1277,41 @@ class Interpreter(object):
             index = self.bc.consts.index(value)
             return 'CONST', index
 
+        elif tok.type == Token.T_LOCAL_VAR:
+            if tok.value in self.bc.cellvars:
+                index = self.bc.cellvars.index(tok.value)
+                return 'DEREF', index
+
+            try:
+                index = self.bc.varnames.index(tok.value)
+                return 'FAST', index
+            except ValueError:
+                pass
+
+            index = len(self.bc.varnames)
+            self.bc.varnames.append(tok.value)
+            return 'FAST', index
+
+        elif tok.type == Token.T_GLOBAL_VAR:
+            try:
+                index = self.bc.names.index(tok.value)
+                return 'GLOBAL', index
+            except ValueError:
+                pass
+
+            index = len(self.bc.names)
+            self.bc.names.append(tok.value)
+            return 'GLOBAL', index
+
+        elif tok.type == Token.T_FREE_VAR:
+
+            if tok.value in self.bc.freevars:
+                return "DEREF", len(self.bc.cellvars) + self.bc.freevars.index(tok.value)
+
+            if tok.value in self.bc.cellvars:
+                return "DEREF", self.bc.cellvars.index(tok.value)
+
+
         elif tok.type == Token.T_TEXT or tok.type == Token.T_KEYWORD:
 
             if not load and (self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE):
@@ -1271,7 +1339,7 @@ class Interpreter(object):
             self.bc.varnames.append(tok.value)
             return 'FAST', index
 
-        raise InterpreterError(token, "unable to map token")
+        raise InterpreterError(tok, "unable to map token")
 
     def _token2index_name(self, tok, load=False):
 
@@ -1342,19 +1410,34 @@ def main():  # pragma: no cover
         //    }
         //}
 
-        x = 2
-        x += 3
-        x *= 3
+        function main() {
+            function f1(x) {
+                console.log("f1", x)
+                if (x > 0) {
+                    return f1(x - 1)
+                } else {
+                    return x
+                }
+            }
+            console.log(f1(5))
+        }
+        main()
+
+
+
     """
 
     tokens = Lexer().lex(text1)
     ast = Parser().parse(tokens)
 
+    TransformClassToFunction().transform(ast)
+    TransformAssignScope().transform(ast)
+
+    interp = Interpreter()
+
     print(ast.toString())
-
-    interp = Interpreter(flags=Interpreter.CF_REPL)
-
     interp.compile(ast)
+
 
     interp.dump()
 
