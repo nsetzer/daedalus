@@ -110,6 +110,7 @@ class Token(object):
     T_BINARY = "T_BINARY"
     T_TERNARY = "T_TERNARY"
     T_COMMA = "T_COMMA"
+    T_ASSIGN = "T_ASSIGN"
 
     # tokens created by the parser (processed keywords)
     T_BREAK = "T_BREAK"
@@ -128,6 +129,7 @@ class Token(object):
     T_FINALLY = "T_FINALLY"
     T_FOR = "T_FOR"
     T_FUNCTION = "T_FUNCTION"
+    T_METHOD = "T_METHOD"
     T_NEW = "T_NEW"
     T_RETURN = "T_RETURN"
     T_SWITCH = "T_SWITCH"
@@ -136,8 +138,14 @@ class Token(object):
     T_VAR = "T_VAR"
     T_WHILE = "T_WHILE"
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
-    T_LAMBDA = "T_LAMBDA"
-    T_ASSIGN = "T_ASSIGN"
+    T_LAMBDA = "T_LAMBDA"  # arrow function
+
+    T_GLOBAL_VAR = 'T_GLOBAL_VAR'
+    T_LOCAL_VAR = 'T_LOCAL_VAR'
+    T_DELETE_VAR = 'T_DELETE_VAR'
+    T_CLOSURE = 'T_CLOSURE'
+    T_CELL_VAR = 'T_CELL_VAR'
+    T_FREE_VAR = 'T_FREE_VAR'
 
     # a token which stands for no token
     T_EMPTY_TOKEN = "T_EMPTY_TOKEN"

@@ -469,16 +469,239 @@ class TransformExtractStyleSheet(TransformBase):
         m.update(text.encode('utf-8'))
         return m.hexdigest()[:8]
 
+SC_GLOBAL   = 0x001
+SC_FUNCTION = 0x002
+SC_BLOCK    = 0x004
+SC_CONST    = 0x100
+
+def scope2str(flags):
+    text = ""
+
+    if flags&SC_CONST:
+        text += "const "
+
+    if flags&SC_GLOBAL:
+        text += "global"
+
+    elif flags&SC_FUNCTION:
+        text += "function"
+
+    else:
+        text += "block"
+
+    return text
+
+class Ref(object):
+
+    def __init__(self, flags, label):
+        super(Ref, self).__init__()
+
+        self.flags = flags
+        self.label = label
+        self._identity = 0
+
+    def identity(self):
+        #if self._identity > 0:
+        s = 'f' if self.flags&SC_FUNCTION else 'b'
+
+        return "%s#%s%d" % (self.label, s, self._identity)
+        #return self.label
+
+    def type(self):
+        return Token.T_GLOBAL_VAR if self.flags&SC_GLOBAL else Token.T_LOCAL_VAR
+
+    def isGlobal(self):
+        return self.flags&SC_GLOBAL
+
+    def __str__(self):
+        return "<*%s>" % (self.identity())
+
+    def __repr__(self):
+        return "<*%s>" % (self.identity())
+
+    def clone(self, scflags):
+        ref = Ref(scflags, self.label)
+        ref._identity = self._identity + 1
+        return ref
+
+class UndefinedRef(Ref):
+    def identity(self):
+        return self.label
+
 class VariableScope(object):
     # require three scope instances, for global, function and block scope
     def __init__(self, parent=None):
         super(VariableScope, self).__init__()
         self.parent = parent
 
+        # freevars, and cellvars are all mappings of:
+        #   identifier -> ref
+
+        # freevars are identifiers defined in a parent scope
+        # that are used in this or a child scope
+        self.freevars = set()
+        # cellvars are identifiers defined in this scope used
+        # by a child scope
+        self.cellvars = set()
+
+        # vars are identifiers defined in this scope
+        self.vars = set()
+
+        # mappings of identifier -> ref, of variables defined
+        # in this scope but split into their correct function
+        # or block scope.
+        self.fnscope = {}
+        self.blscope = [{}]
+        self.all_labels = set()
+
         if parent:
             self.depth = parent.depth + 1
         else:
             self.depth = 0
+
+    def _getScope(self, scflags):
+
+        if scflags&SC_GLOBAL:
+            scope = self
+            while scope.parent is not None:
+                scope = scope.parent
+            return scope.fnscope, None
+        elif scflags&SC_FUNCTION:
+            return self.fnscope, None
+        else:
+            if not self.blscope:
+                return self.fnscope, None
+            return self.blscope[-1], self.fnscope
+
+    def _getRef(self, scope, label):
+
+        ref = None
+
+        if not scope:
+            return ref
+
+        for mapping in reversed(scope.blscope):
+            if label in mapping:
+                ref = mapping[label]
+                break
+
+        if ref is None and label in scope.fnscope:
+            ref = scope.fnscope[label]
+
+        return ref
+
+    def _define_block(self, label):
+
+        if label in self.blscope[-1]:
+            raise TokenError(token, "already defined at this scope")
+
+        for bl in reversed(self.blscope):
+            if label in bl:
+                return bl[label]
+
+        return None
+
+    def _define_function(self, label):
+
+        if label in self.fnscope:
+            return self.fnscope[label]
+
+        return None
+
+    def define(self, scflags, token):
+
+        label = token.value
+
+        if scflags&SC_FUNCTION:
+            ref = self._define_function(label)
+        else:
+            ref = self._define_block(label)
+
+        if self.parent is None:
+            scflags |= SC_GLOBAL
+
+        if ref is not None:
+            # define, but give a new identity
+            new_ref = ref.clone(scflags)
+        else:
+            new_ref = Ref(scflags, label)
+
+        identifier = new_ref.identity()
+
+        self.all_labels.add(label)
+
+        self.vars.add(identifier)
+
+        if scflags&SC_FUNCTION:
+            self.fnscope[label] = new_ref
+        else:
+            if len(self.blscope) == 0:
+                raise TokenError(token, "block scope not defined")
+            self.blscope[-1][label] = new_ref
+
+        token.value = identifier
+        if token.type == Token.T_TEXT:
+            token.type = new_ref.type()
+
+        print("define name", self.depth, token.value, scope2str(scflags))
+
+        return new_ref
+
+    def _load_store(self, token, load):
+
+        label = token.value
+        ref = None
+
+        # search for the scope the defines this label
+        scopes = [self]
+        while scopes[-1]:
+
+            if label in scopes[-1].fnscope:
+                break
+
+            if any([label in bl for bl in scopes[-1].blscope]):
+                break
+
+            scopes.append(scopes[-1].parent)
+
+        if scopes[-1] is None:
+            # not found in an existing scope
+            if load:
+                # attempting to load an undefined reference
+                if label in self.all_labels:
+                    raise TokenError(token, "read from deleted var")
+
+                ref = UndefinedRef(0, label)
+                token.type = Token.T_GLOBAL_VAR
+            else:
+                # define this reference in this scope
+                ref = self.define(SC_BLOCK, token)
+
+        elif scopes[-1] is not self:
+            # found in a parent scope
+            scope = scopes[-1]
+
+            ref = self._getRef(scope, label)
+
+            if not ref.isGlobal():
+                token.type = Token.T_FREE_VAR
+                scope.cellvars.add(ref.identity())
+                for scope2 in scopes[:-1]:
+                    scope2.freevars.add(ref.identity())
+
+        else:
+            ref = self._getRef(self, label)
+
+        if ref is None:
+            raise TokenError(token, "identity error")
+
+        token.value = ref.identity()
+        if token.type == Token.T_TEXT:
+            token.type = ref.type()
+
+        print("load__" if load else "store_", "name", self.depth, token.value, scope2str(ref.flags))
+
+        return ref
 
     def load(self, token):
         return self._load_store(token, True)
@@ -486,9 +709,28 @@ class VariableScope(object):
     def store(self, token):
         return self._load_store(token, False)
 
+    def pushBlockScope(self):
+        self.blscope.append({})
 
-ST_VISIT = 1
-ST_FINALIZE = 2
+    def popBlockScope(self):
+        return self.blscope.pop()
+
+    def _diag(self, token):
+        print("%10s" % token.type, list(self.vars), list(self.freevars), list(self.cellvars))
+
+ST_MASK     = 0x000FF
+ST_SCOPE_MASK     = 0xFFF00
+ST_VISIT    = 0x001
+ST_FINALIZE = 0x002
+ST_STORE    = 0x100
+ST_GLOBAL   = SC_GLOBAL << 12
+ST_FUNCTION = SC_FUNCTION << 12
+ST_BLOCK    = SC_BLOCK << 12
+ST_CONST    = SC_CONST << 12
+
+def _diag(tag, token, flags=0):
+    text1 = scope2str((flags&ST_SCOPE_MASK)>>12)
+    print(tag, text1, token.type, token.value, token.line, token.index)
 
 class TransformAssignScope(object):
 
@@ -501,25 +743,46 @@ class TransformAssignScope(object):
 
     Variable Hoisting
 
-        hoisting can be implemented by automatically detecting variables
+        Hoisting can be implemented by automatically detecting variables
         used before they are defined and inserting a node at the top
-        of the function scope that initializes the variable
+        of the scope that initializes the variable to undefined
+
+        Hoisting variables contradicts the variable resolution rules of
+        python.
+
+        Example:
+
+            globals()['foo'] = 123
+            print(foo)  # prints 123
+
+        Note:
+            modifying locals() directly has undefined behavior
+
+        Hoisting to the top of the scope can only done if within that
+        scope a var/let/const keyword is found otherwise the compiler
+        must assume that the variable has global scope. At runtime
+        python will determine if the variable is defined
 
     Name Mangling
 
-        variables declared with let are block scoped. to allow for
-        overlap definitions in sub blocks of the same module or function
-        scope will be tagged. python variables can contain any string.
+        variables declared with let are block scoped. To allow for
+        overlapping definitions in sub blocks of the same module or function
+        scope the variables must be tagged. Python variables can contain
+        any string. The tag is a pound sign followed by a counter
+        for the block depth.
 
-        The tag is a pound sign followed by a counter for the block depth
+        Any attempt at loading or storing a variable after the definition
+        will replace the token value with a tagged token value
 
         Example 1:
-            let x = 1           =>      let x = 1
-            {                   =>      {
-              let x = 2;        =>        let x#1 = 2;
-              console.log(x)    =>        console.log(x#1)
-            }                   =>      }
-            console.log(x)      =>      console.log(x)
+
+            Javascript source   => Transformed JS      => Python
+            let x = 1           =>  let x = 1          => x = 1
+            {                   =>  {                  => x#1 = 2
+              let x = 2;        =>    let x#1 = 2;     => print(x#1)
+              console.log(x)    =>    console.log(x#1) => del x#1
+            }                   =>  }                  => print(x)
+            console.log(x)      =>  console.log(x)     =>
 
         Output:
             > 2
@@ -538,6 +801,10 @@ class TransformAssignScope(object):
         Output:
             > 2
             > 1
+
+        Note:
+            deleting the local variable may not be required.
+            it cannot be done in an exception safe way.
 
     Block Scoping
 
@@ -600,57 +867,209 @@ class TransformAssignScope(object):
     def __init__(self):
         super(TransformAssignScope, self).__init__()
 
+        self.global_scope = None
+
+        self.visit_mapping = {
+            Token.T_ASSIGN: self.visit_assign,
+            Token.T_FUNCTION: self.visit_function,
+            Token.T_ANONYMOUS_FUNCTION: self.visit_anonymous_function,
+            Token.T_LAMBDA: self.visit_lambda,
+            Token.T_BLOCK: self.visit_block,
+            Token.T_MODULE: self.visit_module,
+            Token.T_TEXT: self.visit_text,
+            Token.T_VAR: self.visit_var,
+
+            Token.T_GROUPING: self.visit_error,
+        }
+
+        self.finalize_mapping = {
+            Token.T_BLOCK: self.finalize_block,
+            Token.T_MODULE: self.finalize_module,
+
+            Token.T_FUNCTION: self.finalize_function,
+            Token.T_ANONYMOUS_FUNCTION: self.finalize_function,
+            Token.T_LAMBDA: self.finalize_function,
+
+        }
+
+        self.states = {
+            ST_VISIT: self.visit_mapping,
+            ST_FINALIZE: self.finalize_mapping
+        }
+
+        self.state_defaults = {
+            ST_VISIT: self.visit_default,
+            ST_FINALIZE: self.finalize_default,
+        }
+
     def transform(self, ast):
 
-        self.scan(ast)
+        self.seq = [self.initialState(ast)]
 
-    def scan(self, token):
+        self._transform(ast)
 
-        initial_fnscope = VariableScope()
-        initial_blscope = VariableScope()
-
-        self.seq = [(ST_VISIT, initial_fnscope, initial_blscope, token, None)]
+    def _transform(self, token):
 
         while self.seq:
             # process tokens from in the order they are discovered. (DFS)
             flags, scope, token, parent = self.seq.pop()
 
-            if flags & ST_VISIT:
-                self.visit(flags, scope, token, parent)
+            fn = self.states[flags&ST_MASK].get(token.type, None)
+
+            if fn:
+                fn(flags, scope, token, parent)
+
             else:
-                self.finalize(flags, scope, token, parent)
+                fn = self.state_defaults[flags&ST_MASK]
+                fn(flags, scope, token, parent)
 
-    def visit(self, flags, fnscope, blscope, token, parent):
-        # decide pathological case of a user defining
-        # a variable twice in once scope but using fn or bl
-        """
+    def initialState(self, token):
 
+        return (ST_VISIT, VariableScope(), token, None)
 
-        """
+    # -------------------------------------------------------------------------
 
-        next_fnscope = fnscope
-        next_blscope = blscope
-        next_flags = ST_VISIT
+    def visit_default(self, flags, scope, token, parent):
 
-        if token.type == Token.T_BINARY and token.value == "=":
-            lhs = token.children[0]
+        self._push_children(scope, token, flags)
 
-            if lhs.type == Token.T_TEXT:
-                print('define', lhs.value, lhs.line, lhs.index)
+    def visit_error(self, flags, scope, token, parent):
+        raise TokenError(token, "invalid token")
 
-        if token.type == Token.T_FUNCTION:
-            lhs = token.children[0]
-            print('define', lhs.value, lhs.line, lhs.index)
+    def visit_module(self, flags, scope, token, parent):
+        self._push_finalize(scope, token, parent)
+        self._push_children(scope, token, flags)
 
+    def visit_block(self, flags, scope, token, parent):
 
-        if token.type == Token.T_BLOCK:
-            self.seq.append((ST_FINALIZE, next_scope, token, parent))
+        if parent and parent.type in [Token.T_LAMBDA, Token.T_FUNCTION, Token.T_ANONYMOUS_FUNCTION]:
+            pass
+        else:
+            scope.pushBlockScope()
 
+        self._push_finalize(scope, token, parent)
+        self._push_children(scope, token, flags)
+
+    def visit_function(self, flags, scope, token, parent):
+        scflags = (flags&ST_SCOPE_MASK) >> 12
+        scope.define(scflags, token.children[0])
+
+        next_scope = VariableScope(scope)
+
+        for child in token.children[1].children:
+            next_scope.define(SC_FUNCTION, child)
+
+        self._push_finalize(next_scope, token, parent)
+        self._push_tokens((ST_VISIT|(flags&ST_SCOPE_MASK)), next_scope, token.children[1:], token)
+
+    def visit_anonymous_function(self, flags, scope, token, parent):
+
+        next_scope = VariableScope(scope)
+
+        self._push_finalize(next_scope, token, parent)
+        self._push_children(next_scope, token, flags)
+
+    def visit_lambda(self, flags, scope, token, parent):
+
+        next_scope = VariableScope(scope)
+
+        self._push_finalize(next_scope, token, parent)
+        self._push_children(next_scope, token, flags)
+
+    def visit_var(self, flags, scope, token, parent):
+        flags = 0
+        if token.value == 'var':
+            flags = ST_FUNCTION
+        if token.value == 'let':
+            flags = ST_BLOCK
+        if token.value == 'const':
+            flags = ST_BLOCK|ST_CONST
+        self._push_children(scope, token, flags)
+
+    def visit_assign(self, flags, scope, token, parent):
+
+        # TODO: LHS can be more complicated that T_TEXT
+        if token.value == "=":
+
+           self._push_tokens(ST_VISIT|ST_STORE|(flags&ST_SCOPE_MASK), scope, [token.children[0]], parent)
+           self._push_tokens(ST_VISIT|(flags&ST_SCOPE_MASK), scope, [token.children[1]], parent)
+
+        else:
+            self._push_children(scope, token, flags)
+
+    def visit_text(self, flags, scope, token, parent):
+        # note: this only works because the parser implementation of
+        # let/var/const wonky. the keyword is parsed after the equals sign
+        # and any commas
+        scflags = (flags&ST_SCOPE_MASK) >> 12
+
+        if scflags:
+            scope.define(scflags, token)
+        elif flags&ST_STORE:
+            scope.store(token)
+        else:
+            scope.load(token)
+
+    # -------------------------------------------------------------------------
+
+    def finalize_default(self, flags, scope, token, parent):
+        scope._diag(token)
+
+    def finalize_module(self, flags, scope, token, parent):
+        scope._diag(token)
+
+        if scope.cellvars or scope.freevars:
+            raise TokenError(token, "unexpected closure")
+
+    def finalize_block(self, flags, scope, token, parent):
+        scope._diag(token)
+
+        if parent and parent.type in [Token.T_LAMBDA, Token.T_FUNCTION, Token.T_ANONYMOUS_FUNCTION]:
+            pass
+        else:
+            vars = scope.popBlockScope()
+            for var in vars.values():
+                token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
+
+    def finalize_function(self, flags, scope, token, parent):
+
+        closure = Token(Token.T_CLOSURE, 0, 0, "")
+
+        for name in sorted(scope.cellvars):
+            closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
+
+        for name in sorted(scope.freevars):
+            closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
+
+        token.children.append(closure)
+
+        scope._diag(token)
+
+    # -------------------------------------------------------------------------
+
+    def _push_finalize(self, scope, token, parent, flags=0):
+        self.seq.append((ST_FINALIZE|flags, scope, token, parent))
+
+    def _push_children(self, scope, token, flags):
         for child in reversed(token.children):
-            self.seq.append((next_flags, next_scope, child, token))
+            self.seq.append((ST_VISIT|(flags&ST_SCOPE_MASK), scope, child, token))
 
-    def finalize(self, flags, scope, token, parent):
-        print('finalize', token.value, token.line, token.index)
+    def _push_tokens(self, flags, scope, tokens, parent):
+        for token in reversed(tokens):
+            self.seq.append((flags, scope, token, parent))
+    # -------------------------------------------------------------------------
+
+    def _define(self, scope, token, flag):
+        # flag: ST_BLOCK, ST_FUNCTION, ST_GLOBAL
+        pass
+
+    def _load(self, scope, token):
+        pass
+
+    def _store(self, scope, token):
+        pass
+
+
 
 
 class TransformClassToFunction(TransformBase):
@@ -717,24 +1136,42 @@ def main_var():
 
 
     from .parser import Parser
-
+    from tests.util import edit_distance
     text1 = """
-    let x = 1
-    {
-        let x = 2
-        console.log(x, y)
+    function main() {
+        function f1(x) {
+            return f1(x-1)
+        }
     }
-    console.log(x)
     """
 
 
     tokens = Lexer().lex(text1)
     ast = Parser().parse(tokens)
-    print(ast.toString())
+
+    lines1 = ast.toString().split("\n")
 
     tr = TransformAssignScope()
     tr.transform(ast)
-    print(ast.toString())
+
+    lines2 = ast.toString().split("\n")
+
+
+    seq, cor, sub, ins, del_ = edit_distance(lines1, lines2, lambda x,y: x==y)
+    print("")
+    print(len(lines1), len(lines2))
+    print("")
+
+    while len(lines1) < len(lines2):
+        lines1.append("")
+
+    while len(lines2) < len(lines1):
+        lines2.append("")
+
+    #for i, (l1, l2) in enumerate(zip(lines1, lines2)):
+    for i, (l1, l2) in enumerate(seq):
+        c = ' ' if l1 == l2 else '|'
+        print("%3d: %-50s %s %-50s" % (i+1,l1, c, l2))
 
 if __name__ == '__main__':
     main_var()
