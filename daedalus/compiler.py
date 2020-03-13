@@ -25,6 +25,7 @@ class CompileError(TokenError):
 def diag(tokens):
     print([t.value for t in tokens])
 
+
 text_group = {
     Token.T_KEYWORD,
     Token.T_BREAK,
@@ -51,7 +52,8 @@ class SourceMap(object):
     4 fields: output column, file index, input line, input column,
     1 fields: column
     """
-    ALPHABET="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+
     def __init__(self):
         super(SourceMap, self).__init__()
 
@@ -74,7 +76,8 @@ class SourceMap(object):
             "mappings": mappings,
         }
 
-        return obj; 0x1c8
+        return obj
+        0x1c8
 
     def _encode(self, value):
 
@@ -89,15 +92,15 @@ class SourceMap(object):
         while first or value:
 
             if first:
-                tmp = ((value&0xF)<<1) | signed
+                tmp = ((value & 0xF) << 1) | signed
                 value >>= 4
                 first = False
             else:
-                tmp = value&0x1F
+                tmp = value & 0x1F
                 value >>= 5
 
             if value:
-                tmp |= 1<<5
+                tmp |= 1 << 5
 
             text += SourceMap.ALPHABET[tmp]
 
@@ -110,22 +113,21 @@ class SourceMap(object):
 
         seq = []
 
-        pos=0
+        pos = 0
         sign = 1
         value = 0
         for char in text:
             i = SourceMap.ALPHABET.index(char)
-            if pos==0:
-                if i&1:
+            if pos == 0:
+                if i & 1:
                     sign = -1
-                value = (i>>1)&0xF
+                value = (i >> 1) & 0xF
                 pos += 4
             else:
-                value |= (i&0x1F) << pos
+                value |= (i & 0x1F) << pos
                 pos += 5
 
-
-            if 0x20&i==0:
+            if 0x20 & i == 0:
                 seq.append(value * sign)
                 sign = 1
                 value = 0
@@ -157,7 +159,6 @@ def isalphanum(a, b):
     if a and b:
         c1 = a[-1]
         c2 = b[0]
-
 
         return (c1.isalnum() or c1 == '_' or ord(c1) > 127) and \
                (c2.isalnum() or c2 == '_' or ord(c2) > 127)
@@ -191,7 +192,7 @@ class Compiler(object):
 
         # maximum length for any line is 4095 becuase of limitations
         # of some javascript compilers
-        width=240
+        width = 240
         line_len = 0
         prev_type = Token.T_NEWLINE
         prev_text = ""
@@ -231,7 +232,7 @@ class Compiler(object):
                 for child in reversed(token.children):
                     if insert:
                         seq.append((depth, Token.T_SPECIAL, ";"))
-                    seq.append((depth+1, None, child))
+                    seq.append((depth + 1, None, child))
                     insert = True
             elif token.type == Token.T_BLOCK:
                 seq.append((depth, Token.T_SPECIAL, token.value[1]))
@@ -245,7 +246,7 @@ class Compiler(object):
                     if insert:
                         seq.append((depth, Token.T_SPECIAL, ";"))
 
-                    seq.append((depth+1, None, child))
+                    seq.append((depth + 1, None, child))
 
                     first = False
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
@@ -256,7 +257,7 @@ class Compiler(object):
                 for child in reversed(token.children):
                     if insert:
                         seq.append((depth, Token.T_SPECIAL, ","))
-                    seq.append((depth+1, None, child))
+                    seq.append((depth + 1, None, child))
                     insert = True
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
             elif token.type == Token.T_LAMBDA:
@@ -352,6 +353,7 @@ class Compiler(object):
             elif token.type == Token.T_ANONYMOUS_FUNCTION:
                 for child in reversed(token.children[1:]):
                     seq.append((depth, None, child))
+                seq.append((depth, Token.T_SPECIAL, "function"))
             elif token.type == Token.T_IMPORT:
 
                 pass
@@ -410,21 +412,21 @@ class Compiler(object):
 
                 out.append((token.type, token.value))
             elif token.type == Token.T_RETURN:
-                for child in reversed(token.children): # length is zero or one
+                for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_NEW:
-                for child in reversed(token.children): # length is zero or one
+                for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_THROW:
-                for child in reversed(token.children): # length is zero or one
+                for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
                 seq.append((depth, token.type, token.value))
             elif token.type in (Token.T_TRY, Token.T_CATCH, Token.T_FINALLY):
                 # note that try will have one or more children
                 # while catch always has 2 and finally always has 1
-                for child in reversed(token.children): # length is zero or one
+                for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
                 seq.append((depth, token.type, token.value))
 
@@ -449,7 +451,6 @@ def main():  # pragma: no cover
 
     #text1 = open("./res/daedalus/index.js").read()
 
-
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 
@@ -463,6 +464,7 @@ def main():  # pragma: no cover
     print(text2)
     print("-" * 79)
     print(len(text2), len(text1))
+
 
 if __name__ == '__main__':  # pragma: no cover
     main()

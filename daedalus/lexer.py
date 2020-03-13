@@ -14,6 +14,7 @@ class TokenError(Exception):
 class LexError(TokenError):
     pass
 
+
 # special characters that never combine with other characters
 chset_special1 = "{}[](),~;:#"
 # special characters that may combine with other special characters
@@ -34,13 +35,13 @@ reserved_words = {
     # types
     'boolean', 'byte', 'char', 'double', 'false', 'int', 'long', 'null', 'short', 'true',
     # keywords
-    'await',  'break',  'case',
-    'catch',  'class', 'const', 'continue', 'debugger', 'default',
-    'delete',  'do',  'else', 'enum', 'eval', 'export', 'extends',
+    'await', 'break', 'case',
+    'catch', 'class', 'const', 'continue', 'debugger', 'default',
+    'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends',
     'final', 'finally', 'float', 'for', 'function', 'goto', 'if',
-    'implements', 'import', 'in', 'instanceof',  'interface', 'let',
-    'new',  'package',
-    'return',  'static', 'super', 'switch',
+    'implements', 'import', 'in', 'instanceof', 'interface', 'let',
+    'new', 'package',
+    'return', 'static', 'super', 'switch',
     'this', 'throw', 'throws', 'transient', 'try', 'typeof', 'var',
     'void', 'volatile', 'while', 'with', 'yield', 'do',
 }
@@ -154,7 +155,6 @@ class Token(object):
     T_BLOCK_PUSH = "T_BLOCK_PUSH"
     T_BLOCK_POP = "T_BLOCK_POP"
 
-
     def __init__(self, type, line=0, index=0, value="", children=None):
         super(Token, self).__init__()
         self.type = type
@@ -176,14 +176,14 @@ class Token(object):
     def toString(self, pretty=True, depth=0, pad="  "):
         s = "%s<%s,%s,%r>" % (self.type, self.line, self.index, self.value)
 
-        if pretty==2:
+        if pretty == 2:
 
             if len(self.children) == 0:
                 s = "\n%sTOKEN(%r, %r)" % ("    " * depth, self.type, self.value)
                 return s
             else:
                 s = "\n%sTOKEN(%r, %r, " % ("    " * depth, self.type, self.value)
-                c = [child.toString(pretty, depth+1) for child in self.children]
+                c = [child.toString(pretty, depth + 1) for child in self.children]
                 return s + ', '.join(c) + ")"
 
         elif pretty:
@@ -191,7 +191,7 @@ class Token(object):
 
             for child in self.children:
                 try:
-                    parts.append(child.toString(pretty, depth+1))
+                    parts.append(child.toString(pretty, depth + 1))
                 except:
                     print(child)
 
@@ -204,14 +204,14 @@ class Token(object):
             return s
 
     def flatten(self, depth=0):
-        items = [(depth,self)]
+        items = [(depth, self)]
         for child in self.children:
             items.extend(child.flatten(depth + 1))
         return items
 
     @staticmethod
     def basicType(token):
-        return token and (token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING) or \
+        return token and (token.type in (Token.T_TEXT, Token.T_NUMBER, Token.T_STRING) or
                token.type == Token.T_SPECIAL and token.value in "])")
 
     def clone(self, **keys):
@@ -227,6 +227,7 @@ class LexerBase(object):
     """
     base class for a generic look-ahead-by-N lexer
     """
+
     def __init__(self):
         super(LexerBase, self).__init__()
 
@@ -357,6 +358,7 @@ class Lexer(LexerBase):
     """
     read tokens from a file or string
     """
+
     def __init__(self, opts=None):
         super(Lexer, self).__init__()
 
@@ -442,7 +444,6 @@ class Lexer(LexerBase):
                     self._push()
                 else:
                     self._push()
-
 
             elif c in chset_special2:
                 self._maybe_push()
@@ -714,10 +715,10 @@ class Lexer(LexerBase):
 
 def main():  # pragma: no cover
 
-    #r.match(/filename[^;=\\n]*=((['"]).*?\\2|[^;\\n]*)/)
-    #r.match(2/3)
+    # r.match(/filename[^;=\\n]*=((['"]).*?\\2|[^;\\n]*)/)
+    # r.match(2/3)
 
-    text1= """
+    text1 = """
     6 * 7
     6 *= 7
     6 ** 7
@@ -732,5 +733,6 @@ def main():  # pragma: no cover
     for token in tokens:
         print(token)
 
-if __name__ == '__main__': # pragma: no cover
+
+if __name__ == '__main__':  # pragma: no cover
     main()

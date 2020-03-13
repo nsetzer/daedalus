@@ -31,7 +31,7 @@ class Parser(object):
     W_UNSUPPORTED = 4
     W_EXPORT_DEFAULT = 5
     W_VAR_USED = 6
-    W_UNSAFE_BOOLEAN_TEST = 7 # Note: could be expanded to testing between operator &&, ||
+    W_UNSAFE_BOOLEAN_TEST = 7  # Note: could be expanded to testing between operator &&, ||
 
     def __init__(self,):
         super(Parser, self).__init__()
@@ -70,6 +70,7 @@ class Parser(object):
             (L2R, self.visit_binary, [':']),
             #(L2R, self.visit_lambda, ['=>']),
             (L2R, self.visit_comma, [',']),
+            (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_keyword, []),
             (L2R, self.visit_keyword_import_export, []),
             (L2R, self.visit_cleanup, []),
@@ -216,7 +217,6 @@ class Parser(object):
         raise ParseError(token, "missing token on %s" % side)
 
     def group(self, initial_tokens):
-
         """
 
         This is a DFS algorithm that scans the document from top
@@ -336,11 +336,11 @@ class Parser(object):
                 tok1.children = [lhs, token]
 
                 if tok1.type == Token.T_ANONYMOUS_FUNCTION:
-                    tok1.children.insert(0, Token(Token.T_TEXT, token.line, token.index, "Anonymous"))
-                    tok1.children.append(self.consume(tokens, token, index+self._offset-1, 1))
+                    tok1.children[0] = Token(Token.T_TEXT, token.line, token.index, "Anonymous")
+                    tok1.children.append(self.consume(tokens, token, index + self._offset - 1, 1))
 
                 token.type = Token.T_ARGLIST
-                tokens[index-1] = tok1
+                tokens[index - 1] = tok1
                 return self._offset
 
         if token.type == Token.T_GROUPING and token.value == '[]':
@@ -349,7 +349,7 @@ class Parser(object):
                 lhs = self.consume(tokens, token, index, -1)
                 tok1 = Token(Token.T_SUBSCR, token.line, token.index, "")
                 tok1.children = [lhs] + token.children
-                tokens[index-1] = tok1
+                tokens[index - 1] = tok1
                 return self._offset
             else:
                 token.type = Token.T_LIST
@@ -366,20 +366,19 @@ class Parser(object):
         the keyword
         """
 
-
         token = tokens[index]
 
         if token.type != Token.T_KEYWORD or token.value != 'new':
             return 1
 
         #i1 = self.peek_token(tokens, token, index, 1)
-        #if i1 is None:
+        # if i1 is None:
         #    raise ParseError(token, "expected expression")
         #i2 = self.peek_token(tokens, token, i1, 1)
         #consume2 = i2 is not None and tokens[i2].type == Token.T_GROUPING
 
         token.children.append(self.consume(tokens, token, index, 1))
-        #if consume2:
+        # if consume2:
         #    token.children.append(self.consume(tokens, token, index, 1))
 
         token.type = Token.T_NEW
@@ -520,8 +519,8 @@ class Parser(object):
             return 1
 
         rhs = None
-        while index+1 < len(tokens):
-            tmp = tokens.pop(index+1)
+        while index + 1 < len(tokens):
+            tmp = tokens.pop(index + 1)
             if tmp.type != Token.T_NEWLINE:
                 rhs = tmp
                 break
@@ -529,8 +528,8 @@ class Parser(object):
         rv = 1
 
         lhs = None
-        while index-1 >= 0:
-            tmp = tokens.pop(index-1)
+        while index - 1 >= 0:
+            tmp = tokens.pop(index - 1)
             index -= 1
             rv -= 1
             if tmp.type != Token.T_NEWLINE:
@@ -588,6 +587,31 @@ class Parser(object):
 
         return 1
 
+    def visit_keyword_arg(self, parent, tokens, index, operators):
+        """ collect keywords which accept a single argument """
+
+        token = tokens[index]
+        if token.type != Token.T_KEYWORD:
+            return 1
+
+        if token.value == 'const':
+            self.collect_keyword_var(tokens, index)
+
+        elif token.value == 'return':
+            self.collect_keyword_return(tokens, index)
+
+        elif token.value == 'var':
+            self.warn(token, Parser.W_VAR_USED)
+            self.collect_keyword_var(tokens, index)
+
+        elif token.value == 'let':
+            self.collect_keyword_var(tokens, index)
+
+        elif token.value == 'throw':
+            self.collect_keyword_throw(tokens, index)
+
+        return 1
+
     def visit_keyword(self, parent, tokens, index, operators):
 
         token = tokens[index]
@@ -604,9 +628,6 @@ class Parser(object):
 
         elif token.value == 'class':
             self.collect_keyword_class(tokens, index)
-
-        elif token.value == 'const':
-            self.collect_keyword_var(tokens, index)
 
         elif token.value == 'continue':
             self.collect_keyword_continue(tokens, index)
@@ -629,27 +650,14 @@ class Parser(object):
         elif token.value == 'if':
             self.collect_keyword_if(tokens, index)
 
-        elif token.value == 'let':
-            self.collect_keyword_var(tokens, index)
-
-        elif token.value == 'return':
-            self.collect_keyword_return(tokens, index)
-
         elif token.value == 'super':
             self.collect_keyword_super(tokens, index)
 
         elif token.value == 'switch':
             self.collect_keyword_switch(tokens, index)
 
-        elif token.value == 'throw':
-            self.collect_keyword_throw(tokens, index)
-
         elif token.value == 'try':
             self.collect_keyword_trycatch(tokens, index)
-
-        elif token.value == 'var':
-            self.warn(token, Parser.W_VAR_USED)
-            self.collect_keyword_var(tokens, index)
 
         elif token.value == 'while':
             self.collect_keyword_while(tokens, index)
@@ -684,7 +692,6 @@ class Parser(object):
         if token.value == 'from':
             self.collect_keyword_import_from(tokens, index)
 
-
         return 1
 
     def visit_cleanup(self, parent, tokens, index, operators):
@@ -717,7 +724,7 @@ class Parser(object):
                 counter -= 1
                 if counter == 0:
                     tokens.pop(index)
-                    break;
+                    break
                 else:
                     current.children.append(tokens.pop(index))
             else:
@@ -765,6 +772,8 @@ class Parser(object):
 
         rhs1 = self.consume(tokens, token, index, 1)
 
+        if rhs1.type == Token.T_FUNCTIONCALL:
+            raise ParseError(rhs1, "remove () from class def")
         if rhs1.type != Token.T_GROUPING:
             self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
         else:
@@ -1066,7 +1075,7 @@ class Parser(object):
         token = tokens[index]
 
         rhs1 = self.consume(tokens, token, index, 1)
-        rhs2 = self.consume(tokens, token, index, 1)
+        rhs2 = self.consume_keyword(tokens, token, index, 1)
         i3 = self.peek_keyword(tokens, token, index, 1)
 
         if rhs2.type != Token.T_GROUPING:
@@ -1277,14 +1286,13 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-        Object = () => {}
+        value => value
     """
 
-    tokens = Lexer({'preserve_documentation':True}).lex(text1)
+    tokens = Lexer({'preserve_documentation': True}).lex(text1)
     mod = Parser().parse(tokens)
 
     print(mod.toString(2))
-
 
 
 if __name__ == '__main__':  # pragma: no cover

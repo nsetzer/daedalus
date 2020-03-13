@@ -14,69 +14,69 @@ def edit_distance(hyp, ref, eq=None):
     if len(ref) == 0:
         return [(elem, None) for elem in hyp], 0, 0, len(hyp), 0
 
-    e = [0,]*(len(hyp)*len(ref))
-    s = lambda i,j: i*len(ref)+j
-    d = lambda i,j: 0 if hyp[i]==ref[j] else 1
-    E = lambda i,j: e[s(i,j)]
+    e = [0, ] * (len(hyp) * len(ref))
+    s = lambda i, j: i * len(ref) + j
+    d = lambda i, j: 0 if hyp[i] == ref[j] else 1
+    E = lambda i, j: e[s(i, j)]
 
-    e[s(0,0)] = d(0,0)
+    e[s(0, 0)] = d(0, 0)
 
     # build the error table using dynamic programming
     # first build the top and left edge
-    for i in range(1,len(hyp)):
-        e[s(i,0)] = min([1+i, d(i,0)+i])
+    for i in range(1, len(hyp)):
+        e[s(i, 0)] = min([1 + i, d(i, 0) + i])
 
-    for j in range(1,len(ref)):
-        e[s(0,j)] = min([1+j, d(0,j)+j])
+    for j in range(1, len(ref)):
+        e[s(0, j)] = min([1 + j, d(0, j) + j])
 
     # fill in remaining squares
-    for i in range(1,len(hyp)):
-        for j in range(1,len(ref)):
-            e[s(i,j)] = min([1+E(i-1,j),1+E(i,j-1),d(i,j)+E(i-1,j-1)])
+    for i in range(1, len(hyp)):
+        for j in range(1, len(ref)):
+            e[s(i, j)] = min([1 + E(i - 1, j), 1 + E(i, j - 1), d(i, j) + E(i - 1, j - 1)])
 
     # reverse walk
     # find number of substitutions/insertions/deletions
-    i=len(hyp)-1
-    j=len(ref)-1
+    i = len(hyp) - 1
+    j = len(ref) - 1
     seq = []
-    cor=sub=del_=ins=0
+    cor = sub = del_ = ins = 0
     while i > 0 and j > 0:
-        _a,_b,_c,_d = E(i,j),E(i-1,j),E(i,j-1),E(i-1,j-1)
+        _a, _b, _c, _d = E(i, j), E(i - 1, j), E(i, j - 1), E(i - 1, j - 1)
 
-        if _d<=_a and _d<_b and _d<_c:
+        if _d <= _a and _d < _b and _d < _c:
             seq.append((hyp[i], ref[j]))
             if eq(hyp[i], ref[j]):
-                cor+=1;
+                cor += 1
             else:
-                sub+=1
-            i,j = i-1,j-1
+                sub += 1
+            i, j = i - 1, j - 1
         elif _b <= _c:
             seq.append((hyp[i], None))
-            i = i-1
-            ins+=1
+            i = i - 1
+            ins += 1
         else:
             seq.append((None, ref[j]))
-            j = j-1
-            del_+=1
+            j = j - 1
+            del_ += 1
 
     while i >= 0 and j >= 0:
         seq.append((hyp[i], ref[j]))
         if eq(hyp[i], ref[j]):
-            cor+=1
+            cor += 1
         else:
-            sub+=1
-        i = i-1
-        j = j-1
+            sub += 1
+        i = i - 1
+        j = j - 1
 
     while i >= 0:
         seq.append((hyp[i], None))
-        i = i-1
-        ins+=1
+        i = i - 1
+        ins += 1
 
     while j >= 0:
         seq.append((None, ref[j]))
-        j = j-1
-        del_+=1
+        j = j - 1
+        del_ += 1
 
     if sub + ins + del_ == 0:
         assert cor == len(hyp), (cor, len(hyp))
@@ -114,8 +114,8 @@ def parsecmp(expected, actual, debug=False):
         print(actual.toString(2))
     return error_count
 
-def TOKEN(t,v,*children):
-    return Token(getattr(Token,t), 1, 0, v, children)
+def TOKEN(t, v, *children):
+    return Token(getattr(Token, t), 1, 0, v, children)
 
 def solve_linear(X, Y):
     # solve y = m2*x*x + m1*x + b for m2, m1, b
@@ -133,10 +133,10 @@ def solve_quadratic(X, Y):
 
     v0 = (Y[1] - Y[0])
     v1 = (X[1] - X[0])
-    v2 = (X[1]*X[1] - X[0]*X[0])
+    v2 = (X[1] * X[1] - X[0] * X[0])
     f0 = (Y[2] - Y[0])
     f1 = (X[2] - X[0])
-    f2 = (X[2]*X[2] - X[0]*X[0])
+    f2 = (X[2] * X[2] - X[0] * X[0])
 
     # v0 = m2*v2 + m1*v1
     # f0 = m2*f2 + m1*f1
@@ -148,8 +148,8 @@ def solve_quadratic(X, Y):
     # m1*(f1 - v1*f2/v2) = f0 - v0*f2/v2
     # m1 = (f0 - v0*f2/v2) / (f1 - v1*f2/v2)
 
-    m1 = (f0 - v0*f2/v2) / (f1 - v1*f2/v2)
-    m2 = (v0 - m1*v1) / v2
+    m1 = (f0 - v0 * f2 / v2) / (f1 - v1 * f2 / v2)
+    m2 = (v0 - m1 * v1) / v2
     b = Y[0] - m2 * X[0] * X[0] - m1 * X[0]
 
     return (m2, m1, b)
@@ -173,11 +173,10 @@ def benchmark(x1, x2, func):
     m, b = solve_linear(X, Y)
 
     # define equations used to compare against measured value
-    eq1 = lambda n: m*n + b
-    eq2a = lambda n: m*n*n + b
+    eq1 = lambda n: m * n + b
+    eq2a = lambda n: m * n * n + b
 
-
-    eq3 = lambda n: m*n*math.log(n) + b
+    eq3 = lambda n: m * n * math.log(n) + b
 
     names = [
         "n",
@@ -202,14 +201,14 @@ def benchmark(x1, x2, func):
     print(error[index])
     print(td)
     print(" eq = %.6f * %s %s %.6f" % (
-        m, names[index], "-" if b < 0 else "+" ,abs(b)))
+        m, names[index], "-" if b < 0 else "+", abs(b)))
 
 
 if __name__ == '__main__':
 
-    eq = lambda x: 2*x*x + 3*x + 4
+    eq = lambda x: 2 * x * x + 3 * x + 4
 
-    X = [10,20,30]
+    X = [10, 20, 30]
     Y = [eq(x) for x in X]
 
-    fn = quadratic(X,Y)
+    fn = quadratic(X, Y)

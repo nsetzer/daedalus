@@ -10,5 +10,6 @@ def main():
     test_suite = test_loader.discover("./tests", pattern=pattern)
     return test_runner.run(test_suite)
 
+
 if __name__ == '__main__':
     main()

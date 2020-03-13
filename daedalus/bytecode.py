@@ -180,7 +180,7 @@ def dump(bc):
             continue
         s = getattr(bc, name)
         if isinstance(s, list):
-            s = list(s) # copy to not modify bc
+            s = list(s)  # copy to not modify bc
             for index, item in enumerate(s):
                 if isinstance(item, types.CodeType):
                     s[index] = "<code:%s>" % item.co_name

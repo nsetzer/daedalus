@@ -7,6 +7,9 @@ import dis
 import types
 import sys
 import inspect
+import time
+import random
+import math
 from collections import defaultdict
 
 from .lexer import Lexer, Token, TokenError
@@ -33,11 +36,12 @@ for val, key in dis.COMPILER_FLAG_NAMES.items():
 class InterpreterError(TokenError):
     pass
 
-ST_TRAVERSE = 0x001 # the token has not yet been visited
-                # literals will be committed immediatley
+
+ST_TRAVERSE = 0x001  # the token has not yet been visited
+# literals will be committed immediatley
 ST_COMPILE = 0x002  # the token has been visited, commit to the output stream
-ST_LOAD = 0x004 # compiling this token should push a value on the stack
-ST_STORE = 0x008 # compiling this token will pop an item from the stack
+ST_LOAD = 0x004  # compiling this token should push a value on the stack
+ST_STORE = 0x008  # compiling this token will pop an item from the stack
 
 # states starting at 0x100 are used to count the compilation phase
 # and can be reused between token types.
@@ -52,15 +56,15 @@ def _dumps_impl(obj):
     elif isinstance(obj, types.LambdaType):
         return "<Lambda>"
     elif isinstance(obj, JsObject):
-        return  obj._x_daedalus_js_attrs
+        return obj._x_daedalus_js_attrs
     elif isinstance(obj, JsArray):
-        return  obj._x_daedalus_js_seq
+        return obj._x_daedalus_js_seq
     elif isinstance(obj, JsUndefined):
         return "undefined"
 
     # default Js Object
     elif isinstance(obj, JsObjectBase):
-        return  "[Object]"
+        return "[Object]"
     return obj
 
 def dumps(obj, indent=None):
@@ -76,15 +80,15 @@ def jsstr(obj):
         for key, val in obj._x_daedalus_js_attrs.items():
             text += dumps(key) + ":" + jsstr(val)
         text += "}"
-        return  dumps(obj._x_daedalus_js_attrs)
+        return dumps(obj._x_daedalus_js_attrs)
     elif isinstance(obj, JsArray):
-        return  dumps(obj._x_daedalus_js_seq)
+        return dumps(obj._x_daedalus_js_seq)
     elif isinstance(obj, JsUndefined):
         return "undefined"
 
     # default Js Object
     elif isinstance(obj, JsObjectBase):
-        return  "[Object]"
+        return "[Object]"
 
     elif obj is None:
         return "null"
@@ -124,6 +128,7 @@ class JsUndefined(JsObjectBase):
 
     def __str__(self):
         return "undefined"
+
 
 JsUndefined._instance = JsUndefined()
 JsUndefined.Token = Token(Token.T_TEXT, 0, 0, "undefined")
@@ -199,7 +204,7 @@ class JsArray(JsObjectBase):
             fn(*args)
 
     def filter(self, fn, this=JsUndefined._instance):
-        #TODO: unused: this
+        # TODO: unused: this
         argcount = fn.__code__.co_argcount
 
         out = []
@@ -220,6 +225,7 @@ class JsArray(JsObjectBase):
     def join(self, sep):
         # TODO: stringify each element
         return sep.join(self._x_daedalus_js_seq)
+
 
 JsArray.Token = Token(Token.T_TEXT, 0, 0, "JsArray")
 
@@ -269,6 +275,7 @@ class JsObject(JsObjectBase):
             for key in inst._x_daedalus_js_attrs.keys()
             if isinstance(key, str)])
 
+
 # workaround the 'is' keyword by setting the attribute directly
 setattr(JsObject, 'is', lambda a, b: a is b)
 
@@ -282,6 +289,7 @@ def JsNew(constructor, *args):
         return obj
     else:
         return constructor(*args)
+
 
 JsNew.Token = Token(Token.T_TEXT, 0, 0, "JsNew")
 
@@ -297,6 +305,7 @@ class JsFunction(JsObjectBase):
     def bind(self, obj):
         return JsFunction(self.fn, obj)
 
+
 JsFunction.Token = Token(Token.T_TEXT, 0, 0, "JsFunction")
 
 class JsArguments(JsObjectBase):
@@ -308,6 +317,7 @@ class JsArguments(JsObjectBase):
     needing to modify the creation of functions
 
     """
+
     def __init__(self):
         super(JsArguments, self).__init__()
 
@@ -393,9 +403,9 @@ class JsPromise(JsObject):
         self.accepted = False
         self.value = None
 
-        #TODO: using threads for now to quickly implement a parity feature
-        #This should be revisited
-        #An event queue could be implemented to eliminate threads
+        # TODO: using threads for now to quickly implement a parity feature
+        # This should be revisited
+        # An event queue could be implemented to eliminate threads
         lk = threading.Lock()
         cv = threading.Condition(lk)
         thread = threading.Thread(target=self._x_daedalus_js_resolve)
@@ -421,7 +431,7 @@ class JsPromise(JsObject):
                 self._x_daedalus_js_accept,
                 self._x_daedalus_js_reject)
         except Exception as e:
-            #TODO: design Js Exception
+            # TODO: design Js Exception
             self._x_daedalus_js_reject(e)
 
     def _x_daedalus_js_accept(self, value):
@@ -512,6 +522,31 @@ class JsJSON(JsObjectBase):
         # this should be possible with a custom loader
         return json.loads(string)
 
+class JsDate(object):
+    def __init__(self):
+        super(JsDate, self).__init__()
+
+    @staticmethod
+    def now():
+        return int(time.time() * 1000)
+
+class JsMath(object):
+    def __init__(self):
+        super(JsMath, self).__init__()
+
+    @staticmethod
+    def random():
+        """ MDN and Python documentation agrees on the interval as [0, 1) """
+        return random.random()
+
+    @staticmethod
+    def floor(value):
+        return math.floor(value)
+
+    @staticmethod
+    def ceil(value):
+        return math.ceil(value)
+
 class Interpreter(object):
 
     CF_MODULE    = 1
@@ -549,8 +584,10 @@ class Interpreter(object):
             Token.T_OBJECT: self._traverse_object,
             Token.T_LIST: self._traverse_list,
             Token.T_NEW: self._traverse_new,
-            Token.T_RETURN: self._traverse_return,
             Token.T_SUBSCR: self._traverse_subscr,
+            Token.T_RETURN: self._traverse_return,
+            Token.T_POSTFIX: self._traverse_postfix,
+            Token.T_PREFIX: self._traverse_prefix,
 
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
@@ -561,6 +598,9 @@ class Interpreter(object):
             Token.T_ATTR: self._compile_attr,
             Token.T_KEYWORD: self._compile_keyword,
             Token.T_DELETE_VAR: self._compile_delete_var,
+
+            # do nothing
+            Token.T_CLOSURE: lambda *args: None
         }
 
         # compile methods produce opcodes after the token has
@@ -576,6 +616,8 @@ class Interpreter(object):
             Token.T_NEW: self._compile_new,
             Token.T_RETURN: self._compile_return,
             Token.T_SUBSCR: self._compile_subscr,
+            Token.T_POSTFIX: self._compile_postfix,
+            Token.T_PREFIX: self._compile_prefix,
 
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
@@ -611,6 +653,8 @@ class Interpreter(object):
             'arguments': JsArguments(),
             'JsFunction': JsFunction,
             'JSON': JsJSON,
+            'Date': JsDate,
+            'Math': JsMath,
         }
         if globals:
             self.globals.update(globals)
@@ -624,6 +668,8 @@ class Interpreter(object):
 
     def compile(self, ast):
 
+        TransformClassToFunction().transform(ast)
+        TransformAssignScope().transform(ast)
 
         self._compile(ast)
         self._finalize()
@@ -680,7 +726,7 @@ class Interpreter(object):
                 else:
                     raise InterpreterError(token, "token not supported")
 
-        if self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE:
+        if self.flags & Interpreter.CF_REPL or self.flags & Interpreter.CF_MODULE:
             instr = []
             for name in sorted(self.module_globals):
                 tok1 = Token(Token.T_STRING, 0, 0, repr(name))
@@ -721,7 +767,7 @@ class Interpreter(object):
             # lbl -> list-of-index
             tgt = defaultdict(list)
             # index -> pos
-            map = [0]*len(self.bc)
+            map = [0] * len(self.bc)
 
             pos = 0
             for index, op in enumerate(self.bc):
@@ -758,7 +804,7 @@ class Interpreter(object):
     def _traverse_module(self, depth, state, token):
 
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE, child)
+            self._push(depth + 1, ST_TRAVERSE, child)
 
     def _traverse_binary(self, depth, state, token):
 
@@ -769,12 +815,12 @@ class Interpreter(object):
             flag0 |= ST_LOAD
 
         flag1 = ST_TRAVERSE
-        if token.value == "." and state&ST_STORE:
+        if token.value == "." and state & ST_STORE:
             flag1 |= ST_STORE
         else:
             flag1 |= ST_LOAD
 
-        self._push(depth, ST_COMPILE|(state&(ST_STORE|ST_LOAD)), token)
+        self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
 
         if token.value == ':':
             if token.children[0].type == Token.T_TEXT:
@@ -786,30 +832,30 @@ class Interpreter(object):
 
     def _traverse_assign(self, depth, state, token):
 
-        self._push(depth, ST_COMPILE|(state&(ST_STORE|ST_LOAD)), token)
+        self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
         if token.value == "=":
-            self._push(depth, ST_TRAVERSE|ST_STORE, token.children[0])
-            self._push(depth, ST_TRAVERSE|ST_LOAD, token.children[1])
+            self._push(depth, ST_TRAVERSE | ST_STORE, token.children[0])
+            self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
         else:
-            self._push(depth, ST_TRAVERSE|ST_LOAD, token.children[0])
-            self._push(depth, ST_TRAVERSE|ST_LOAD, token.children[1])
+            self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[0])
+            self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
 
     def _traverse_functioncall(self, depth, state, token):
         self._push(depth, ST_COMPILE, token)
 
-        flag0 = ST_TRAVERSE|ST_LOAD
+        flag0 = ST_TRAVERSE | ST_LOAD
         for child in reversed(token.children):
             self._push(depth, flag0, child)
 
     def _traverse_arglist(self, depth, state, token):
 
-        flag0 = ST_TRAVERSE|ST_LOAD
+        flag0 = ST_TRAVERSE | ST_LOAD
         for child in reversed(token.children):
             self._push(depth, flag0, child)
 
     def _traverse_block(self, depth, state, token):
 
-        flag0 = ST_TRAVERSE|ST_LOAD
+        flag0 = ST_TRAVERSE | ST_LOAD
         for child in reversed(token.children):
             self._push(depth, flag0, child)
 
@@ -829,10 +875,9 @@ class Interpreter(object):
         block = token.children[2]
         closure = token.children[3]
 
-        self._build_function(token, name, arglist, closure, block)
+        self._build_function(token, name, arglist, block, closure)
 
     def _traverse_function(self, depth, state, token):
-
 
         name = token.children[0]
         arglist = token.children[1]
@@ -865,13 +910,10 @@ class Interpreter(object):
         flags = 0
         sub = Interpreter(name.value, self.bc.filename, flags)
 
-
         pos_kwarg_count = 0
-
 
         kind, index = self._token2index(JsFunction.Token, True)
         self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
-
 
         # get user defined positional arguments
         arglabels = []
@@ -919,7 +961,7 @@ class Interpreter(object):
         if closure.children:
             flg |= 0x08
 
-            closure_count = 0;
+            closure_count = 0
             for child in closure.children:
                 if child.type == Token.T_FREE_VAR:
                     sub.bc.freevars.append(child.value)
@@ -963,18 +1005,18 @@ class Interpreter(object):
             self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
             argcount += 1
 
-        #TODO: pop top if state&ST_LOAD is false
+        # TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', argcount, lineno=token.line))
 
     def _traverse_grouping(self, depth, state, token):
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE, child)
+            self._push(depth + 1, ST_TRAVERSE, child)
 
     def _traverse_branch(self, depth, state, token):
 
         arglist = token.children[0]
-        self._push(depth, ST_COMPILE|ST_BRANCH_TRUE, token)
-        self._push(depth+1, ST_TRAVERSE|ST_LOAD, arglist)
+        self._push(depth, ST_COMPILE | ST_BRANCH_TRUE, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, arglist)
 
     def _traverse_while(self, depth, state, token):
 
@@ -986,8 +1028,8 @@ class Interpreter(object):
         nop.add_label(token.label_begin)
 
         arglist = token.children[0]
-        self._push(depth, ST_COMPILE|ST_WHILE, token)
-        self._push(depth+1, ST_TRAVERSE|ST_LOAD, arglist)
+        self._push(depth, ST_COMPILE | ST_WHILE, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, arglist)
 
     def _traverse_object(self, depth, state, token):
 
@@ -996,7 +1038,7 @@ class Interpreter(object):
 
         self._push(depth, ST_COMPILE, token)
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
+            self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
 
     def _traverse_list(self, depth, state, token):
 
@@ -1005,7 +1047,7 @@ class Interpreter(object):
 
         self._push(depth, ST_COMPILE, token)
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
+            self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
 
     def _traverse_new(self, depth, state, token):
 
@@ -1017,22 +1059,51 @@ class Interpreter(object):
 
         if child.type == Token.T_FUNCTIONCALL:
             for child in reversed(child.children):
-                self._push(depth+1, ST_TRAVERSE, child)
+                self._push(depth + 1, ST_TRAVERSE, child)
         else:
-            self._push(depth+1, ST_TRAVERSE, child)
-
-    def _traverse_return(self, depth, state, token):
-
-        self._push(depth, ST_COMPILE, token)
-        for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
+            self._push(depth + 1, ST_TRAVERSE, child)
 
     def _traverse_subscr(self, depth, state, token):
 
-        flg = ST_COMPILE|((ST_LOAD|ST_STORE)&state)
+        flg = ST_COMPILE | ((ST_LOAD | ST_STORE) & state)
         self._push(depth, flg, token)
         for child in reversed(token.children):
-            self._push(depth+1, ST_TRAVERSE|ST_LOAD, child)
+            self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
+
+    def _traverse_return(self, depth, state, token):
+
+        flg = ST_COMPILE | ((ST_LOAD | ST_STORE) & state)
+        self._push(depth, flg, token)
+        for child in reversed(token.children):
+            self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
+
+    def _traverse_postfix(self, depth, state, token):
+        """
+        Python has no postfix operator
+        instead:
+            load value
+            duplicate top
+            increment/decrement top by 1
+            store value
+
+        duplicating top is conditional on a ld flag being set
+        """
+
+        self._push(depth, ST_COMPILE | ST_LOAD, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
+
+    def _traverse_prefix(self, depth, state, token):
+        """
+        Python has no prefix operator
+        instead:
+            load value
+            increment/decrement top by 1
+            duplicate top
+            store value
+
+        duplicating top is conditional on a ld flag being set
+        """
+        pass
 
     # -------------------------------------------------------------------------
 
@@ -1052,8 +1123,6 @@ class Interpreter(object):
             "^": "BINARY_XOR",
             "|": "BINARY_OR",
         }
-
-
 
         if token.value == '.':
             pass
@@ -1103,10 +1172,10 @@ class Interpreter(object):
             self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
 
             # TODO: this has side effects if LHS is complicated
-            self._push(depth, ST_COMPILE|ST_STORE, token.children[0])
+            self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
 
     def _compile_text(self, depth, state, token):
-        kind, index = self._token2index(token, state&ST_LOAD)
+        kind, index = self._token2index(token, state & ST_LOAD)
 
         if state & ST_STORE:
             mode = 'STORE_'
@@ -1118,7 +1187,7 @@ class Interpreter(object):
     def _compile_attr(self, depth, state, token):
         _, index = self._token2index_name(token, load=True)
 
-        opcode = "STORE_ATTR" if state&ST_STORE else "LOAD_ATTR"
+        opcode = "STORE_ATTR" if state & ST_STORE else "LOAD_ATTR"
         self.bc.append(BytecodeInstr(opcode, index, lineno=token.line))
 
     def _compile_literal_number(self, depth, state, token):
@@ -1139,7 +1208,7 @@ class Interpreter(object):
 
         arglist = token.children[1]
         argcount = len(arglist.children)
-        #TODO: pop top if state&ST_LOAD is false
+        # TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', argcount))
 
     def _compile_branch(self, depth, state, token):
@@ -1192,7 +1261,6 @@ class Interpreter(object):
             instr = BytecodeJumpInstr('POP_JUMP_IF_FALSE', token.label_end)
             self.bc.append(instr)
 
-
             self._push(depth, ST_COMPILE, token)
             self._push(depth, ST_TRAVERSE, token.children[1])
 
@@ -1209,7 +1277,7 @@ class Interpreter(object):
         wrap the list in a type that mimics the array api
         """
         self.bc.append(BytecodeInstr("BUILD_MAP", len(token.children), lineno=token.line))
-        #TODO: pop top if state&ST_LOAD is false
+        # TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
 
     def _compile_list(self, depth, state, token):
@@ -1226,7 +1294,7 @@ class Interpreter(object):
         child = token.children[0]
         if child.type == Token.T_FUNCTIONCALL:
             N = len(child.children) - 1
-        #TODO: pop top if state&ST_LOAD is false
+        # TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', N))
 
     def _compile_return(self, depth, state, token):
@@ -1234,17 +1302,23 @@ class Interpreter(object):
         self.bc.append(BytecodeInstr('RETURN_VALUE'))
 
     def _compile_subscr(self, depth, state, token):
-        opcode = "BINARY_SUBSCR" if state&ST_LOAD else "STORE_SUBSCR"
+        opcode = "BINARY_SUBSCR" if state & ST_LOAD else "STORE_SUBSCR"
         self.bc.append(BytecodeInstr(opcode, lineno=token.line))
 
     def _compile_keyword(self, depth, state, token):
 
-        if token.value in ['this',]:
+        if token.value in ['this', ]:
             return self._compile_text(depth, state, token)
         else:
             raise InterpreterError(token, "Unsupported keyword")
 
     def _compile_delete_var(self, depth, state, token):
+        pass
+
+    def _compile_postfix(self, depth, state, token):
+        pass
+
+    def _compile_prefix(self, depth, state, token):
         pass
 
     # -------------------------------------------------------------------------
@@ -1311,10 +1385,9 @@ class Interpreter(object):
             if tok.value in self.bc.cellvars:
                 return "DEREF", self.bc.cellvars.index(tok.value)
 
-
         elif tok.type == Token.T_TEXT or tok.type == Token.T_KEYWORD:
 
-            if not load and (self.flags&Interpreter.CF_REPL or self.flags&Interpreter.CF_MODULE):
+            if not load and (self.flags & Interpreter.CF_REPL or self.flags & Interpreter.CF_MODULE):
                 self.module_globals.add(tok.value)
 
             if tok.value in self.globals:
@@ -1350,7 +1423,6 @@ class Interpreter(object):
             index = len(self.bc.names)
             self.bc.names.append(tok.value)
             return 'NAME', index
-
 
 
 def main():  # pragma: no cover
@@ -1410,38 +1482,28 @@ def main():  # pragma: no cover
         //    }
         //}
 
-        function main() {
-            function f1(x) {
-                console.log("f1", x)
-                if (x > 0) {
-                    return f1(x - 1)
-                } else {
-                    return x
-                }
-            }
-            console.log(f1(5))
-        }
-        main()
+    """
 
+    text1 = """
 
-
+    ++x
     """
 
     tokens = Lexer().lex(text1)
     ast = Parser().parse(tokens)
 
-    TransformClassToFunction().transform(ast)
-    TransformAssignScope().transform(ast)
-
     interp = Interpreter()
 
-    print(ast.toString())
-    interp.compile(ast)
+    try:
+        interp.compile(ast)
 
+    finally:
+        print(ast.toString())
 
     interp.dump()
 
     print(interp.execute())
+
 
 if __name__ == '__main__':  # pragma: no cover
     main()
