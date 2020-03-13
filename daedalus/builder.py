@@ -15,7 +15,6 @@ def findFile(name, search_paths):
     default resources directory
     """
 
-
     for path in search_paths:
         filepath = os.path.abspath(os.path.join(path, name))
         if os.path.isfile(filepath):
@@ -152,7 +151,6 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
                     TOKEN('T_GROUPING', '()', tok_fundef),
                     TOKEN('T_ARGLIST', '()', *tok_argument_names))))
 
-
     return tok_iifi
 
 class BuildError(Exception):
@@ -222,11 +220,11 @@ class JsFile(object):
             tr1.transform(ast)
             self.styles = tr1.getStyles()
         except TokenError as e:
-            source_lines=source.split("\n")
+            source_lines = source.split("\n")
             line_start = e.token.line - 3
             line_end = e.token.line + 3
-            b_lines = ["%4d: %s" % (i+1, source_lines[i]) for i in range(line_start,e.token.line)]
-            a_lines = ["%4d: %s" % (i+1, source_lines[i]) for i in range(e.token.line,line_end)]
+            b_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(line_start, e.token.line)]
+            a_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(e.token.line, line_end)]
 
             lines = b_lines + ["      " + " " * e.token.index + "^"] + a_lines
             error = BuildError(self.source_path, e.token, lines, e.original_message, str(e))
@@ -240,7 +238,7 @@ class JsFile(object):
 
         self.mtime = os.stat(self.source_path).st_mtime
 
-        print("%10d %.2f %s" % (len(source), t2-t1, self.source_path))
+        print("%10d %.2f %s" % (len(source), t2 - t1, self.source_path))
 
     def _get_imports_exports(self, ast):
         self.imports = {}
@@ -270,7 +268,7 @@ class JsFile(object):
                         fromlist.append((child.value, child.value))
                     else:
                         fromlist.append((child.children[0].value, child.children[1].value))
-                if token.value.endswith(".js") and self.source_type==2:
+                if token.value.endswith(".js") and self.source_type == 2:
                     self.imports[token.value] = dict(fromlist)
                 else:
                     self.module_imports[token.value] = dict(fromlist)
@@ -298,7 +296,6 @@ class JsFile(object):
                 else:
                     ast.children[i] = token.children[0]
                     i += 1
-
 
             else:
                 i += 1
@@ -339,7 +336,7 @@ class JsModule(object):
                     depth[p] = d + 1
                 else:
                     depth[p] = max(depth[p], d + 1)
-                queue.append((self.files[p], d+1))
+                queue.append((self.files[p], d + 1))
 
         order = sorted(depth.keys(), key=lambda p: depth[p], reverse=True)
         self.source_size = sum([self.files[p].size for p in order])
@@ -407,7 +404,7 @@ class JsModule(object):
         else:
             ast = order[0].ast
 
-        self.styles = sum([jsf.styles for jsf in order],[])
+        self.styles = sum([jsf.styles for jsf in order], [])
 
         all_exports = self.module_exports | self.static_exports
         self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, all_exports, merge)
@@ -535,7 +532,7 @@ class Builder(object):
         return self.modules[path]
 
     def _sort_modules(self, jsm):
-        name2path = {m.name():m.index_js.path for m in self.modules.values()}
+        name2path = {m.name(): m.index_js.path for m in self.modules.values()}
         queue = [(jsm, 0)]
         depth = {jsm.index_js.path: 0}
         while queue:
@@ -549,7 +546,7 @@ class Builder(object):
                     depth[p] = d + 1
                 else:
                     depth[p] = max(depth[p], d + 1)
-                queue.append((self.modules[p], d+1))
+                queue.append((self.modules[p], d + 1))
 
         order = sorted(depth.keys(), key=lambda p: depth[p], reverse=True)
         return [self.modules[p] for p in order]
@@ -592,7 +589,7 @@ class Builder(object):
 
             for mod in order:
                 struct = _get(mod.name())
-                ast = merge_ast(ast, mod.getAST(merge=len(struct)>0))
+                ast = merge_ast(ast, mod.getAST(merge=len(struct) > 0))
                 source_size += mod.source_size
 
             styles = sum([mod.styles for mod in order], [])
@@ -613,7 +610,7 @@ class Builder(object):
                 jsf = self.files[e.token.file]
                 filepath = e.token.file
                 source = jsf.getSource()
-                source_lines=source.split("\n")
+                source_lines = source.split("\n")
                 line_start = e.token.line - 3
                 line_end = e.token.line + 3
                 lines = source_lines[line_start:e.token.line]
@@ -627,7 +624,7 @@ class Builder(object):
         final_source_size = len(js)
         p = final_source_size / source_size
         t2 = time.time()
-        print("%10d %.2f %.2f%% of %d" % (final_source_size, t2-t1, p, source_size))
+        print("%10d %.2f %.2f%% of %d" % (final_source_size, t2 - t1, p, source_size))
         return css, js, export_name
 
     def build(self, path, minify=False, onefile=False):
@@ -679,8 +676,8 @@ class Builder(object):
         ) % (
             '<p>Error: %s</p>' % str(e),
             '' if not e.filepath else '<p>File: %s</p>' % e.filepath,
-            '' if e.line<0 else '<p>Line: %s</p>' % e.line,
-            '' if e.column<0 else '<p>Column: %s</p>' % e.column,
+            '' if e.line < 0 else '<p>Line: %s</p>' % e.line,
+            '' if e.column < 0 else '<p>Column: %s</p>' % e.column,
             "<br>".join(e.lines),
             '' if not e.raw_message else '<p>Raw Error: %s</p>' % e.raw_message,
         )

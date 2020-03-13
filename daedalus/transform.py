@@ -47,6 +47,7 @@ class TransformGrouping(TransformBase):
 
                 if (token.type == Token.T_MODULE) or \
                    (token.type == Token.T_ANONYMOUS_FUNCTION) or \
+                   (token.type == Token.T_METHOD) or \
                    (token.type == Token.T_CLASS) or \
                    (token.type == Token.T_BLOCK) or \
                    (token.type == Token.T_FINALLY) or \
@@ -68,7 +69,6 @@ class TransformGrouping(TransformBase):
                     if ref is not None:
                         raise ref
                     child.type = Token.T_OBJECT
-
 
     def _isObject(self, token):
         # test if a token is an object, this is only valid
@@ -116,12 +116,12 @@ class TransformFlatten(TransformBase):
            token.type == Token.T_GROUPING:
 
             chlst = token.children
-            index = 0;
+            index = 0
             while index < len(chlst):
                 if chlst[index].type == Token.T_COMMA:
                     child = chlst.pop(index)
                     for j in range(len(child.children)):
-                        chlst.insert(index+j, child.children[j])
+                        chlst.insert(index + j, child.children[j])
                 else:
                     index += 1
 
@@ -173,14 +173,14 @@ class TransformOptionalChaining(TransformBase):
             idx = token.index
 
             token.children = [
-            Token(Token.T_GROUPING, ln, idx, "()",
+                Token(Token.T_GROUPING, ln, idx, "()",
                 [Token(Token.T_BINARY, ln, idx, "||",
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_OBJECT, ln, idx, "{}")
                     ]
                 )]
-            ), rhs]
+                ), rhs]
 
         # Implement optional chaining for function calls
         #   x?.(...) :: ((x)||(()=>null))(...)
@@ -193,7 +193,7 @@ class TransformOptionalChaining(TransformBase):
             idx = token.index
 
             token.children = [
-            Token(Token.T_GROUPING, ln, idx, "()",
+                Token(Token.T_GROUPING, ln, idx, "()",
                 [Token(Token.T_BINARY, ln, idx, "||",
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
@@ -205,7 +205,7 @@ class TransformOptionalChaining(TransformBase):
                         ])
                     ]
                 )]
-            ), rhs]
+                ), rhs]
 
         # Implement optional chaining for object subscript
         #   x?.[...] :: ((x)||{})[...]
@@ -218,19 +218,18 @@ class TransformOptionalChaining(TransformBase):
             idx = token.index
 
             token.children = [
-            Token(Token.T_GROUPING, ln, idx, "()",
+                Token(Token.T_GROUPING, ln, idx, "()",
                 [Token(Token.T_BINARY, ln, idx, "||",
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_OBJECT, ln, idx, "{}")
                     ]
                 )]
-            ), rhs]
+                ), rhs]
 
 class TransformNullCoalescing(TransformBase):
 
     def visit(self, token, parent):
-
         """
 
         transform
@@ -246,7 +245,6 @@ class TransformNullCoalescing(TransformBase):
 class TransformMagicConstants(TransformBase):
 
     def visit(self, token, parent):
-
         """
 
         transform
@@ -284,13 +282,13 @@ def shell_format(text, vars):
     e = text.find("}", pos)
 
     while s < e:
-        varname = text[s+2:e]
+        varname = text[s + 2:e]
 
         if varname not in vars:
             sys.stderr.write("warning: unable to find stylesheet variable: %s\n" % varname)
             return None
 
-        text = text[:s] + vars[varname] + text[e+1:]
+        text = text[:s] + vars[varname] + text[e + 1:]
 
         pos = s
         s = text.find("${", pos)
@@ -363,7 +361,7 @@ class TransformExtractStyleSheet(TransformBase):
         if selector.type == Token.T_STRING:
             selector_text = ast.literal_eval(selector.value)
         elif selector.type == Token.T_TEMPLATE_STRING:
-            selector_text = ast.literal_eval('"'+selector.value[1:-1]+'"')
+            selector_text = ast.literal_eval('"' + selector.value[1:-1] + '"')
             selector_text = shell_format(selector_text, self.named_styles)
 
         if not selector_text:
@@ -416,7 +414,6 @@ class TransformExtractStyleSheet(TransformBase):
         return "%s {\n%s\n}" % (selector, body)
 
     def _object2style_helper(self, prefix, token):
-
         """compiles a javascript AST of an Object into a style sheet
         using the same rules as daedalus.StyleSheet
         """
@@ -469,6 +466,7 @@ class TransformExtractStyleSheet(TransformBase):
         m.update(text.encode('utf-8'))
         return m.hexdigest()[:8]
 
+
 SC_GLOBAL   = 0x001
 SC_FUNCTION = 0x002
 SC_BLOCK    = 0x004
@@ -477,13 +475,13 @@ SC_CONST    = 0x100
 def scope2str(flags):
     text = ""
 
-    if flags&SC_CONST:
+    if flags & SC_CONST:
         text += "const "
 
-    if flags&SC_GLOBAL:
+    if flags & SC_GLOBAL:
         text += "global"
 
-    elif flags&SC_FUNCTION:
+    elif flags & SC_FUNCTION:
         text += "function"
 
     else:
@@ -501,17 +499,17 @@ class Ref(object):
         self._identity = 0
 
     def identity(self):
-        #if self._identity > 0:
-        s = 'f' if self.flags&SC_FUNCTION else 'b'
+        # if self._identity > 0:
+        s = 'f' if self.flags & SC_FUNCTION else 'b'
 
         return "%s#%s%d" % (self.label, s, self._identity)
-        #return self.label
+        # return self.label
 
     def type(self):
-        return Token.T_GLOBAL_VAR if self.flags&SC_GLOBAL else Token.T_LOCAL_VAR
+        return Token.T_GLOBAL_VAR if self.flags & SC_GLOBAL else Token.T_LOCAL_VAR
 
     def isGlobal(self):
-        return self.flags&SC_GLOBAL
+        return self.flags & SC_GLOBAL
 
     def __str__(self):
         return "<*%s>" % (self.identity())
@@ -561,12 +559,12 @@ class VariableScope(object):
 
     def _getScope(self, scflags):
 
-        if scflags&SC_GLOBAL:
+        if scflags & SC_GLOBAL:
             scope = self
             while scope.parent is not None:
                 scope = scope.parent
             return scope.fnscope, None
-        elif scflags&SC_FUNCTION:
+        elif scflags & SC_FUNCTION:
             return self.fnscope, None
         else:
             if not self.blscope:
@@ -612,7 +610,7 @@ class VariableScope(object):
 
         label = token.value
 
-        if scflags&SC_FUNCTION:
+        if scflags & SC_FUNCTION:
             ref = self._define_function(label)
         else:
             ref = self._define_block(label)
@@ -632,7 +630,7 @@ class VariableScope(object):
 
         self.vars.add(identifier)
 
-        if scflags&SC_FUNCTION:
+        if scflags & SC_FUNCTION:
             self.fnscope[label] = new_ref
         else:
             if len(self.blscope) == 0:
@@ -643,7 +641,7 @@ class VariableScope(object):
         if token.type == Token.T_TEXT:
             token.type = new_ref.type()
 
-        print("define name", self.depth, token.value, scope2str(scflags))
+        # print("define name", self.depth, token.value, scope2str(scflags))
 
         return new_ref
 
@@ -699,7 +697,7 @@ class VariableScope(object):
         if token.type == Token.T_TEXT:
             token.type = ref.type()
 
-        print("load__" if load else "store_", "name", self.depth, token.value, scope2str(ref.flags))
+        # print("load__" if load else "store_", "name", self.depth, token.value, scope2str(ref.flags))
 
         return ref
 
@@ -718,6 +716,7 @@ class VariableScope(object):
     def _diag(self, token):
         print("%10s" % token.type, list(self.vars), list(self.freevars), list(self.cellvars))
 
+
 ST_MASK     = 0x000FF
 ST_SCOPE_MASK     = 0xFFF00
 ST_VISIT    = 0x001
@@ -728,14 +727,13 @@ ST_FUNCTION = SC_FUNCTION << 12
 ST_BLOCK    = SC_BLOCK << 12
 ST_CONST    = SC_CONST << 12
 
-def _diag(tag, token, flags=0):
-    text1 = scope2str((flags&ST_SCOPE_MASK)>>12)
-    print(tag, text1, token.type, token.value, token.line, token.index)
-
 class TransformAssignScope(object):
 
     """
     Assign scoping rules to variables
+
+    this performs all necessary transformations for converting an
+    acceptable JS AST into a Python AST.
 
     var: function scoped
     let: block scoped
@@ -878,8 +876,10 @@ class TransformAssignScope(object):
             Token.T_MODULE: self.visit_module,
             Token.T_TEXT: self.visit_text,
             Token.T_VAR: self.visit_var,
+            Token.T_OBJECT: self.visit_object,
+            Token.T_BINARY: self.visit_binary,
 
-            Token.T_GROUPING: self.visit_error,
+            # Token.T_GROUPING: self.visit_error,
         }
 
         self.finalize_mapping = {
@@ -914,13 +914,13 @@ class TransformAssignScope(object):
             # process tokens from in the order they are discovered. (DFS)
             flags, scope, token, parent = self.seq.pop()
 
-            fn = self.states[flags&ST_MASK].get(token.type, None)
+            fn = self.states[flags & ST_MASK].get(token.type, None)
 
             if fn:
                 fn(flags, scope, token, parent)
 
             else:
-                fn = self.state_defaults[flags&ST_MASK]
+                fn = self.state_defaults[flags & ST_MASK]
                 fn(flags, scope, token, parent)
 
     def initialState(self, token):
@@ -951,7 +951,7 @@ class TransformAssignScope(object):
         self._push_children(scope, token, flags)
 
     def visit_function(self, flags, scope, token, parent):
-        scflags = (flags&ST_SCOPE_MASK) >> 12
+        scflags = (flags & ST_SCOPE_MASK) >> 12
         scope.define(scflags, token.children[0])
 
         next_scope = VariableScope(scope)
@@ -960,18 +960,36 @@ class TransformAssignScope(object):
             next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
-        self._push_tokens((ST_VISIT|(flags&ST_SCOPE_MASK)), next_scope, token.children[1:], token)
+        self._push_tokens((ST_VISIT | (flags & ST_SCOPE_MASK)), next_scope, token.children[1:], token)
 
     def visit_anonymous_function(self, flags, scope, token, parent):
 
         next_scope = VariableScope(scope)
+
+        for child in token.children[1].children:
+            next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
         self._push_children(next_scope, token, flags)
 
     def visit_lambda(self, flags, scope, token, parent):
 
+        # fix some js-isms that are not really valid python
+
+        # lambdas allow for no arglist, but that makes compiling harder
+        if token.children[1].type == Token.T_TEXT:
+            tok = token.children[1]
+            token.children[1] = Token(Token.T_ARGLIST, tok.line, tok.index, '()', [tok])
+
+        # lambdas can be a single expression if it returns a value
+        if token.children[2].type != Token.T_BLOCK:
+            tok = token.children[2]
+            token.children[2] = Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])
+
         next_scope = VariableScope(scope)
+
+        for child in token.children[1].children:
+            next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
         self._push_children(next_scope, token, flags)
@@ -983,7 +1001,7 @@ class TransformAssignScope(object):
         if token.value == 'let':
             flags = ST_BLOCK
         if token.value == 'const':
-            flags = ST_BLOCK|ST_CONST
+            flags = ST_BLOCK | ST_CONST
         self._push_children(scope, token, flags)
 
     def visit_assign(self, flags, scope, token, parent):
@@ -991,8 +1009,8 @@ class TransformAssignScope(object):
         # TODO: LHS can be more complicated that T_TEXT
         if token.value == "=":
 
-           self._push_tokens(ST_VISIT|ST_STORE|(flags&ST_SCOPE_MASK), scope, [token.children[0]], parent)
-           self._push_tokens(ST_VISIT|(flags&ST_SCOPE_MASK), scope, [token.children[1]], parent)
+            self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], parent)
+            self._push_tokens(ST_VISIT | (flags & ST_SCOPE_MASK), scope, [token.children[1]], parent)
 
         else:
             self._push_children(scope, token, flags)
@@ -1001,28 +1019,64 @@ class TransformAssignScope(object):
         # note: this only works because the parser implementation of
         # let/var/const wonky. the keyword is parsed after the equals sign
         # and any commas
-        scflags = (flags&ST_SCOPE_MASK) >> 12
+
+        scflags = (flags & ST_SCOPE_MASK) >> 12
 
         if scflags:
             scope.define(scflags, token)
-        elif flags&ST_STORE:
+        elif flags & ST_STORE:
             scope.store(token)
         else:
             scope.load(token)
 
+    def visit_object(self, flags, scope, token, parent):
+
+        # fix the js-ism for non key-value pairs
+        # convert {foo} into {"foo": foo}
+        # before the name mangling can take effect
+        for i, child in enumerate(token.children):
+
+            if child.type == Token.T_TEXT:
+
+                key = Token(Token.T_STRING, child.line, child.index, repr(child.value))
+                val = child
+
+                tok = Token(Token.T_BINARY, child.line, child.index, ":",
+                    [key, val])
+
+                token.children[i] = tok
+
+        self._push_children(scope, token, flags)
+
+    def visit_binary(self, flags, scope, token, parent):
+        """
+        The LHS of a slice operator inside an object definition
+        can be a identifier. convert the value into a string
+        """
+        self._push_children(scope, token, flags)
+
+        if token.value != ":":
+            return
+
+        if not parent or parent.type != Token.T_OBJECT:
+            return
+
+        # handle the case where :: {foo: 0}
+        if token.children[0].type == Token.T_TEXT:
+            token.children[0].type = Token.T_STRING
+            token.children[0].value = repr(token.children[0].value)
+
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
-        scope._diag(token)
+        pass
 
     def finalize_module(self, flags, scope, token, parent):
-        scope._diag(token)
 
         if scope.cellvars or scope.freevars:
             raise TokenError(token, "unexpected closure")
 
     def finalize_block(self, flags, scope, token, parent):
-        scope._diag(token)
 
         if parent and parent.type in [Token.T_LAMBDA, Token.T_FUNCTION, Token.T_ANONYMOUS_FUNCTION]:
             pass
@@ -1043,16 +1097,14 @@ class TransformAssignScope(object):
 
         token.children.append(closure)
 
-        scope._diag(token)
-
     # -------------------------------------------------------------------------
 
     def _push_finalize(self, scope, token, parent, flags=0):
-        self.seq.append((ST_FINALIZE|flags, scope, token, parent))
+        self.seq.append((ST_FINALIZE | flags, scope, token, parent))
 
     def _push_children(self, scope, token, flags):
         for child in reversed(token.children):
-            self.seq.append((ST_VISIT|(flags&ST_SCOPE_MASK), scope, child, token))
+            self.seq.append((ST_VISIT | (flags & ST_SCOPE_MASK), scope, child, token))
 
     def _push_tokens(self, flags, scope, tokens, parent):
         for token in reversed(tokens):
@@ -1069,9 +1121,6 @@ class TransformAssignScope(object):
     def _store(self, scope, token):
         pass
 
-
-
-
 class TransformClassToFunction(TransformBase):
     """
 
@@ -1087,7 +1136,7 @@ class TransformClassToFunction(TransformBase):
             }
         }
 
-    Transform:
+    Transform into:
 
         function Shape() {
             this.area = () => { return this.width * this.height }
@@ -1100,12 +1149,53 @@ class TransformClassToFunction(TransformBase):
     Use the constructor as a function body and insert arrow functions
     into the body of the function
     """
+
     def visit(self, token, parent):
 
-        pass
+        if token.type == Token.T_CLASS:
+            self.visit_class(token)
+
+    def visit_class(self, token):
+        # TODO: implement inheritance
+
+        name = token.children[0]
+        extends = token.children[1]
+        clsbody = token.children[2]
+
+        constructor = None
+
+        methods = []
+
+        for child in clsbody.children:
+            if child.type == Token.T_METHOD and child.children[0].value == 'constructor':
+                constructor = child
+            else:
+                methods.append(child)
+
+        token.type = Token.T_FUNCTION
+        token.value = 'function'
+        token.children = []
+
+        arglist = constructor.children[1]
+        fnbody = constructor.children[2]
+
+        for method in methods:
+            anonfn = Token(Token.T_LAMBDA, token.line, token.index, "=>",
+                [Token(Token.T_TEXT, token.line, token.index, 'Anonymous'),
+                 method.children[1], method.children[2]])
+            attr = Token(Token.T_BINARY, token.line, token.index, ".",
+                [Token(Token.T_KEYWORD, token.line, token.index, "this"),
+                 Token(Token.T_ATTR, token.line, token.index, method.children[0].value)])
+
+            tok = Token(Token.T_ASSIGN, token.line, token.index, '=',
+                [attr, anonfn])
+            fnbody.children.insert(0, tok)
+
+        token.children.append(name)
+        token.children.append(arglist)
+        token.children.append(fnbody)
 
 def main_css():
-
 
     from .parser import Parser
 
@@ -1123,7 +1213,6 @@ def main_css():
     StyleSheet(`${style.test}:hover`, {background: 'blue'})
     """
 
-
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
     tr = TransformExtractStyleSheet('example')
@@ -1134,30 +1223,42 @@ def main_css():
 
 def main_var():
 
-
     from .parser import Parser
     from tests.util import edit_distance
     text1 = """
-    function main() {
-        function f1(x) {
-            return f1(x-1)
+    class Shape {
+        constructor() {
+            this.width = 5
+            this.height = 10
+        }
+        area() {
+            return this.width * this.height;
         }
     }
     """
+    text2 = """
 
+    function Shape() {
+        this.area = () => {return this.width * this.height}
+        this.width = 5
+        this.height = 10
+    }
+    """
 
     tokens = Lexer().lex(text1)
     ast = Parser().parse(tokens)
 
-    lines1 = ast.toString().split("\n")
+    tokens = Lexer().lex(text2)
+    ast2 = Parser().parse(tokens)
 
-    tr = TransformAssignScope()
+    lines1 = ast2.toString(2).split("\n")
+
+    tr = TransformClassToFunction()
     tr.transform(ast)
 
-    lines2 = ast.toString().split("\n")
+    lines2 = ast.toString(2).split("\n")
 
-
-    seq, cor, sub, ins, del_ = edit_distance(lines1, lines2, lambda x,y: x==y)
+    seq, cor, sub, ins, del_ = edit_distance(lines1, lines2, lambda x, y: x == y)
     print("")
     print(len(lines1), len(lines2))
     print("")
@@ -1168,10 +1269,11 @@ def main_var():
     while len(lines2) < len(lines1):
         lines2.append("")
 
-    #for i, (l1, l2) in enumerate(zip(lines1, lines2)):
+    # for i, (l1, l2) in enumerate(zip(lines1, lines2)):
     for i, (l1, l2) in enumerate(seq):
         c = ' ' if l1 == l2 else '|'
-        print("%3d: %-50s %s %-50s" % (i+1,l1, c, l2))
+        print("%3d: %-70s %s %-70s" % (i + 1, l1, c, l2))
+
 
 if __name__ == '__main__':
     main_var()

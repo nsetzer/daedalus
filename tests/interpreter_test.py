@@ -237,8 +237,56 @@ class InterpreterTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 50)
 
+    def test_evaljs_fib_global(self):
+
+        text = """
+            function fibonacci(num) {
+                if (num <= 1)
+                    return 1;
+                return fibonacci(num - 1) + fibonacci(num - 2);
+            }
+            return fibonacci(5);
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 8)
+
+    def test_evaljs_fib_closure(self):
+
+        text = """
+            function main() {
+                function fibonacci(num) {
+                    if (num <= 1)
+                        return 1;
+                    return fibonacci(num - 1) + fibonacci(num - 2);
+                }
+                return fibonacci(5);
+            }
+            return main();
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 8)
+
+    def test_evaljs_class(self):
+
+        text = """
+            class Shape {
+                constructor() {
+                    this.width = 5
+                    this.height = 10
+                }
+                area() {
+                    return this.width * this.height;
+                }
+            }
+
+            return ((new Shape()).area())
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 50)
+
 def main():
     unittest.main()
+
 
 if __name__ == '__main__':
     main()

@@ -22,7 +22,7 @@ def lexcmp(expected, actual, debug=False):
         print("\n%-50s | %-.50s" % ("    HYP", "    REF"))
         for a, b in seq:
             c = ' ' if tokcmp(a, b) else '|'
-            print("%-50r %s %-.50r" % (a,c,b))
+            print("%-50r %s %-.50r" % (a, c, b))
     return error_count
 
 class TokenTestCase(unittest.TestCase):
@@ -196,7 +196,6 @@ class LexerBasicTestCase(unittest.TestCase):
 
         self.assertFalse(lexcmp(expected, tokens, False))
 
-
     def test_006_expr_regex(self):
         text = "x = /a+/"
         expected = [
@@ -324,6 +323,7 @@ class LexerStringTestCase(unittest.TestCase):
 
 def main():
     unittest.main()
+
 
 if __name__ == '__main__':
     main()

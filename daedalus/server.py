@@ -17,7 +17,7 @@ class Response(object):
         super(Response, self).__init__()
         self.status_code = status_code
         self.headers = {}
-        self.payload=payload or b""
+        self.payload = payload or b""
 
         if isinstance(self.payload, str):
             self.payload = self.payload.encode("utf-8")
@@ -38,7 +38,7 @@ class JsonResponse(Response):
     def __init__(self, obj, status_code=200):
         super(JsonResponse, self).__init__(status_code)
         self.headers = {"Content-Type": "application/json"}
-        self.payload=json.dumps(obj).encode('utf-8') + b"\n"
+        self.payload = json.dumps(obj).encode('utf-8') + b"\n"
 
 class Resource(object):
     def __init__(self):
@@ -196,14 +196,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 # the form upload will contain multiple lines of information
                 # before the contents of the file begins
                 index = buf.find(b"\x0D\x0A")
-                first=True
+                first = True
                 while index >= 0:
-                    line = buf[:index+2]
-                    buf = buf[index+2:]
+                    line = buf[:index + 2]
+                    buf = buf[index + 2:]
                     index = buf.find(b"\x0D\x0A")
                     if line == '\r\n':
                         # an empty line indicates start of the content
-                        break;
+                        break
                     if first:
                         # the first line is the boundary
                         # don't trust the boundary given in the header
@@ -316,7 +316,6 @@ class SampleResource(Resource):
         response.headers['Content-Type'] = 'text/css'
         return response
 
-
     def get_source(self, request, location, matches):
         """
         serve the compiled javascript code
@@ -402,6 +401,7 @@ def main():  # pragma: no cover
     server = DemoServer("0.0.0.0", 80)
 
     server.run()
+
 
 if __name__ == '__main__':  # pragma: no cover
     main()

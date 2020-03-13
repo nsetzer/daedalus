@@ -484,7 +484,7 @@ class CompilerStressTestCase(unittest.TestCase):
         # the lexer / parser / compiler should
         # support a line that is longer than 4096 characters
         N = 819
-        text = "abc01" + ("+abc01"*N)
+        text = "abc01" + ("+abc01" * N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.compiler.compile(ast).replace("\n", "")
@@ -507,7 +507,7 @@ class CompilerStressTestCase(unittest.TestCase):
         # up greater tree depth
 
         N = 2000
-        text = "2" + ("+2"*N)
+        text = "2" + ("+2" * N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.compiler.compile(ast).replace("\n", "")
@@ -528,6 +528,7 @@ class CompilerStressTestCase(unittest.TestCase):
 
 def main():
     unittest.main()
+
 
 if __name__ == '__main__':
     main()

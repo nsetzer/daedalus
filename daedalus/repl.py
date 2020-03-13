@@ -43,9 +43,8 @@ def unescape(text):
             else:
                 out += c
 
-
         except StopIteration:
-            break;
+            break
     return out
 
 def get_prompt():
@@ -53,7 +52,7 @@ def get_prompt():
     #prompt = unescape(prompt)
     #parts = [p for p in prompt.split("\n") if p.strip()]
     #parts[-1] = "(daedalus) " + parts[-1]
-    #return '\n'.join(parts)
+    # return '\n'.join(parts)
     return "\n(daedalus)\n>>> "
 
 class Repl(object):
@@ -70,7 +69,7 @@ class Repl(object):
                 text = input(self.prompt)
                 self._main(text)
             except ExitRepl as e:
-                break;
+                break
             except KeyboardInterrupt as e:
                 pass
             except TokenError as e:
@@ -117,6 +116,7 @@ def main():
     repl = Repl()
 
     repl.main()
+
 
 if __name__ == '__main__':
     main()

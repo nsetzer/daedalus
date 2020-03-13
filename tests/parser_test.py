@@ -174,7 +174,6 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-
     def test_001_attribute(self):
 
         text = "a.b"
@@ -635,7 +634,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_ANONYMOUS_FUNCTION', '',
-                TOKEN('T_KEYWORD', 'function'),
+                TOKEN('T_TEXT', 'Anonymous'),
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_TEXT', 'x')),
                 TOKEN('T_BLOCK', '{}',
@@ -669,6 +668,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_LAMBDA', '=>',
+                Token(Token.T_TEXT, 1, 3, 'Anonymous'),
                 TOKEN('T_ARGLIST', '()'),
                 TOKEN('T_OBJECT', '{}'))
         )
@@ -682,6 +682,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_LAMBDA', '=>',
+                Token(Token.T_TEXT, 1, 3, 'Anonymous'),
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_TEXT', 'a'),
                     TOKEN('T_TEXT', 'b'),
@@ -698,6 +699,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_LAMBDA', '=>',
+                Token(Token.T_TEXT, 1, 3, 'Anonymous'),
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_TEXT', 'b'))
         )
@@ -766,7 +768,7 @@ class ParserClassTestCase(unittest.TestCase):
                 TOKEN('T_KEYWORD', 'extends',
                     TOKEN('T_TEXT', 'B')),
                 TOKEN('T_BLOCK', '{}',
-                    TOKEN('T_ANONYMOUS_FUNCTION', '',
+                    TOKEN('T_METHOD', '',
                         TOKEN('T_TEXT', 'onClick'),
                         TOKEN('T_ARGLIST', '()',
                             TOKEN('T_TEXT', 'event')),
@@ -794,6 +796,7 @@ class ParserClassTestCase(unittest.TestCase):
 
 def main():
     unittest.main()
+
 
 if __name__ == '__main__':
     main()
