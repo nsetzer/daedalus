@@ -142,7 +142,10 @@ class Token(object):
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
     T_LAMBDA = "T_LAMBDA"  # arrow function
     T_UNPACK_SEQUENCE = "T_UNPACK_SEQUENCE"  # arrow function
+    T_LOGICAL_AND = "T_LOGICAL_AND"
+    T_LOGICAL_OR = "T_LOGICAL_OR"
 
+    # these variables are assigned by the transform engine for variable scopes
     T_GLOBAL_VAR = 'T_GLOBAL_VAR'
     T_LOCAL_VAR = 'T_LOCAL_VAR'
     T_DELETE_VAR = 'T_DELETE_VAR'

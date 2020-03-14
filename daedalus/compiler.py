@@ -43,10 +43,17 @@ ST_STORE = 0x008  # compiling this token will pop an item from the stack
 
 # states starting at 0x100 are used to count the compilation phase
 # and can be reused between token types.
+ST_PHASE_1 = 0x100
+ST_PHASE_2 = 0x200
+ST_PHASE_3 = 0x400
+ST_PHASE_4 = 0x800
+
 ST_BRANCH_TRUE = 0x100
 ST_BRANCH_FALSE = 0x200
 
 ST_WHILE = 0x100
+
+
 
 class Compiler(object):
 
@@ -90,6 +97,8 @@ class Compiler(object):
             Token.T_POSTFIX: self._traverse_postfix,
             Token.T_PREFIX: self._traverse_prefix,
             Token.T_EXPORT: self._traverse_export,
+            Token.T_LOGICAL_AND: self._traverse_logical_and,
+            Token.T_LOGICAL_OR: self._traverse_logical_or,
 
             Token.T_VAR: self._traverse_var,
 
@@ -125,6 +134,8 @@ class Compiler(object):
             Token.T_SUBSCR: self._compile_subscr,
             Token.T_POSTFIX: self._compile_postfix,
             Token.T_PREFIX: self._compile_prefix,
+            Token.T_LOGICAL_AND: self._compile_logical_and,
+            Token.T_LOGICAL_OR: self._compile_logical_or,
 
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
@@ -191,17 +202,25 @@ class Compiler(object):
         # create a default 'this' so that arrow functions have something
         # to inherit
 
-        if ast.type == Token.T_MODULE:
-            kind, index = self._token2index(JsUndefined.Token, load=True)
-            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
-            kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), load=False)
-            self.bc.append(BytecodeInstr('STORE_' + kind, index))
+
 
         # compile userland code
 
         flg = ST_TRAVERSE
         if ast.type not in (Token.T_MODULE, Token.T_GROUPING, Token.T_BLOCK):
             flg |= ST_LOAD
+
+        # initialize the return value for REPL mode
+        # not all expressions produce a value this ensures there is something
+        # on the stack that can be assigned to '_'
+        if self.flags & Compiler.CF_REPL:
+            self.bc.append(BytecodeInstr('LOAD_CONST', 0))
+
+        if ast.type == Token.T_MODULE:
+            kind, index = self._token2index(JsUndefined.Token, load=True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+            kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), load=False)
+            self.bc.append(BytecodeInstr('STORE_' + kind, index))
 
         self.seq = [(0, flg, ast)]
 
@@ -221,6 +240,13 @@ class Compiler(object):
                     fn(depth, state, token)
                 else:
                     raise CompileError(token, "token not supported")
+
+        if self.flags & Compiler.CF_REPL:
+            tok = Token(Token.T_GLOBAL_VAR, 0, 0, "_")
+            kind, index = self._token2index(tok, load=False)
+            self.bc.append(BytecodeInstr('STORE_' + kind, index))
+            self.module_globals["_"] = "_"
+
 
         if self.flags & Compiler.CF_REPL or self.flags & Compiler.CF_MODULE:
             instr = []
@@ -310,7 +336,15 @@ class Compiler(object):
 
     def _traverse_module(self, depth, state, token):
 
-        for child in reversed(token.children):
+        if len(token.children) == 0:
+            return
+
+        last = token.children[-1]
+        rest = token.children[:-1]
+
+        flg = ST_LOAD if self.flags&Compiler.CF_REPL else 0
+        self._push(depth + 1, ST_TRAVERSE|flg, last)
+        for child in reversed(rest):
             self._push(depth + 1, ST_TRAVERSE, child)
 
     def _traverse_binary(self, depth, state, token):
@@ -339,11 +373,12 @@ class Compiler(object):
 
     def _traverse_assign(self, depth, state, token):
 
-        self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
         if token.value == "=":
             self._push(depth, ST_TRAVERSE | ST_STORE, token.children[0])
+            self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
             self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
         else:
+            self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
             self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[0])
             self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
 
@@ -596,8 +631,12 @@ class Compiler(object):
         duplicating top is conditional on a ld flag being set
         """
 
-        self._push(depth, ST_COMPILE | ST_LOAD, token)
-        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
+        # TODO: this can be done better to minimize side effects
+        #      x[n++]++  :: increments n twice
+
+        self._push(depth + 1, ST_TRAVERSE | ST_STORE, token.children[0])
+        self._push(depth, ST_COMPILE, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
 
     def _traverse_prefix(self, depth, state, token):
         """
@@ -610,7 +649,10 @@ class Compiler(object):
 
         duplicating top is conditional on a ld flag being set
         """
-        pass
+
+        self._push(depth + 1, ST_TRAVERSE | ST_STORE, token.children[0])
+        self._push(depth, ST_COMPILE, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
 
     def _traverse_pyimport(self, depth, state, token):
 
@@ -642,8 +684,19 @@ class Compiler(object):
         for child in reversed(token.children):
             self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
 
+    def _traverse_logical_and(self, depth, state, token):
 
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_2, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[1])
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_1, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
 
+    def _traverse_logical_or(self, depth, state, token):
+
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_2, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[1])
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_1, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
 
     # -------------------------------------------------------------------------
 
@@ -706,11 +759,13 @@ class Compiler(object):
         }
 
         if token.value == '=':
-            pass
+            if state&ST_LOAD:
+                self.bc.append(BytecodeInstr('DUP_TOP'))
 
         if token.value in binop_store:
             self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
-
+            if state&ST_LOAD:
+                self.bc.append(BytecodeInstr('DUP_TOP'))
             # TODO: this has side effects if LHS is complicated
             self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
 
@@ -850,7 +905,7 @@ class Compiler(object):
 
     def _compile_keyword(self, depth, state, token):
 
-        if token.value in ['this', 'null']:
+        if token.value in ['this', 'null', 'false', 'true']:
             return self._compile_text(depth, state, token)
         else:
             raise CompileError(token, "Unsupported keyword")
@@ -859,10 +914,54 @@ class Compiler(object):
         pass
 
     def _compile_postfix(self, depth, state, token):
-        pass
+
+        unop2 = {
+            "++": "BINARY_ADD",
+            "--": "BINARY_SUBTRACT"
+        }
+
+        valuetok = Token(Token.T_NUMBER, 0, 0, "1")
+        kind, index = self._token2index(valuetok, True)
+
+        # TODO: duptop is conditional on production
+        self.bc.append(BytecodeInstr('DUP_TOP'))
+        self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+        self.bc.append(BytecodeInstr(unop2[token.value]))
 
     def _compile_prefix(self, depth, state, token):
-        pass
+
+        unop2 = {
+            "++": "BINARY_ADD",
+            "--": "BINARY_SUBTRACT"
+        }
+
+        valuetok = Token(Token.T_NUMBER, 0, 0, "1")
+        kind, index = self._token2index(valuetok, True)
+
+        self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+        self.bc.append(BytecodeInstr(unop2[token.value]))
+        # TODO: duptop is conditional on production
+        self.bc.append(BytecodeInstr('DUP_TOP'))
+
+    def _compile_logical_and(self, depth, state, token):
+
+        if state&ST_PHASE_1:
+            token.label = self._make_label()
+            self.bc.append(BytecodeJumpInstr('JUMP_IF_FALSE_OR_POP', token.label))
+        if state&ST_PHASE_2:
+            nop = BytecodeInstr('NOP')
+            nop.add_label(token.label)
+            self.bc.append(nop)
+
+    def _compile_logical_or(self, depth, state, token):
+
+        if state&ST_PHASE_1:
+            token.label = self._make_label()
+            self.bc.append(BytecodeJumpInstr('JUMP_IF_TRUE_OR_POP', token.label))
+        if state&ST_PHASE_2:
+            nop = BytecodeInstr('NOP')
+            nop.add_label(token.label)
+            self.bc.append(nop)
 
     # -------------------------------------------------------------------------
 
@@ -1036,29 +1135,17 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-        "use strict";
-        const[A,B,f1,f2]=(function(){
-            function f1(){};
-            function f2(){};
-            function A(){};
-            function B(){};
-            return[A,B,f1,f2]
-        })();
-        const[fibonacci]=(function(){
-            function fibonacci(num){
-                if(num<=1){return 1};
-                return fibonacci(num-1)+fibonacci(num-2)
-            };
-            console.log("derp");
-            return[fibonacci]
-        })();
-        return{A,B,f1,f2,fibonacci}
+    // 0 || 2
+    // 1 || 2
+    // 1 && 2
+    // 0 && 1
+    //console.log(true, false, undefined, null)
     """
 
     tokens = Lexer().lex(text1)
     ast = Parser().parse(tokens)
 
-    interp = Compiler()
+    interp = Compiler(flags=Compiler.CF_REPL)
 
     try:
         interp.compile(ast)

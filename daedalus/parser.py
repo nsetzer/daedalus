@@ -284,6 +284,48 @@ class Parser(object):
                 i += callback(parent, tokens, j, operators)
 
     def visit_attr(self, parent, tokens, index, operators):
+        """
+        Handle the various forms of attribute access
+
+        consume:
+            x.y
+            x[y]
+            x()
+            x?.y
+            x?.[y]
+            x?.()
+            function()  - anonymous function
+            []          - square brakets with no prefix declare a new list
+
+        produce:
+
+            T_BINARY
+                <any>
+                T_ATTR
+
+            T_OPTIONAL_CHAINING
+                <any>
+                T_ATTR
+
+            T_OPTIONAL_CHAINING
+                <any>
+                T_ARGLIST
+
+            T_OPTIONAL_CHAINING
+                <any>
+                T_SUBSCR
+
+            T_FUNCTIONCALL
+                <any>
+                T_ARGLIST
+
+            T_ANONYMOUS_FUNCTION
+                T_TEXT
+                T_ARGLIST
+                <any>
+
+            T_LIST
+        """
 
         token = tokens[index]
         # check for attribute operator or 'optional chaining' / elvis operator
@@ -367,12 +409,22 @@ class Parser(object):
 
     def visit_new(self, parent, tokens, index, operators):
         """
-        new constructor
-        new constructor()
 
-        when this function is run the function call for the constructor
-        has already been processed. This collects a single expression after
-        the keyword
+        consume:
+
+            new constructor
+            new constructor()
+
+        produce:
+
+            T_NEW
+                <any>
+
+        Note:
+
+            when this function is run the function call for the constructor
+            has already been processed. This collects a single expression after
+            the keyword
         """
 
         token = tokens[index]
@@ -395,6 +447,20 @@ class Parser(object):
         return 1
 
     def visit_unary_postfix(self, parent, tokens, index, operators):
+        """
+        handle postfix increment and decrement
+
+        consume:
+
+            x++
+            x--
+
+        produce:
+
+            T_POSTFIX
+                <any>
+
+        """
 
         token = tokens[index]
 
@@ -415,7 +481,24 @@ class Parser(object):
         return rv
 
     def visit_unary_prefix(self, parent, tokens, index, operators):
+        """
+        handle prefix operators which can be confused for binary operators
 
+        consume:
+
+            ++x
+            --x
+            !x
+            ~x
+            +x
+            -x
+
+        produce:
+
+            T_PREFIX
+                <any>
+
+        """
         token = tokens[index]
 
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
@@ -436,6 +519,21 @@ class Parser(object):
         return rv
 
     def visit_prefix(self, parent, tokens, index, operators):
+        """
+        handle generic prefix operators
+
+        consume:
+
+            typeof expr
+            void expr
+            delete expr
+            await expr
+
+        produce:
+
+            T_PREFIX
+                <expr>
+        """
 
         token = tokens[index]
 
@@ -449,6 +547,20 @@ class Parser(object):
         return 1
 
     def visit_unary(self, parent, tokens, index, operators):
+        """
+            handle prefix operators which cannot be confused for binary operators
+
+        consume:
+
+            ...expr         - spread
+            yield expr      -
+            yield* expr     -
+
+        produce:
+
+            T_PREFIX
+                <expr>
+        """
         token = tokens[index]
 
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
@@ -462,6 +574,15 @@ class Parser(object):
         return 1
 
     def visit_binary(self, parent, tokens, index, operators):
+        """
+        handle binary operators
+
+        produce:
+
+            T_BINARY
+                <expr_lhs>
+                <expr_rhs>
+        """
         token = tokens[index]
 
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
@@ -472,11 +593,37 @@ class Parser(object):
         lhs = self.consume(tokens, token, index, -1)
         token.children.append(lhs)
         token.children.append(rhs)
-        token.type = Token.T_BINARY
+
+        if token.value == '&&':
+            token.type = Token.T_LOGICAL_AND
+        elif token.value == '||':
+            token.type = Token.T_LOGICAL_OR
+        else:
+            token.type = Token.T_BINARY
 
         return self._offset
 
     def visit_assign(self, parent, tokens, index, operators):
+        """
+        handle binary operators for assignment
+
+        consume:
+
+            expr_lhs = expr_rhs
+            [identifier0, ...] = expr_rhs
+
+        produce:
+
+            T_ASSIGN
+                <expr_lhs>
+                <expr_rhs>
+
+            T_ASSIGN
+                T_UNPACK_SEQUENCE
+                    <identifier0>
+                    ...
+                <expr_rhs>
+        """
         token = tokens[index]
 
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
@@ -501,8 +648,18 @@ class Parser(object):
 
     def visit_lambda(self, parent, tokens, index, operators):
         """
-        () => {}
-        a => b
+        handle the es6 arrow operator
+
+        consume:
+            () => {}
+            a => b
+
+        produce:
+
+            T_LAMBDA
+                T_TEXT
+                T_ARGLIST
+                <any>
         """
         token = tokens[index]
 
