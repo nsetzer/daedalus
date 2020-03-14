@@ -1,11 +1,11 @@
 
-import './daedalus_util.js'
-import './daedalus_element.js'
-import './daedalus_location.js'
-import './daedalus_router.js'
-import './daedalus_auth.js'
-import './daedalus_fileapi.js'
-import './daedalus_platform.js'
+include './daedalus_util.js'
+include './daedalus_element.js'
+include './daedalus_location.js'
+include './daedalus_router.js'
+include './daedalus_auth.js'
+include './daedalus_fileapi.js'
+include './daedalus_platform.js'
 
 let workstack = [];
 let deletions = [];

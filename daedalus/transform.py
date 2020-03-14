@@ -104,15 +104,16 @@ class TransformGrouping(TransformBase):
 class TransformFlatten(TransformBase):
 
     def visit(self, token, parent):
-
-        if token.type == Token.T_GROUPING and token.value != "()":
+        # TODO: remove square bracket type from this and add T_UNPACK_SEQUENCE
+        if token.type == Token.T_GROUPING and not (token.value == "()" or token.value == "[]"):
             # either a {} block was incorrectly parsed
             # or a [] block was not labeled list of subscr
-            raise ParseError(token, "invalid grouping node: " + token.value)
+            raise TokenError(token, "invalid grouping node: " + token.value)
 
         if token.type == Token.T_OBJECT or \
            token.type == Token.T_ARGLIST or \
            token.type == Token.T_LIST or \
+           token.type == Token.T_UNPACK_SEQUENCE or \
            token.type == Token.T_GROUPING:
 
             chlst = token.children
@@ -528,8 +529,9 @@ class UndefinedRef(Ref):
 
 class VariableScope(object):
     # require three scope instances, for global, function and block scope
-    def __init__(self, parent=None):
+    def __init__(self, name, parent=None):
         super(VariableScope, self).__init__()
+        self.name = name
         self.parent = parent
 
         # freevars, and cellvars are all mappings of:
@@ -588,10 +590,11 @@ class VariableScope(object):
 
         return ref
 
-    def _define_block(self, label):
+    def _define_block(self, token):
+        label = token.value
 
         if label in self.blscope[-1]:
-            raise TokenError(token, "already defined at this scope")
+            raise TokenError(token, "already defined at scope %s" % self.name)
 
         for bl in reversed(self.blscope):
             if label in bl:
@@ -599,21 +602,24 @@ class VariableScope(object):
 
         return None
 
-    def _define_function(self, label):
+    def _define_function(self, token):
+        label = token.value
 
         if label in self.fnscope:
             return self.fnscope[label]
 
         return None
 
-    def define(self, scflags, token):
+    def _define_impl(self, scflags, token):
 
+        if not token.value:
+            raise TokenError(token, "empty identifier")
         label = token.value
 
         if scflags & SC_FUNCTION:
-            ref = self._define_function(label)
+            ref = self._define_function(token)
         else:
-            ref = self._define_block(label)
+            ref = self._define_block(token)
 
         if self.parent is None:
             scflags |= SC_GLOBAL
@@ -641,7 +647,8 @@ class VariableScope(object):
         if token.type == Token.T_TEXT:
             token.type = new_ref.type()
 
-        # print("define name", self.depth, token.value, scope2str(scflags))
+        # print("define name", self.depth, token.value, token.line, scope2str(scflags), self.name)
+
 
         return new_ref
 
@@ -652,13 +659,16 @@ class VariableScope(object):
 
         # search for the scope the defines this label
         scopes = [self]
-        while scopes[-1]:
-
+        while scopes[-1] is not None:
             if label in scopes[-1].fnscope:
                 break
 
             if any([label in bl for bl in scopes[-1].blscope]):
                 break
+
+            # TODO: maybe replace above with this?
+            #if label in scopes[-1].all_labels:
+            #    break
 
             scopes.append(scopes[-1].parent)
 
@@ -675,6 +685,9 @@ class VariableScope(object):
                 # define this reference in this scope
                 ref = self.define(SC_BLOCK, token)
 
+            if ref is None:
+                raise TokenError(token, "identity error (1) in %s" % self.name)
+
         elif scopes[-1] is not self:
             # found in a parent scope
             scope = scopes[-1]
@@ -687,11 +700,13 @@ class VariableScope(object):
                 for scope2 in scopes[:-1]:
                     scope2.freevars.add(ref.identity())
 
+            if ref is None:
+                raise TokenError(token, "identity error (2) in %s" % self.name)
         else:
             ref = self._getRef(self, label)
 
-        if ref is None:
-            raise TokenError(token, "identity error")
+            if ref is None:
+                raise TokenError(token, "identity error (3) in %s" % self.name)
 
         token.value = ref.identity()
         if token.type == Token.T_TEXT:
@@ -701,11 +716,57 @@ class VariableScope(object):
 
         return ref
 
+    def define(self, scflags, token):
+
+        try:
+            return self._define_impl(scflags, token)
+        except TokenError as e:
+            scope = self
+            while scope:
+                print("-" * 50)
+                print(scope.name)
+                print(scope.all_labels)
+                print(scope.freevars)
+                print(scope.cellvars)
+                print(scope.fnscope.keys())
+                print([list(bl.keys()) for bl in scope.blscope])
+                scope = scope.parent
+
+            raise e
+
     def load(self, token):
-        return self._load_store(token, True)
+
+        try:
+            return self._load_store(token, True)
+        except TokenError as e:
+            scope = self
+            while scope:
+                print("-" * 50)
+                print(scope.name)
+                print(scope.all_labels)
+                print(scope.freevars)
+                print(scope.cellvars)
+                print(scope.fnscope.keys())
+                print([list(bl.keys()) for bl in scope.blscope])
+                scope = scope.parent
+            raise e
 
     def store(self, token):
-        return self._load_store(token, False)
+
+        try:
+            return self._load_store(token, False)
+        except TokenError as e:
+            scope = self
+            while scope:
+                print("-" * 50)
+                print(scope.name)
+                print(scope.all_labels)
+                print(scope.freevars)
+                print(scope.cellvars)
+                print(scope.fnscope.keys())
+                print([list(bl.keys()) for bl in scope.blscope])
+                scope = scope.parent
+            raise e
 
     def pushBlockScope(self):
         self.blscope.append({})
@@ -878,6 +939,9 @@ class TransformAssignScope(object):
             Token.T_VAR: self.visit_var,
             Token.T_OBJECT: self.visit_object,
             Token.T_BINARY: self.visit_binary,
+            Token.T_PYIMPORT: self.visit_pyimport,
+            Token.T_EXPORT: self.visit_export,
+            Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
 
             # Token.T_GROUPING: self.visit_error,
         }
@@ -889,6 +953,7 @@ class TransformAssignScope(object):
             Token.T_FUNCTION: self.finalize_function,
             Token.T_ANONYMOUS_FUNCTION: self.finalize_function,
             Token.T_LAMBDA: self.finalize_function,
+            #Token.T_EXPORT: self.finalize_export,
 
         }
 
@@ -908,6 +973,7 @@ class TransformAssignScope(object):
 
         self._transform(ast)
 
+
     def _transform(self, token):
 
         while self.seq:
@@ -925,7 +991,7 @@ class TransformAssignScope(object):
 
     def initialState(self, token):
 
-        return (ST_VISIT, VariableScope(), token, None)
+        return (ST_VISIT, VariableScope('__main__'), token, None)
 
     # -------------------------------------------------------------------------
 
@@ -954,23 +1020,26 @@ class TransformAssignScope(object):
         scflags = (flags & ST_SCOPE_MASK) >> 12
         scope.define(scflags, token.children[0])
 
-        next_scope = VariableScope(scope)
+        name = scope.name + "." + token.children[0].value
+        next_scope = VariableScope(name, scope)
 
         for child in token.children[1].children:
             next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
-        self._push_tokens((ST_VISIT | (flags & ST_SCOPE_MASK)), next_scope, token.children[1:], token)
+        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
 
     def visit_anonymous_function(self, flags, scope, token, parent):
 
-        next_scope = VariableScope(scope)
+        name = scope.name + "." + token.children[0].value
+        next_scope = VariableScope(name, scope)
 
+        # define each positional argument in the next scope
         for child in token.children[1].children:
             next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
-        self._push_children(next_scope, token, flags)
+        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
 
     def visit_lambda(self, flags, scope, token, parent):
 
@@ -986,13 +1055,14 @@ class TransformAssignScope(object):
             tok = token.children[2]
             token.children[2] = Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])
 
-        next_scope = VariableScope(scope)
+        name = scope.name + "." + token.children[0].value
+        next_scope = VariableScope(name, scope)
 
         for child in token.children[1].children:
             next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
-        self._push_children(next_scope, token, flags)
+        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
 
     def visit_var(self, flags, scope, token, parent):
         flags = 0
@@ -1008,12 +1078,11 @@ class TransformAssignScope(object):
 
         # TODO: LHS can be more complicated that T_TEXT
         if token.value == "=":
-
             self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], parent)
-            self._push_tokens(ST_VISIT | (flags & ST_SCOPE_MASK), scope, [token.children[1]], parent)
+            self._push_tokens(ST_VISIT, scope, [token.children[1]], parent)
 
         else:
-            self._push_children(scope, token, flags)
+            self._push_children(scope, token, 0)
 
     def visit_text(self, flags, scope, token, parent):
         # note: this only works because the parser implementation of
@@ -1066,6 +1135,31 @@ class TransformAssignScope(object):
             token.children[0].type = Token.T_STRING
             token.children[0].value = repr(token.children[0].value)
 
+    def visit_pyimport(self, flags, scope, token, parent):
+
+        scflags = (flags & ST_SCOPE_MASK) >> 12
+
+        # the imported variable name
+        if token.children[0].value:
+            scope.define(scflags, token.children[0])
+
+        # for each value in the fromlist
+        for argtoken in token.children[2].children:
+            scope.define(scflags, argtoken)
+
+    def visit_export(self, flags, scope, token, parent):
+
+        # don't reverse
+        new_flags = (ST_VISIT | (flags & ST_SCOPE_MASK))
+        for child in token.children:
+            self.seq.append((new_flags, scope, child, token))
+
+    def visit_unpack_sequence(self, flags, scope, token, parent):
+        scflags = (flags & ST_SCOPE_MASK) >> 12
+
+        for child in token.children:
+            scope.define(scflags, child)
+
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
@@ -1107,6 +1201,7 @@ class TransformAssignScope(object):
             self.seq.append((ST_VISIT | (flags & ST_SCOPE_MASK), scope, child, token))
 
     def _push_tokens(self, flags, scope, tokens, parent):
+
         for token in reversed(tokens):
             self.seq.append((flags, scope, token, parent))
     # -------------------------------------------------------------------------
@@ -1251,14 +1346,15 @@ def main_var():
     tokens = Lexer().lex(text2)
     ast2 = Parser().parse(tokens)
 
-    lines1 = ast2.toString(2).split("\n")
+    lines1 = ast2.toString(3).split("\n")
 
     tr = TransformClassToFunction()
     tr.transform(ast)
 
-    lines2 = ast.toString(2).split("\n")
+    lines2 = ast.toString(3).split("\n")
 
     seq, cor, sub, ins, del_ = edit_distance(lines1, lines2, lambda x, y: x == y)
+    print("")
     print("")
     print(len(lines1), len(lines2))
     print("")
@@ -1271,8 +1367,8 @@ def main_var():
 
     # for i, (l1, l2) in enumerate(zip(lines1, lines2)):
     for i, (l1, l2) in enumerate(seq):
-        c = ' ' if l1 == l2 else '|'
-        print("%3d: %-70s %s %-70s" % (i + 1, l1, c, l2))
+        c = '=' if l1 == l2 else ' '
+        print("%3d: %-40s %s %-40s" % (i + 1, l1, c, l2))
 
 
 if __name__ == '__main__':

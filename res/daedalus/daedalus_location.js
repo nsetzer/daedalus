@@ -3,7 +3,7 @@
 patch the history object to fire a signal every time the location changes
 */
 
-import './daedalus_element.js'
+include './daedalus_element.js'
 
 history.locationChanged = Signal(null, "locationChanged")
 history._pushState = history.pushState;

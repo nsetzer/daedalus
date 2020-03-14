@@ -521,6 +521,7 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'v1',
+                TOKEN('T_TEXT', 'v1'),
                 TOKEN('T_VAR', 'const',
                     TOKEN('T_ASSIGN', '=',
                         TOKEN('T_TEXT', 'v1'),
@@ -536,6 +537,7 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'a',
+                TOKEN('T_TEXT', 'a'),
                 TOKEN('T_FUNCTION', 'function',
                     TOKEN('T_TEXT', 'a'),
                     TOKEN('T_ARGLIST', '()'),
@@ -551,6 +553,7 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'A',
+                TOKEN('T_TEXT', 'A'),
                 TOKEN('T_CLASS', 'class',
                     TOKEN('T_TEXT', 'A'),
                     TOKEN('T_KEYWORD', 'extends'),

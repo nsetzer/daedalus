@@ -23,6 +23,15 @@ class ParseError(TokenError):
 def diag(tokens):
     print([t.value for t in tokens])
 
+def prefix_count(text, char):
+    count = 0
+    for c in text:
+        if c == char:
+            count += 1
+        else:
+            break;
+    return count
+
 class Parser(object):
 
     W_BRANCH_FALSE = 1
@@ -476,6 +485,14 @@ class Parser(object):
 
         rhs = self.consume(tokens, token, index, 1)
         lhs = self.consume(tokens, token, index, -1)
+
+        #if lhs.type == Token.T_GROUPING and token.value == "[]" or lhs.type == Token.:
+        if lhs.type == Token.T_LIST:
+            lhs.type = Token.T_UNPACK_SEQUENCE
+        if lhs.type == Token.T_VAR:
+            if lhs.children[0].type == Token.T_LIST:
+                lhs.children[0].type = Token.T_UNPACK_SEQUENCE
+
         token.children.append(lhs)
         token.children.append(rhs)
         token.type = Token.T_ASSIGN
@@ -674,7 +691,7 @@ class Parser(object):
         token = tokens[index]
 
         if token.type != Token.T_KEYWORD and \
-           not (token.type == Token.T_TEXT and token.value in ('from', 'include')):
+           not (token.type == Token.T_TEXT and token.value in ('from', 'include', 'pyimport')):
             return 1
 
         # --
@@ -685,6 +702,9 @@ class Parser(object):
 
         if token.value == 'import':
             self.collect_keyword_import(tokens, index)
+
+        if token.value == 'pyimport':
+            self.collect_keyword_pyimport(tokens, index)
 
         if token.value == 'include':
             self.collect_keyword_include(tokens, index)
@@ -816,9 +836,11 @@ class Parser(object):
 
     def collect_keyword_dowhile(self, tokens, index):
         """
-        output token has two children
-            1: block
-            2: test
+        The resulting token has the form
+
+        Token<T_DOWHILE, _>
+            Token<..., body>
+            Token<..., test>
         """
         token = tokens[index]
 
@@ -858,6 +880,17 @@ class Parser(object):
         export function () {}
         export class {}
 
+        The resulting token has the form
+
+            Token<T_EXPORT, export_name>
+                Token<T_TEXT, export_name>
+                Token<..., body>
+
+            Token<T_EXPORT_DEFAULT, export_name>
+                Token<T_TEXT, export_name>
+                Token<..., body>
+
+
         """
         token = tokens[index]
 
@@ -888,8 +921,9 @@ class Parser(object):
             else:
                 raise ParseError(node, "unable to export token")
 
+        name = Token(Token.T_TEXT, child.line, child.index, token.value)
         token.type = kind
-        token.children = [child]
+        token.children = [name, child]
 
     def _collect_keyword_import_get_name(self, module):
 
@@ -919,6 +953,24 @@ class Parser(object):
             return module.value
         else:
             raise ParseError(module, "invalid module name")
+
+    def collect_keyword_pyimport(self, tokens, index):
+
+        token = tokens[index]
+
+        module = self.consume(tokens, token, index, 1)
+
+        token.type = Token.T_PYIMPORT
+        import_path = self._collect_keyword_import_get_name(module)
+        import_name = import_path.split('.')[0]
+        import_level = prefix_count(import_path, '.')
+
+        tok_name = Token(Token.T_TEXT, token.line, token.index, import_name)
+        tok_level = Token(Token.T_NUMBER, token.line, token.index, str(import_level))
+        tok_fromlist = tok1 = Token(Token.T_ARGLIST, token.line, token.index, "()")
+
+        token.value = import_path
+        token.children = [tok_name, tok_level, tok_fromlist]
 
     def collect_keyword_import(self, tokens, index):
         token = tokens[index]
@@ -1286,7 +1338,8 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-        value => value
+        from module foo.bar import {blah}
+        import foo.bar
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)
