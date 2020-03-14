@@ -1,6 +1,6 @@
 
-import './daedalus_element.js'
-import './daedalus_location.js'
+include './daedalus_element.js'
+include './daedalus_location.js'
 
 // pattern: a location string used to match URLs
 // returns a function (map) => string

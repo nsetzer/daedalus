@@ -1,33 +1,10 @@
-
-
 import unittest
 from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
-from daedalus.compiler import Compiler, SourceMap, isalphanum
-
-class SourceMapTestCase(unittest.TestCase):
-
-    def test_001_b64decode(self):
-        srcmap = SourceMap()
-
-        self.assertEqual(srcmap.b64decode('uDt7D0TkuK'), [55, -1974, 314, 5346])
-        self.assertEqual(srcmap.b64decode('gvDn1EilwhEQ4xDpo3vP'), [1776, -2387, 2121809, 8, 1820, -8121988])
-
-    def test_001_b64encode(self):
-        srcmap = SourceMap()
-
-        self.assertEqual(srcmap.b64encode([55, -1974, 314, 5346]), 'uDt7D0TkuK')
-        self.assertEqual(srcmap.b64encode([1776, -2387, 2121809, 8, 1820, -8121988]), 'gvDn1EilwhEQ4xDpo3vP')
-
-class CompilerUtilTestCase(unittest.TestCase):
-
-    def test_001_expr_1(self):
-
-        self.assertTrue(isalphanum("abc", "123"))
-        self.assertTrue(isalphanum("\u263A", "\u263A"))
-        self.assertTrue(isalphanum("function", "_name"))
+from daedalus.compiler import Compiler
+from daedalus.builtins import JsObject, JsArray, JsUndefined
 
 class CompilerTestCase(unittest.TestCase):
 
@@ -42,489 +19,270 @@ class CompilerTestCase(unittest.TestCase):
         pass
 
     def setUp(self):
-        self.compiler = Compiler()
+        super().setUp()
 
     def tearDown(self):
         super().tearDown()
 
-    def test_001_expr_1(self):
-
-        text = """
-            const x = 0
-        """
-        expected = "const x=0"
+    def evaljs(self, text):
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
 
-        self.assertEqual(output, expected)
+        interpreter = Compiler()
+        interpreter.compile(ast)
+        return interpreter.execute()
 
-    def test_001_expr_2(self):
+    def test_evaljs_lambda_simple_expr(self):
 
         text = """
-            const x = 0
-            const y = 1
+            x = () => 0
+            return x()
         """
-        expected = "const x=0;const y=1"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 0)
 
-        self.assertEqual(output, expected)
-
-    def test_001_expr_3(self):
+    def test_evaljs_lambda_simple_block(self):
 
         text = """
-            const x = {
-                abc: 123,
-                def
-            }
+            x = () => {return 0}
+            return x()
         """
-        expected = "const x={abc:123,def}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 0)
 
-        self.assertEqual(output, expected)
-
-    def test_001_expr_4(self):
+    def test_evaljs_lambda_1arg_v1(self):
 
         text = """
-            myfunc("abc", 123, 3.14)
+            x = value => {return value}
+            return x(42)
         """
-        expected = "myfunc(\"abc\",123,3.14)"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 42)
 
-        self.assertEqual(output, expected)
-
-    def test_001_branch_1(self):
+    def test_evaljs_lambda_1arg_v2(self):
 
         text = """
-            if (x > 0) {
-                x += 1
-                console.log(x)
-            }
+            x = (value) => {return value}
+            return x(42)
         """
-        expected = "if(x>0){x+=1;console.log(x)}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 42)
 
-        self.assertEqual(output, expected)
-
-    def test_001_branch_2(self):
+    def test_evaljs_lambda_empty_object(self):
 
         text = """
-            if (x > 0) {
-                x += 1
-                console.log(x)
+            x = () => {}
+            return x()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsObject)
+
+    def test_evaljs_object_build(self):
+
+        text = """
+            return {width: 123}
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsObject)
+        self.assertEqual(result.width, 123)
+
+    def test_evaljs_object_setattr(self):
+
+        text = """
+            x = {width: 123}
+            x.width = 42
+            return x
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsObject)
+        self.assertEqual(result.width, 42)
+
+    def test_evaljs_list_build(self):
+
+        text = """
+            return [1,2,3]
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsArray)
+        self.assertEqual(result.length, 3)
+        self.assertEqual(result[0], 1)
+        self.assertEqual(result[1], 2)
+        self.assertEqual(result[2], 3)
+
+    def test_evaljs_list_setindex(self):
+
+        text = """
+            x = [1,2,3]
+            x[0] = 4
+            return x
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsArray)
+        self.assertEqual(result.length, 3)
+        self.assertEqual(result[0], 4)
+        self.assertEqual(result[1], 2)
+        self.assertEqual(result[2], 3)
+
+    def test_evaljs_list_length(self):
+
+        text = """
+            x = [1,2,3]
+            return x.length
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 3)
+
+    def test_evaljs_branch_true(self):
+
+        text = """
+            if (1) {
+                return 2
             } else {
-                console.log(-x)
+                return 3
             }
         """
-        expected = "if(x>0){x+=1;console.log(x)}else{console.log(-x)}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 2)
 
-        self.assertEqual(output, expected)
-
-    def test_001_branch_3(self):
+    def test_evaljs_branch_false(self):
 
         text = """
-            if (x > 0) {
-                x += 1
-                console.log(x)
-            } else
-            if (false) {
-                console.log(-x)
+            if (0) {
+                return 2
+            } else {
+                return 3
             }
         """
-        expected = "if(x>0){x+=1;console.log(x)}else if(false){console.log(-x)}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 3)
 
-        self.assertEqual(output, expected)
-
-    def test_001_prefix_1(self):
+    def test_evaljs_while_loop(self):
 
         text = """
-            ++ x
-        """
-        expected = "++x"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_prefix_2(self):
-
-        text = """
-            typeof(NaN)
-        """
-        expected = "typeof(NaN)"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_postfix_1(self):
-
-        text = """
-            x ++
-        """
-        expected = "x++"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_binary_1(self):
-
-        text = """
-            a < b
-        """
-        expected = "a<b"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_binary_2(self):
-
-        text = """
-            a in b
-        """
-        expected = "a in b"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_ternary_1(self):
-
-        text = """
-            a ? b : c
-        """
-        expected = "a?b:c"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_function_1(self):
-
-        text = """
-            function name() {}
-        """
-        expected = "function name(){}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_function_2(self):
-
-        text = """
-            x = function () {}
-        """
-        expected = "x=function(){}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_subscr_1(self):
-
-        text = """
-            map[key]
-        """
-        expected = "map[key]"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_for_1(self):
-
-        text = """
-            for (let x=1; x < 10; x++) {}
-        """
-        expected = "for(let x=1;x<10;x++){}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_for_2(self):
-
-        text = """
-            for (const property in object) {}
-        """
-        expected = "for(const property in object){}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_for_3(self):
-
-        text = """
-            for (const item of iterable) {}
-        """
-        expected = "for(const item of iterable){}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_while_1(self):
-
-        text = """
-            while (true) {}
-        """
-        expected = "while(true){}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_dowhile_1(self):
-
-        text = """
-            do {console.log('')} while (false)
-        """
-        expected = "do{console.log('')}while(false)"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_switch_1(self):
-
-        text = """
-            switch (item) {
-                case 0:
-                    break;
-                case 1:
-                    break;
-                default:
-                    break;
+            i = 0
+            while (i < 5) {
+                i += 1
             }
+            return i
         """
-        expected = "switch(item){case 0:break;case 1:break;default:break}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 5)
 
-        self.assertEqual(output, expected)
-
-    def test_001_switch_2(self):
+    def test_evaljs_arguments(self):
 
         text = """
-            switch(item){case 0:console.log(0);break;case 1:console.log(0);break;default:break}
+            function f(arg0) {
+                return [arguments.length, arguments[0], arguments[1]]
+            }
+            return f(10,20)
         """
-        expected = "switch(item){case 0:console.log(0);break;case 1:console.log(0);break;default:break}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsArray)
+        self.assertEqual(result.length, 3)
+        self.assertEqual(result[0], 2)
+        self.assertEqual(result[1], 10)
+        self.assertEqual(result[2], 20)
 
-        self.assertEqual(output, expected)
-
-    def test_001_class_1(self):
+    def test_evaljs_arguments_undefined(self):
 
         text = """
-            class A {
-                onClick(event) {
-                    return null;
+            function f(arg0) {
+                return [arguments.length, arguments[0], arguments[1]]
+            }
+            return f(10)
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsArray)
+        self.assertEqual(result.length, 3)
+        self.assertEqual(result[0], 1)
+        self.assertEqual(result[1], 10)
+        self.assertEqual(result[2], JsUndefined._instance)
+
+    def test_evaljs_anonymous_function(self):
+
+        text = """
+            fn = function () {
+                return 123
+            }
+            return fn()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 123)
+
+    def test_evaljs_new_function_constructor(self):
+
+        text = """
+            function Shape() {
+                this.width = 5;
+                this.height = 10;
+            }
+            return new Shape()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(type(result), JsObject)
+        self.assertEqual(result.length, 2)
+        self.assertEqual(result.width, 5)
+        self.assertEqual(result.height, 10)
+
+    def test_evaljs_new_function_constructor_fn(self):
+
+        text = """
+            function Shape() {
+                this.width = 5;
+                this.height = 10;
+                this.area = () => this.width * this.height
+            }
+            return (new Shape()).area()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 50)
+
+    def test_evaljs_fib_global(self):
+
+        text = """
+            function fibonacci(num) {
+                if (num <= 1)
+                    return 1;
+                return fibonacci(num - 1) + fibonacci(num - 2);
+            }
+            return fibonacci(5);
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 8)
+
+    def test_evaljs_fib_closure(self):
+
+        text = """
+            function main() {
+                function fibonacci(num) {
+                    if (num <= 1)
+                        return 1;
+                    return fibonacci(num - 1) + fibonacci(num - 2);
                 }
+                return fibonacci(5);
             }
+            return main();
         """
-        expected = "class A{onClick(event){return null}}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        result = self.evaljs(text)
+        self.assertEqual(result, 8)
 
-        self.assertEqual(output, expected)
-
-    def test_001_class_2(self):
+    def test_evaljs_class(self):
 
         text = """
-            class A extends B {
+            class Shape {
                 constructor() {
-                    super();
+                    this.width = 5
+                    this.height = 10
+                }
+                area() {
+                    return this.width * this.height;
                 }
             }
+
+            return ((new Shape()).area())
         """
-        expected = "class A extends B{constructor(){super()}}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_class_2(self):
-
-        text = """
-            class A extends X.Y {
-                constructor() {
-                    super();
-                }
-            }
-        """
-        expected = "class A extends X.Y{constructor(){super()}}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_comma_1(self):
-
-        text = """
-            const x = 0,
-                f = () => {}
-        """
-        expected = "const x=0,f=()=>{}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_trycatch_1(self):
-
-        text = """
-            try {
-                throw 0;
-            } catch (ex) {
-                console.log(ex)
-            } finally {
-                console.log("done")
-            }
-        """
-        expected = "try{throw 0}catch(ex){console.log(ex)}finally{console.log(\"done\")}"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_new_1(self):
-
-        text = """
-            const x = new X
-        """
-        expected = "const x=new X"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-    def test_001_new_2(self):
-
-        text = """
-            const x = new X()
-        """
-        expected = "const x=new X()"
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
-
-        self.assertEqual(output, expected)
-
-class CompilerStressTestCase(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-
-        cls.lexer = Lexer()
-        cls.parser = Parser()
-
-    @classmethod
-    def tearDownClass(cls):
-        pass
-
-    def setUp(self):
-        self.compiler = Compiler()
-
-    def tearDown(self):
-        super().tearDown()
-
-    def test_001_wide_1(self):
-        # the lexer / parser / compiler should
-        # support a line that is longer than 4096 characters
-
-        text = "const %s=1" % ("x" * 8192)
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
-
-        self.assertEqual(output, text)
-
-    def test_001_wide_2(self):
-        # the lexer / parser / compiler should
-        # support a line that is longer than 4096 characters
-        N = 819
-        text = "abc01" + ("+abc01" * N)
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
-
-        self.assertEqual(output, text)
-
-    def test_002_deep_1(self):
-        # the lexer / parser / compiler should
-        # support an expression with a nesting depth
-        # deeper than 1000 tokens
-
-        # using a recursive compiler strategy
-        # at N == 973 maximum recursion depth is reached
-
-        # using a non-recursive strategy in the compiler
-        # pushes the problem onto the parser
-        # at N == 974 maximum recursion depth is reached
-
-        # switching to non-recursive parsing strategy opens
-        # up greater tree depth
-
-        N = 2000
-        text = "2" + ("+2" * N)
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
-
-        self.assertEqual(output, text)
-
-    def test_002_deep_2(self):
-
-        # mutual recursion in the parser limits the depth
-
-        N = 487
-        text = ("(" * N) + (")" * N)
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
-
-        self.assertEqual(output, text)
+        result = self.evaljs(text)
+        self.assertEqual(result, 50)
 
 def main():
     unittest.main()

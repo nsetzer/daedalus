@@ -19,7 +19,7 @@
  *
  */
 
-import './daedalus_util.js'
+include './daedalus_util.js'
 
 function saveBlob(blob, fileName) {
     let a = document.createElement('a');

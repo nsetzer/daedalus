@@ -1,6 +1,6 @@
 
-import './daedalus_element.js'
-import './daedalus_util.js'
+include './daedalus_element.js'
+include './daedalus_util.js'
 
 // an element which is only displayed if an authentication callback
 // returns true indicating the current user is authorized to view

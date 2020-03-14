@@ -49,7 +49,7 @@ reserved_words = {
 # TODO: e.x. {public: 'abc123'} will fail since public is a keyword
 reserved_words_extra = {
     'private', 'protected', 'public', 'native',
-    'abstract', 'arguments', 'synchronized', 'from', 'module'
+    'abstract', 'arguments', 'synchronized', 'from', 'module', "pyimport"
 }
 
 # symbols for operators that have length 1
@@ -126,6 +126,7 @@ class Token(object):
     T_EXPORT_DEFAULT = "T_EXPORT_DEFAULT"
     T_IMPORT = "T_IMPORT"
     T_IMPORT_MODULE = "T_IMPORT_MODULE"
+    T_PYIMPORT = "T_PYIMPORT"
     T_INCLUDE = "T_INCLUDE"
     T_FINALLY = "T_FINALLY"
     T_FOR = "T_FOR"
@@ -140,6 +141,7 @@ class Token(object):
     T_WHILE = "T_WHILE"
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
     T_LAMBDA = "T_LAMBDA"  # arrow function
+    T_UNPACK_SEQUENCE = "T_UNPACK_SEQUENCE"  # arrow function
 
     T_GLOBAL_VAR = 'T_GLOBAL_VAR'
     T_LOCAL_VAR = 'T_LOCAL_VAR'
@@ -161,7 +163,7 @@ class Token(object):
         self.line = line
         self.index = index
         self.value = value
-        self.children = children if children is not None else []
+        self.children = list(children) if children is not None else []
         self.file = None
         self.original_value = None
 
@@ -174,9 +176,20 @@ class Token(object):
             self.type, self.line, self.index, self.value)
 
     def toString(self, pretty=True, depth=0, pad="  "):
-        s = "%s<%s,%s,%r>" % (self.type, self.line, self.index, self.value)
 
-        if pretty == 2:
+        if pretty == 3:
+            s = "%s<%r>" % (self.type, self.value)
+            parts = ["%s%s\n" % (pad * depth, s)]
+
+            for child in self.children:
+                try:
+                    parts.append(child.toString(pretty, depth + 1))
+                except:
+                    print(child)
+
+            return ''.join(parts)
+
+        elif pretty == 2:
 
             if len(self.children) == 0:
                 s = "\n%sTOKEN(%r, %r)" % ("    " * depth, self.type, self.value)
@@ -187,6 +200,7 @@ class Token(object):
                 return s + ', '.join(c) + ")"
 
         elif pretty:
+            s = "%s<%s,%s,%r>" % (self.type, self.line, self.index, self.value)
             parts = ["%s%s\n" % (pad * depth, s)]
 
             for child in self.children:

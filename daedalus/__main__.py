@@ -170,6 +170,44 @@ class CompileCLI(CLI):
             wf.write(css)
             wf.write("\n")
 
+
+class CompileModuleCLI(CLI):
+    """
+    compile a js file (and all imports) into a single file
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('cm',
+            help="compile javascript into a single file")
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+        subparser.add_argument('out_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+        paths.insert(0, os.path.split(jspath)[0])
+
+        static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
+
+        builder = Builder(paths, static_data)
+
+        # TODO: add flag to not pre-compile style sheets
+        js = builder.compile_module(args.index_js)
+
+        with open(args.out_js, "w") as wf:
+            wf.write(js)
+            wf.write("\n")
+
 class ServeCLI(CLI):
 
     def register(self, parser):
@@ -220,6 +258,7 @@ def register_parsers(parser):
     BuildHtmlCLI().register(parser)
     BuildCLI().register(parser)
     CompileCLI().register(parser)
+    CompileModuleCLI().register(parser)
     ServeCLI().register(parser)
 
 def main():

@@ -1,5 +1,5 @@
 
-import './daedalus_util.js'
+include './daedalus_util.js'
 
 let sigal_counter = 0
 export function Signal(element, name) {

@@ -7,8 +7,9 @@ import json
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser
 from .transform import TransformExtractStyleSheet
-from .compiler import Compiler
+from .formatter import Formatter
 from ast import literal_eval
+
 def findFile(name, search_paths):
     """
     look for a file in a directory, if not found search the
@@ -53,28 +54,30 @@ def buildFileIIFI(mod, exports):
     """
 
     def TOKEN(type, value, *children):
-        return Token(type, 0, 0, value, children)
+        return Token(type, 1, 0, value, children)
 
-    tok_export_names = [TOKEN('T_TEXT', text) for text in sorted(exports)]
+    tok_export_names1 = [TOKEN('T_TEXT', text) for text in sorted(exports)]
+    tok_export_names2 = [TOKEN('T_TEXT', text) for text in sorted(exports)]
     tok_exports = TOKEN('T_MODULE', '',
         TOKEN('T_RETURN', 'return',
-            TOKEN('T_LIST', '[]', *tok_export_names)))
+            TOKEN('T_LIST', '[]', *tok_export_names1)))
 
     tok_ast = merge_ast(mod, tok_exports)
 
     # insert the file into a function
-    tok_fundef = TOKEN('T_FUNCTION', 'function',
-        TOKEN('T_TEXT', ''),
+    tok_fundef = TOKEN('T_ANONYMOUS_FUNCTION', 'function',
+        TOKEN('T_TEXT', 'Anonymous'),
         TOKEN('T_ARGLIST', '()'),
-        Token(Token.T_BLOCK, 0, 0, "{}", tok_ast.children))
+        Token(Token.T_BLOCK, 1, 0, "{}", tok_ast.children))
 
     # invoke that function and assign return values in current scope
     tok_iifi = TOKEN('T_MODULE', '',
-        TOKEN('T_ASSIGN', '=',
-            TOKEN('T_VAR', "const", TOKEN('T_LIST', '[]', *tok_export_names)),
-            TOKEN('T_FUNCTIONCALL', '',
-                TOKEN('T_GROUPING', '()', tok_fundef),
-                TOKEN('T_ARGLIST', '()'))))
+        TOKEN('T_VAR', "const",
+            TOKEN('T_ASSIGN', '=',
+                TOKEN('T_UNPACK_SEQUENCE', '[]', *tok_export_names2),
+                TOKEN('T_FUNCTIONCALL', '',
+                    TOKEN('T_GROUPING', '()', tok_fundef),
+                    TOKEN('T_ARGLIST', '()')))))
 
     return tok_iifi
 
@@ -88,7 +91,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     """
 
     def TOKEN(type, value, *children):
-        return Token(type, 0, 0, value, children)
+        return Token(type, 1, 0, value, children)
 
     import_names = sorted(list(imports.keys()))
     argument_names = import_names[:]
@@ -126,10 +129,10 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     tok_ast = merge_ast(tok_ast, tok_exports)
     tok_ast.children.insert(0, TOKEN('T_STRING', '"use strict"'))
 
-    tok_fundef = TOKEN('T_FUNCTION', 'function',
-        TOKEN('T_TEXT', ''),
+    tok_fundef = TOKEN('T_ANONYMOUS_FUNCTION', 'function',
+        TOKEN('T_TEXT', 'Anonymous'),
         TOKEN('T_ARGLIST', '()', *tok_import_names),
-        Token(Token.T_BLOCK, 0, 0, "{}", tok_ast.children))
+        Token(Token.T_BLOCK, 1, 0, "{}", tok_ast.children))
 
     if merge:
         tok_iifi = TOKEN('T_MODULE', '',
@@ -153,6 +156,49 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
 
     return tok_iifi
 
+def buildPythonAst(modname, mod, imports, exports):
+
+    def TOKEN(type, value, *children):
+        return Token(type, 1, 0, value, children)
+
+    import_names = sorted(list(imports.keys()))
+    argument_names = import_names[:]
+    for i, name in enumerate(import_names):
+        if name.endswith('.js'):
+            import_names[i] = os.path.splitext(os.path.split(name)[1])[0]
+            argument_names[i] = import_names[i]
+        else:
+            import_names[i] = name.split('.')[0]
+            argument_names[i] = name.split('.')[0]
+
+    if modname.endswith('.js'):
+        print("warning: module with invalid modname", modname)
+        modname = os.path.splitext(os.path.split(modname)[1])[0]
+
+    tok_import_names = [TOKEN('T_TEXT', text) for text in import_names]
+    tok_argument_names = [TOKEN('T_TEXT', text) for text in argument_names]
+    tok_export_names = [TOKEN('T_TEXT', text) for text in sorted(exports)]
+    tok_exports = TOKEN('T_MODULE', '',
+        TOKEN('T_RETURN', 'return',
+            TOKEN('T_OBJECT', '{}', *tok_export_names)))
+
+    tok_imports1 = []
+    for varname, names in imports.items():
+        for src, dst in names.items():
+            tok = TOKEN('T_ASSIGN', '=',
+                TOKEN('T_VAR', 'const', TOKEN('T_TEXT', dst)),
+                TOKEN('T_BINARY', '.',
+                    TOKEN('T_TEXT', varname),
+                    TOKEN('T_ATTR', src)))
+            tok_imports1.append(tok)
+    tok_imports = TOKEN('T_MODULE', '', *tok_imports1)
+
+    tok_ast = merge_ast(tok_imports, mod)
+    tok_ast = merge_ast(tok_ast, tok_exports)
+    tok_ast.children.insert(0, TOKEN('T_STRING', '"use strict"'))
+
+    return tok_ast
+
 class BuildError(Exception):
     def __init__(self, filepath, token, lines, message, raw_message=None):
         super(BuildError, self).__init__(message)
@@ -168,7 +214,7 @@ class BuildError(Exception):
             self.column = token.index
 
 class JsFile(object):
-    def __init__(self, path, name=None, source_type=1, platform=None):
+    def __init__(self, path, name=None, source_type=1, platform=None, python=False):
         super(JsFile, self).__init__()
         self.path = path
         self.imports = {}
@@ -180,6 +226,7 @@ class JsFile(object):
         self.size = 0
         self.ast = None
         self.styles = []
+        self.python = python
 
         if not name:
             self.name = os.path.splitext(os.path.split(name)[1])[0]
@@ -256,45 +303,43 @@ class JsFile(object):
 
                 ast.children.pop(0)
 
-            elif token.type == Token.T_IMPORT_MODULE:
+            elif token.type == Token.T_IMPORT_MODULE and not self.python:
 
-                ast.children.pop(0)
-
-            # deprecated !
-            elif token.type == Token.T_IMPORT:
                 fromlist = []
                 for child in token.children[0].children:
                     if child.type == Token.T_TEXT:
                         fromlist.append((child.value, child.value))
                     else:
                         fromlist.append((child.children[0].value, child.children[1].value))
-                if token.value.endswith(".js") and self.source_type == 2:
-                    self.imports[token.value] = dict(fromlist)
-                else:
-                    self.module_imports[token.value] = dict(fromlist)
+
                 ast.children.pop(0)
+
+                self.module_imports[token.value] = dict(fromlist)
+
+            elif token.type == Token.T_IMPORT:
+                pass
 
             elif token.type == Token.T_EXPORT:
                 self.exports.append(token.value)
-                child = token.children[0]
+                child = token.children[1]
                 # remove the token entirely if it does not have any side effects
                 # otherwise remove the export keyword
                 if child.type == Token.T_TEXT:
                     ast.children.pop(0)
                 else:
-                    ast.children[i] = token.children[0]
+                    ast.children[i] = token.children[1]
                     i += 1
 
             elif token.type == Token.T_EXPORT_DEFAULT:
                 self.default_export = token.value
                 self.exports.append(token.value)
-                child = token.children[0]
+                child = token.children[1]
                 # remove the token entirely if it does not have any side effects
                 # otherwise remove the export keyword
                 if child.type == Token.T_TEXT:
                     ast.children.pop(0)
                 else:
-                    ast.children[i] = token.children[0]
+                    ast.children[i] = token.children[1]
                     i += 1
 
             else:
@@ -310,7 +355,7 @@ class JsFile(object):
         return False
 
 class JsModule(object):
-    def __init__(self, index_js, platform=None):
+    def __init__(self, index_js, platform=None, python=False):
         super(JsModule, self).__init__()
         self.index_js = index_js
         self.files = {index_js.path: index_js}
@@ -323,6 +368,7 @@ class JsModule(object):
         self.source_size = 0
         self.uid = 0
         self.platform = platform
+        self.python = python
 
     def _getFiles(self):
         jsf = self.index_js
@@ -370,7 +416,7 @@ class JsModule(object):
                     pass
                 elif path not in self.files:
                     tmp_name = os.path.splitext(os.path.split(path)[1])[0]
-                    queue.append(JsFile(path, tmp_name, 2, platform=self.platform))
+                    queue.append(JsFile(path, tmp_name, 2, platform=self.platform, python=self.python))
                     self.dirty = True
                 else:
                     queue.append(self.files[path])
@@ -407,7 +453,11 @@ class JsModule(object):
         self.styles = sum([jsf.styles for jsf in order], [])
 
         all_exports = self.module_exports | self.static_exports
-        self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, all_exports, merge)
+
+        if self.python:
+            self.ast = buildPythonAst(self.name(), ast, self.module_imports, all_exports)
+        else:
+            self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, all_exports, merge)
 
         self.dirty = False
         t2 = time.time()
@@ -441,7 +491,11 @@ class Builder(object):
         self.source_types = {}
 
         if static_data is None:
-            static_data = {'daedalus': {}}
+            static_data = {}
+
+        if 'daedalus' not in static_data:
+            static_data['daedalus'] = {}
+
 
         if platform is not None:
             static_data['daedalus']['build_platform'] = platform
@@ -485,10 +539,10 @@ class Builder(object):
                 if modpath not in self.files:
                     if modname.endswith(".js"):
                         modname = os.path.splitext(os.path.split(modpath)[1])[0]
-                    self.files[modpath] = JsFile(modpath, modname, 2, platform=self.platform)
+                    self.files[modpath] = JsFile(modpath, modname, 2, platform=self.platform, python=self.python)
 
                 if modpath not in self.modules:
-                    self.modules[modpath] = JsModule(self.files[modpath], platform=self.platform)
+                    self.modules[modpath] = JsModule(self.files[modpath], platform=self.platform, python=self.python)
                     self.modules[modpath].setStaticData(self.static_data.get(modname, None))
 
                 if modpath not in visited:
@@ -518,13 +572,13 @@ class Builder(object):
 
         if path not in self.files:
             name = os.path.splitext(os.path.split(path)[1])[0]
-            self.files[path] = JsFile(path, name, source_type, platform=self.platform)
+            self.files[path] = JsFile(path, name, source_type, platform=self.platform, python=self.python)
 
         if self.files[path].source_type != source_type:
             raise Exception("incompatible types")
 
         if path not in self.modules:
-            self.modules[path] = JsModule(self.files[path], platform=self.platform)
+            self.modules[path] = JsModule(self.files[path], platform=self.platform, python=self.python)
             self.modules[path].setStaticData(self.static_data.get(modname, None))
 
         self._discover(self.modules[path])
@@ -550,6 +604,16 @@ class Builder(object):
 
         order = sorted(depth.keys(), key=lambda p: depth[p], reverse=True)
         return [self.modules[p] for p in order]
+
+    def compile_module(self, path, minify=False):
+
+        self.python = True
+        jsm = self.discover(path)
+        ast = jsm.getAST()
+
+        #js = Formatter(opts={'minify': minify}).compile(ast)
+
+        return ast
 
     def compile(self, path, standalone=False, minify=False):
         t1 = time.time()
@@ -601,7 +665,7 @@ class Builder(object):
         css = "\n".join(styles)
         error = None
         try:
-            js = Compiler(opts={'minify': minify}).compile(ast)
+            js = Formatter(opts={'minify': minify}).compile(ast)
 
         except TokenError as e:
             filepath = ""
@@ -622,9 +686,9 @@ class Builder(object):
             raise error
 
         final_source_size = len(js)
-        p = final_source_size / source_size
+        p = 100 * final_source_size / source_size
         t2 = time.time()
-        print("%10d %.2f %.2f%% of %d" % (final_source_size, t2 - t1, p, source_size))
+        print("%10d %.2f %.2f%% of %d bytes" % (final_source_size, t2 - t1, p, source_size))
         return css, js, export_name
 
     def build(self, path, minify=False, onefile=False):

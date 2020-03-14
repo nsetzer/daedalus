@@ -4,6 +4,18 @@ import struct
 
 from .lexer import TokenError
 
+class Namespace(object):
+    def __init__(self, **kwargs):
+        self.__name__ = "unknown"
+        for name, value in kwargs.items():
+            setattr(self, name, value)
+
+    def __repr__(self):
+        return "<module '%s' (namespace)>" % self.__name__
+
+    def __str__(self):
+        return "<module '%s' (namespace)>" % self.__name__
+
 def intBitsToFloat(b):
     """
     Type-Pun an integer into a float
