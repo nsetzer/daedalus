@@ -96,7 +96,6 @@ JsUndefined.Token = Token(Token.T_TEXT, 0, 0, "undefined")
 class JsArray(JsObjectBase):
     def __init__(self, seq):
         super(JsArray, self).__init__()
-        print("building a seq", seq)
         self._x_daedalus_js_seq = list(seq)
 
     def __str__(self):
