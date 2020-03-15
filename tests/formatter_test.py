@@ -42,10 +42,17 @@ class FormatterTestCase(unittest.TestCase):
         pass
 
     def setUp(self):
-        self.compiler = Formatter()
+        self.formatter = Formatter()
 
     def tearDown(self):
         super().tearDown()
+
+    def _chkeq(self, text, expected):
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(output, expected)
 
     def test_001_expr_1(self):
 
@@ -55,7 +62,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "const x=0"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -68,7 +75,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "const x=0;const y=1"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -83,7 +90,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "const x={abc:123,def}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -95,7 +102,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "myfunc(\"abc\",123,3.14)"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -110,7 +117,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "if(x>0){x+=1;console.log(x)}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -127,7 +134,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "if(x>0){x+=1;console.log(x)}else{console.log(-x)}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -145,7 +152,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "if(x>0){x+=1;console.log(x)}else if(false){console.log(-x)}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -157,7 +164,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "++x"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -169,7 +176,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "typeof(NaN)"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -181,7 +188,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "x++"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -193,7 +200,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "a<b"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -205,7 +212,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "a in b"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -217,7 +224,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "a?b:c"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -229,7 +236,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "function name(){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -241,7 +248,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "x=function(){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -253,23 +260,55 @@ class FormatterTestCase(unittest.TestCase):
         expected = "map[key]"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
-    def test_001_for_1(self):
+    def test_001_for_111(self):
+        self._chkeq("for (let x=1; x < 10; x++) {}",
+                    "for(let x=1;x<10;x++){}")
+
+    def test_001_for_110(self):
+        self._chkeq("for (let x=1; x < 10;) {}",
+                    "for(let x=1;x<10;){}")
+
+    def test_001_for_101(self):
+        self._chkeq("for (let x=1;; x++) {}",
+                    "for(let x=1;;x++){}")
+
+    def test_001_for_100(self):
+        self._chkeq("for (let x=1;;) {}",
+                    "for(let x=1;;){}")
+
+    def test_001_for_011(self):
+        self._chkeq("for (; x < 10; x++) {}",
+                    "for(;x<10;x++){}")
+
+    def test_001_for_010(self):
+        self._chkeq("for (; x < 10;) {}",
+                    "for(;x<10;){}")
+
+    def test_001_for_001(self):
+        self._chkeq("for (;; x++) {}",
+                    "for(;;x++){}")
+
+    def test_001_for_000(self):
+        self._chkeq("for (;;) {}",
+                    "for(;;){}")
+
+    def test_001_for_in_1(self):
 
         text = """
-            for (let x=1; x < 10; x++) {}
+            for (property in object) {}
         """
-        expected = "for(let x=1;x<10;x++){}"
+        expected = "for(property in object){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
-    def test_001_for_2(self):
+    def test_001_for_in_2(self):
 
         text = """
             for (const property in object) {}
@@ -277,11 +316,23 @@ class FormatterTestCase(unittest.TestCase):
         expected = "for(const property in object){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
-    def test_001_for_3(self):
+    def test_001_for_of_1(self):
+
+        text = """
+            for (item of iterable) {}
+        """
+        expected = "for(item of iterable){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(output, expected)
+
+    def test_001_for_of_2(self):
 
         text = """
             for (const item of iterable) {}
@@ -289,7 +340,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "for(const item of iterable){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -301,7 +352,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "while(true){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -313,7 +364,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "do{console.log('')}while(false)"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -332,7 +383,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "switch(item){case 0:break;case 1:break;default:break}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -344,7 +395,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "switch(item){case 0:console.log(0);break;case 1:console.log(0);break;default:break}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -360,7 +411,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "class A{onClick(event){return null}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -376,7 +427,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "class A extends B{constructor(){super()}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -392,7 +443,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "class A extends X.Y{constructor(){super()}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -405,7 +456,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "const x=0,f=()=>{}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -423,7 +474,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "try{throw 0}catch(ex){console.log(ex)}finally{console.log(\"done\")}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -435,7 +486,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "const x=new X"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -447,7 +498,7 @@ class FormatterTestCase(unittest.TestCase):
         expected = "const x=new X()"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast)
+        output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
 
@@ -464,42 +515,42 @@ class FormatterStressTestCase(unittest.TestCase):
         pass
 
     def setUp(self):
-        self.compiler = Formatter()
+        self.formatter = Formatter()
 
     def tearDown(self):
         super().tearDown()
 
     def test_001_wide_1(self):
-        # the lexer / parser / compiler should
+        # the lexer / parser /.formatter should
         # support a line that is longer than 4096 characters
 
         text = "const %s=1" % ("x" * 8192)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
+        output = self.formatter.format(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
     def test_001_wide_2(self):
-        # the lexer / parser / compiler should
+        # the lexer / parser /.formatter should
         # support a line that is longer than 4096 characters
         N = 819
         text = "abc01" + ("+abc01" * N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
+        output = self.formatter.format(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
     def test_002_deep_1(self):
-        # the lexer / parser / compiler should
+        # the lexer / parser /.formatter should
         # support an expression with a nesting depth
         # deeper than 1000 tokens
 
-        # using a recursive compiler strategy
+        # using a recursive.formatter strategy
         # at N == 973 maximum recursion depth is reached
 
-        # using a non-recursive strategy in the compiler
+        # using a non-recursive strategy in the.formatter
         # pushes the problem onto the parser
         # at N == 974 maximum recursion depth is reached
 
@@ -510,7 +561,7 @@ class FormatterStressTestCase(unittest.TestCase):
         text = "2" + ("+2" * N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
+        output = self.formatter.format(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 
@@ -522,7 +573,7 @@ class FormatterStressTestCase(unittest.TestCase):
         text = ("(" * N) + (")" * N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        output = self.compiler.compile(ast).replace("\n", "")
+        output = self.formatter.format(ast).replace("\n", "")
 
         self.assertEqual(output, text)
 

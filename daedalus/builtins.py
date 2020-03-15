@@ -481,7 +481,7 @@ class JsJSON(JsObjectBase):
         # this should be possible with a custom loader
         return json.loads(string)
 
-class JsDate(object):
+class JsDate(JsObjectBase):
     def __init__(self):
         super(JsDate, self).__init__()
 
@@ -489,7 +489,7 @@ class JsDate(object):
     def now():
         return int(time.time() * 1000)
 
-class JsMath(object):
+class JsMath(JsObjectBase):
     def __init__(self):
         super(JsMath, self).__init__()
 
@@ -505,6 +505,16 @@ class JsMath(object):
     @staticmethod
     def ceil(value):
         return math.ceil(value)
+
+def JsTypeof(obj):
+    raise NotImplementedError("javascript typeof")
+
+JsTypeof.Token = Token(Token.T_TEXT, 0, 0, "JsTypeof")
+
+def JsInstanceof(objValue, objType):
+    return False
+
+JsInstanceof.Token = Token(Token.T_TEXT, 0, 0, "JsInstanceof")
 
 def defaultGlobals():
     names = {
@@ -527,5 +537,7 @@ def defaultGlobals():
         'JSON': JsJSON,
         'Date': JsDate,
         'Math': JsMath,
+        'JsTypeof': JsTypeof,
+        'JsInstanceof': JsInstanceof,
     }
     return names

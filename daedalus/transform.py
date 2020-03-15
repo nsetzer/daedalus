@@ -33,6 +33,18 @@ class TransformBase(object):
     def visit(self, token, parent):
         raise NotImplementedError()
 
+class TransformRemoveSemicolons(TransformBase):
+
+    def visit(self, token, parent):
+
+        i = 0
+        while i < len(token.children):
+            child = token.children[i]
+            if child.type == Token.T_SPECIAL and child.value == ';':
+                token.children.pop(i)
+            else:
+                i += 1
+
 class TransformGrouping(TransformBase):
 
     def visit(self, token, parent):
@@ -41,6 +53,8 @@ class TransformGrouping(TransformBase):
         many will be transformed as part of collecting various keywords
 
         """
+
+
         for child in token.children:
 
             if child.type == Token.T_GROUPING and child.value == "{}":

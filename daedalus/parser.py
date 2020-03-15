@@ -9,13 +9,20 @@ blocks can be labeled
 https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import
 imports are complicated
 
+
+TODO: warning when two lines are arranged such that:
+    a = b
+    [c] = d
+
+The parser interprets it as:
+    a = b[c] = d
 """
 import sys
 import ast
 from .lexer import Lexer, Token, TokenError
 from .transform import TransformGrouping, \
     TransformFlatten, TransformOptionalChaining, TransformNullCoalescing, \
-    TransformMagicConstants
+    TransformMagicConstants, TransformRemoveSemicolons
 
 class ParseError(TokenError):
     pass
@@ -120,6 +127,7 @@ class Parser(object):
         mod = Token(Token.T_MODULE, 0, 0, "")
         mod.children = tokens
 
+        TransformRemoveSemicolons().transform(mod)
         TransformGrouping().transform(mod)
         TransformFlatten().transform(mod)
         TransformOptionalChaining().transform(mod)
@@ -589,12 +597,26 @@ class Parser(object):
            token.value not in operators:
             return 1
 
+        # special case for the in keyword which appears after a
+        # variable definition, which is only legal inside a for loop
+        # 'of' is not treated as a keyword and avoids this fate
+        if token.value == 'in':
+            i1 = self.peek_token(tokens, token, index, -1)
+            if i1 is not None:
+                i2 = self.peek_keyword(tokens, token, i1, -1)
+                if i2 is not None:
+                    tok2 = tokens[i2]
+                    if tok2.type == Token.T_KEYWORD and tok2.value in ('const', 'let', 'var'):
+                        return 1
+
         rhs = self.consume(tokens, token, index, 1)
         lhs = self.consume(tokens, token, index, -1)
         token.children.append(lhs)
         token.children.append(rhs)
 
-        if token.value == '&&':
+        if token.value == 'instanceof':
+            token.type = Token.T_INSTANCE_OF
+        elif token.value == '&&':
             token.type = Token.T_LOGICAL_AND
         elif token.value == '||':
             token.type = Token.T_LOGICAL_OR
@@ -877,9 +899,7 @@ class Parser(object):
         if token.type == Token.T_NEWLINE:
             tokens.pop(index)
             return 0
-        if token.type == Token.T_SPECIAL and token.value == ';':
-            tokens.pop(index)
-            return 0
+
         return 1
 
     def collect_grouping(self, tokens, index, open, close):
@@ -1195,17 +1215,39 @@ class Parser(object):
 
     def collect_keyword_for(self, tokens, index):
         """
-        for (expr; expr; expr) expr
-        for (expr1) expr
-        where expr1 is one of:
-            [const] property in object
-            [const] item of iterable
+
 
         Note: this is the only use of 'of' as a keyword.
             firefox allows for assigning to a variable 'of'.
             for these reasons 'of' is not a keyword but is
             made a special case here
 
+        consume:
+
+            for (expr; expr; expr) expr
+            for (expr1) expr
+            where expr1 is one of:
+                [const] property in object
+                [const] item of iterable
+
+        produce:
+
+            T_FOR
+                T_ARGLIST
+                    <expr_init>
+                    <expr_test>
+                    <expr_incr>
+                <any>
+
+            T_FOR_IN
+                <expr_var>
+                <iterable>
+                <any>
+
+            T_FOR_OF
+                <expr_var>
+                <iterable>
+                <any>
         """
         token = tokens[index]
 
@@ -1217,20 +1259,49 @@ class Parser(object):
         else:
             rhs1.type = Token.T_ARGLIST
 
-        if len(rhs1.children) == 3:
-            mid = rhs1.children[1]
-            if mid.value == "of" and mid.type == Token.T_TEXT:
-                mid.children.append(rhs1.children.pop(0))
-                mid.children.append(rhs1.children.pop(1))
-                mid.type = Token.T_BINARY
+        if len(rhs1.children) == 0:
+            raise ParseError(rhs1, "empty argument list")
+
+        token.children = []
+        if len(rhs1.children) == 1 and rhs1.children[0].value == "in" and rhs1.children[0].type == Token.T_BINARY:
+            mid = rhs1.children[0]
+            token.children.append(mid.children[0])
+            token.children.append(mid.children[1])
+            token.type = Token.T_FOR_IN
+
+        elif len(rhs1.children) > 1 and rhs1.children[1].value == "of" and rhs1.children[1].type == Token.T_TEXT:
+            token.children.append(rhs1.children[0])
+            token.children.append(rhs1.children[2])
+            token.type = Token.T_FOR_OF
+
+        elif len(rhs1.children) > 1 and rhs1.children[1].value == "in" and rhs1.children[1].type == Token.T_KEYWORD:
+            token.children.append(rhs1.children[0])
+            token.children.append(rhs1.children[2])
+            token.type = Token.T_FOR_IN
+
+        else:
+            # discover sub expressions separated by semi-colons
+            exprs = [Token('T_EMPTY_TOKEN', token.line, token.index, ""),
+                     Token('T_EMPTY_TOKEN', token.line, token.index, ""),
+                     Token('T_EMPTY_TOKEN', token.line, token.index, "")]
+
+            index = 0
+            for child in rhs1.children:
+                if child.type == Token.T_SPECIAL and child.value == ';':
+                    index += 1
+                elif index < 3:
+                    exprs[index] = child
+
+            rhs1.children = exprs
+            token.type = Token.T_FOR
+            token.children = [rhs1]
 
         if rhs2.type != Token.T_GROUPING:
             self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
         else:
             rhs2.type = Token.T_BLOCK
 
-        token.children = [rhs1, rhs2]
-        token.type = Token.T_FOR
+        token.children.append(rhs2)
 
     def collect_keyword_function(self, tokens, index):
         token = tokens[index]
@@ -1495,8 +1566,9 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-        from module foo.bar import {blah}
-        import foo.bar
+        //for (const x of iterable) {}
+        //for (const x in iterable) {}
+        for (;;x++) {};
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)

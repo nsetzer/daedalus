@@ -5,7 +5,8 @@ import readline
 
 from daedalus.lexer import Lexer, Token, TokenError
 from daedalus.parser import Parser
-from daedalus.interpreter import Interpreter
+from daedalus.compiler import Compiler
+from daedalus.jseval import JsContext
 
 class ExitRepl(Exception):
     pass
@@ -60,13 +61,21 @@ class Repl(object):
         super(Repl, self).__init__()
 
         self.prompt = get_prompt()
-        self.globals = {}
+        self.ctxt = JsContext()
 
     def main(self):
 
         while True:
             try:
+
                 text = input(self.prompt)
+                # check for a multi-line input
+                text = text.strip()
+                while text.endswith("\\"):
+                    text = text[:-1] + input("> ")
+                    text = text.strip()
+
+                # process the line
                 self._main(text)
             except ExitRepl as e:
                 break
@@ -93,19 +102,9 @@ class Repl(object):
         if text == "diag":
             return
 
-        # self.globals['globals'] = lambda: list(sorted(self.globals.keys()))
-
-        tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
-        interp = Interpreter(filename="<string>", globals=self.globals, flags=Interpreter.CF_REPL)
-
-        interp.compile(ast)
-
-        result = interp.function_body()
+        result = self.ctxt.evaljs(text)
 
         if isinstance(result, dict):
-
-            self.globals.update(result)
             if result and "_" in result:
                 print(result["_"])
         else:
