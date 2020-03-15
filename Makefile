@@ -1,6 +1,7 @@
 
 # make test <target>: run a specified test
 # make cover: run all tests and generate code coverage
+SHELL:=/bin/bash
 
 ifeq (test,$(firstword $(MAKECMDGOALS)))
   # use the rest as arguments for "test"
@@ -13,13 +14,15 @@ endif
 test:
 	coverage run -m tests.$(RUN_ARGS)_test
 	coverage html --omit "venv/*,tests/*"
-	#open htmlcov/index.html
+	@#open htmlcov/index.html
+	@printf "%-60s %10s\n" $(shell grep pc_cov ./htmlcov/*.html | sed 's/<span.*">//' | sed 's=</span>==') | sort -V
 
 .PHONY: cover
 cover:
 	coverage run -m tests
 	coverage html --omit "venv/*,*_test.py,tests/*"
-	#open htmlcov/index.html
+	@#open htmlcov/index.html
+	@printf "%-60s %10s\n" $(shell grep pc_cov ./htmlcov/*.html | sed 's/<span.*">//' | sed 's=</span>==') | sort -V
 
 .PHONY: demo
 demo:

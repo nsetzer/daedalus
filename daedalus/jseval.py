@@ -8,7 +8,7 @@ import marshal
 
 from importlib.util import spec_from_file_location, MAGIC_NUMBER, cache_from_source
 
-from .lexer import Lexer
+from .lexer import Lexer, TokenError
 from .parser import Parser
 from .compiler import Compiler
 from .builder import Builder
@@ -69,10 +69,44 @@ def compile_file(path):
     #
     return compiler
 
+class JsContext(object):
+    def __init__(self):
+        super(JsContext, self).__init__()
+
+        self.globals = {}
+
+    def evaljs(self, text):
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+
+        compiler = Compiler(filename="<string>",
+            globals=self.globals,
+            flags=Compiler.CF_REPL)
+
+        compiler.compile(ast)
+
+        result = interp.function_body()
+
+        if isinstance(result, dict):
+            self.globals.update(result)
+
+        return result
+
+    def registerGlobal(self, name, obj):
+        """register a python object to be accessable from javascript"""
+        self.globals[name] = obj
 
 
 def main():
+    try:
+        compile_file("daedalus")
+    except TokenError as e:
+        print("-"*40)
+        print(e.token.file)
+        print(e.token.toString(3))
+        raise e
 
-    compile_file("daedalus")
+
 if __name__ == '__main__':
     main()

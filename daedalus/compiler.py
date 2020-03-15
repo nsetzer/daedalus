@@ -12,7 +12,7 @@ from .lexer import Lexer, Token, TokenError
 from .parser import Parser, ParseError
 from .builtins import defaultGlobals, \
     JsUndefined, JsStr, JsArray, JsObject, JsNew, \
-    JsFunction
+    JsFunction, JsTypeof, JsInstanceof
 from .transform import TransformAssignScope, TransformClassToFunction
 from .util import parseNumber
 from .bytecode import dump, calcsize, \
@@ -99,6 +99,10 @@ class Compiler(object):
             Token.T_EXPORT: self._traverse_export,
             Token.T_LOGICAL_AND: self._traverse_logical_and,
             Token.T_LOGICAL_OR: self._traverse_logical_or,
+            Token.T_FOR: self._traverse_for,
+            Token.T_COMMA: self._traverse_comma,
+            Token.T_TERNARY: self._traverse_ternary,
+            Token.T_INSTANCE_OF: self._traverse_instance_of,
 
             Token.T_VAR: self._traverse_var,
 
@@ -116,6 +120,7 @@ class Compiler(object):
             Token.T_UNPACK_SEQUENCE: self._compile_unpack_sequence,
 
             # do nothing
+            Token.T_EMPTY_TOKEN: lambda *args: None,
             Token.T_CLOSURE: lambda *args: None
         }
 
@@ -136,6 +141,9 @@ class Compiler(object):
             Token.T_PREFIX: self._compile_prefix,
             Token.T_LOGICAL_AND: self._compile_logical_and,
             Token.T_LOGICAL_OR: self._compile_logical_or,
+            Token.T_FOR: self._compile_for,
+            Token.T_TERNARY: self._compile_ternary,
+            Token.T_INSTANCE_OF: self._compile_instance_of,
 
             Token.T_NUMBER: self._compile_literal_number,
             Token.T_STRING: self._compile_literal_string,
@@ -202,8 +210,6 @@ class Compiler(object):
         # create a default 'this' so that arrow functions have something
         # to inherit
 
-
-
         # compile userland code
 
         flg = ST_TRAVERSE
@@ -232,6 +238,7 @@ class Compiler(object):
                 if fn is not None:
                     fn(depth, state, token)
                 else:
+                    #print(token.type, token.value)
                     raise CompileError(token, "token not supported")
             else:
                 # traverse the AST to produce a linear sequence
@@ -240,6 +247,10 @@ class Compiler(object):
                     fn(depth, state, token)
                 else:
                     raise CompileError(token, "token not supported")
+                    #print(token.type, token.value)
+                    #for child in reversed(token.children):
+                    #    self._push(0, ST_TRAVERSE, child)
+
 
         if self.flags & Compiler.CF_REPL:
             tok = Token(Token.T_GLOBAL_VAR, 0, 0, "_")
@@ -635,7 +646,7 @@ class Compiler(object):
         #      x[n++]++  :: increments n twice
 
         self._push(depth + 1, ST_TRAVERSE | ST_STORE, token.children[0])
-        self._push(depth, ST_COMPILE, token)
+        self._push(depth, ST_COMPILE| (state&ST_LOAD), token)
         self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
 
     def _traverse_prefix(self, depth, state, token):
@@ -653,6 +664,9 @@ class Compiler(object):
         self._push(depth + 1, ST_TRAVERSE | ST_STORE, token.children[0])
         self._push(depth, ST_COMPILE, token)
         self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
+        if token.value == 'typeof':
+            kind, index = self._token2index(JsTypeof.Token, load=True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
 
     def _traverse_pyimport(self, depth, state, token):
 
@@ -698,6 +712,50 @@ class Compiler(object):
         self._push(depth + 1, ST_COMPILE | ST_PHASE_1, token)
         self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
 
+    def _traverse_for(self, depth, state, token):
+
+        arglist = token.children[0]
+
+        token.label_begin = self._make_label()
+        token.label_end = self._make_label()
+
+
+
+
+        self._push(depth, ST_COMPILE | ST_PHASE_1, token)
+        self._push(depth, ST_TRAVERSE, arglist.children[0])
+
+    def _traverse_comma(self, depth, state, token):
+        """
+        let x=1, y=2
+        """
+        for child in reversed(token.children):
+            self._push(depth + 1, ST_TRAVERSE, child)
+
+    def _traverse_ternary(self, depth, state, token):
+
+        # in reverse:
+        # 1. load the test expression,
+        # 2. insert jump
+        # 3. load the true condition
+        # 4. insert jump
+        # 5. load the false condition
+        # 6. insert a jump target
+
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_3, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[2])
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_2, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[1])
+        self._push(depth + 1, ST_COMPILE | ST_PHASE_1, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, token.children[0])
+
+    def _traverse_instance_of(self, depth, state, token):
+
+        self._push(depth + 1, ST_COMPILE, token)
+        for child in reversed(token.children):
+            self._push(depth + 1, ST_TRAVERSE, child)
+        kind, index = self._token2index(JsInstanceof.Token, load=True)
+        self.bc.append(BytecodeInstr('LOAD_' + kind, index))
     # -------------------------------------------------------------------------
 
     def _compile_binary(self, depth, state, token):
@@ -759,13 +817,14 @@ class Compiler(object):
         }
 
         if token.value == '=':
-            if state&ST_LOAD:
-                self.bc.append(BytecodeInstr('DUP_TOP'))
+            #if state&ST_LOAD:
+            #    self.bc.append(BytecodeInstr('DUP_TOP'))
+            pass
 
         if token.value in binop_store:
             self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
-            if state&ST_LOAD:
-                self.bc.append(BytecodeInstr('DUP_TOP'))
+            #if state&ST_LOAD:
+            #    self.bc.append(BytecodeInstr('DUP_TOP'))
             # TODO: this has side effects if LHS is complicated
             self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
 
@@ -922,26 +981,40 @@ class Compiler(object):
 
         valuetok = Token(Token.T_NUMBER, 0, 0, "1")
         kind, index = self._token2index(valuetok, True)
-
-        # TODO: duptop is conditional on production
-        self.bc.append(BytecodeInstr('DUP_TOP'))
+        if state&ST_LOAD:
+            self.bc.append(BytecodeInstr('DUP_TOP'))
         self.bc.append(BytecodeInstr('LOAD_' + kind, index))
         self.bc.append(BytecodeInstr(unop2[token.value]))
 
     def _compile_prefix(self, depth, state, token):
 
-        unop2 = {
-            "++": "BINARY_ADD",
-            "--": "BINARY_SUBTRACT"
-        }
+        if token.value == 'typeof':
+            self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
+        else:
+            unop1 = {
+                "+": "UNARY_POSITIVE",
+                "-": "UNARY_NEGATIVE",
+                "!": "UNARY_NOT",
+                "~": "UNARY_INVERT",
+            }
+            unop2 = {
+                "++": "BINARY_ADD",
+                "--": "BINARY_SUBTRACT"
+            }
 
-        valuetok = Token(Token.T_NUMBER, 0, 0, "1")
-        kind, index = self._token2index(valuetok, True)
-
-        self.bc.append(BytecodeInstr('LOAD_' + kind, index))
-        self.bc.append(BytecodeInstr(unop2[token.value]))
-        # TODO: duptop is conditional on production
-        self.bc.append(BytecodeInstr('DUP_TOP'))
+            if token.value in unop1:
+                if state&ST_LOAD:
+                    self.bc.append(BytecodeInstr('DUP_TOP'))
+                self.bc.append(BytecodeInstr(unop1[token.value]))
+            elif token.value in unop2:
+                valuetok = Token(Token.T_NUMBER, 0, 0, "1")
+                kind, index = self._token2index(valuetok, True)
+                self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+                self.bc.append(BytecodeInstr(unop2[token.value]))
+                if state&ST_LOAD:
+                    self.bc.append(BytecodeInstr('DUP_TOP'))
+            else:
+                raise CompileError(token, "not supported")
 
     def _compile_logical_and(self, depth, state, token):
 
@@ -963,6 +1036,51 @@ class Compiler(object):
             nop.add_label(token.label)
             self.bc.append(nop)
 
+    def _compile_for(self, depth, state, token):
+
+        body =  token.children[1]
+        arglist = token.children[0]
+
+        if state & ST_PHASE_1:
+            nop = BytecodeInstr('NOP')
+            nop.add_label(token.label_begin)
+            self.bc.append(nop)
+
+            self._push(depth, ST_COMPILE | ST_PHASE_2, token)
+            self._push(depth, ST_TRAVERSE, arglist.children[1])
+
+        elif state & ST_PHASE_2:
+
+            instr = BytecodeJumpInstr('POP_JUMP_IF_FALSE', token.label_end)
+            self.bc.append(instr)
+
+            self._push(depth, ST_COMPILE | ST_PHASE_3, token)
+            self._push(depth, ST_TRAVERSE, arglist.children[2])
+            self._push(depth, ST_TRAVERSE, body)
+
+        elif state & ST_PHASE_3:
+
+            self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', token.label_begin))
+
+            nop = BytecodeInstr('NOP')
+            self.bc.append(nop)
+            nop.add_label(token.label_end)
+
+    def _compile_ternary(self, depth, state, token):
+
+        if state&ST_PHASE_1:
+            token.label = self._make_label()
+            self.bc.append(BytecodeJumpInstr('JUMP_IF_FALSE_OR_POP', token.label))
+        elif state&ST_PHASE_2:
+            self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', token.label))
+        elif state&ST_PHASE_3:
+            nop = BytecodeInstr('NOP')
+            nop.add_label(token.label)
+            self.bc.append(nop)
+
+    def _compile_instance_of(self, depth, state, token):
+
+        self.bc.append(BytecodeInstr('CALL_FUNCTION', 2))
     # -------------------------------------------------------------------------
 
     def _push(self, depth, state, token):
@@ -1140,6 +1258,11 @@ def main():  # pragma: no cover
     // 1 && 2
     // 0 && 1
     //console.log(true, false, undefined, null)
+    // console.log(0?1:2)
+    x = 0
+    y = 1
+    if (x instanceof y) {}
+
     """
 
     tokens = Lexer().lex(text1)

@@ -176,7 +176,7 @@ class Formatter(object):
 
         self.minify = opts.get('minify', False)
 
-    def compile(self, mod):
+    def format(self, mod):
 
         self.tokens = []
         self.stream = io.StringIO()
@@ -184,7 +184,7 @@ class Formatter(object):
         self._prev = self._null
         self._prev_char = ''
 
-        self.tokens = self._compile(mod)
+        self.tokens = self._format(mod)
 
         return self._write_minified()
 
@@ -212,8 +212,8 @@ class Formatter(object):
             prev_text = text
         return self.stream.getvalue()
 
-    def _compile(self, token):
-        """ non-recursive implementation of _compile
+    def _format(self, token):
+        """ non-recursive implementation of _format
 
         for each node process the children in reverse order
         """
@@ -398,6 +398,24 @@ class Formatter(object):
                     insert = True
                 seq.append((depth, Token.T_SPECIAL, '('))
                 seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_FOR_IN:
+                varexpr, iterable, block = token.children
+                seq.append((depth, None, block))
+                seq.append((depth, Token.T_SPECIAL, ')'))
+                seq.append((depth, None, iterable))
+                seq.append((depth, Token.T_KEYWORD, 'in'))
+                seq.append((depth, None, varexpr))
+                seq.append((depth, Token.T_SPECIAL, '('))
+                seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_FOR_OF:
+                varexpr, iterable, block = token.children
+                seq.append((depth, None, block))
+                seq.append((depth, Token.T_SPECIAL, ')'))
+                seq.append((depth, None, iterable))
+                seq.append((depth, Token.T_KEYWORD, 'of'))
+                seq.append((depth, None, varexpr))
+                seq.append((depth, Token.T_SPECIAL, '('))
+                seq.append((depth, token.type, token.value))
             elif token.type == Token.T_DOWHILE:
                 seq.append((depth, None, token.children[1]))
                 seq.append((depth, Token.T_KEYWORD, "while"))
@@ -449,14 +467,7 @@ class Formatter(object):
 def main():  # pragma: no cover
 
     text1 = """
-    function f1() {}
-    f2 = function() {}
-    f3 = () => {}
-    class A extends B {
-        constructor() {
-
-        }
-    }
+    for (const x of  y) {}
     """
 
     #text1 = open("./res/daedalus/index.js").read()
@@ -467,7 +478,7 @@ def main():  # pragma: no cover
     print(mod.toString())
 
     cc = Formatter()
-    text2 = Formatter().compile(mod)
+    text2 = Formatter().format(mod)
 
     print("-" * 79)
 

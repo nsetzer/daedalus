@@ -130,6 +130,8 @@ class Token(object):
     T_INCLUDE = "T_INCLUDE"
     T_FINALLY = "T_FINALLY"
     T_FOR = "T_FOR"
+    T_FOR_OF = "T_FOR_OF"
+    T_FOR_IN = "T_FOR_IN"
     T_FUNCTION = "T_FUNCTION"
     T_METHOD = "T_METHOD"
     T_NEW = "T_NEW"
@@ -144,6 +146,7 @@ class Token(object):
     T_UNPACK_SEQUENCE = "T_UNPACK_SEQUENCE"  # arrow function
     T_LOGICAL_AND = "T_LOGICAL_AND"
     T_LOGICAL_OR = "T_LOGICAL_OR"
+    T_INSTANCE_OF = "T_INSTANCE_OF"
 
     # these variables are assigned by the transform engine for variable scopes
     T_GLOBAL_VAR = 'T_GLOBAL_VAR'
@@ -215,10 +218,11 @@ class Token(object):
             return ''.join(parts)
 
         elif self.children:
+            s = "%s<%r>" % (self.type, self.value)
             t = ','.join(child.toString(False) for child in self.children)
             return "%s{%s}" % (s, t)
         else:
-            return s
+            return "%s<%r>" % (self.type, self.value)
 
     def flatten(self, depth=0):
         items = [(depth, self)]
