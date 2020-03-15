@@ -96,7 +96,7 @@ JsUndefined.Token = Token(Token.T_TEXT, 0, 0, "undefined")
 class JsArray(JsObjectBase):
     def __init__(self, seq):
         super(JsArray, self).__init__()
-
+        print("building a seq", seq)
         self._x_daedalus_js_seq = list(seq)
 
     def __str__(self):
@@ -110,6 +110,9 @@ class JsArray(JsObjectBase):
 
     def __setitem__(self, index, value):
         self._x_daedalus_js_seq[index] = value
+
+    def __len__(self):
+        return len(self._x_daedalus_js_seq)
 
     @property
     def length(self):
@@ -223,6 +226,18 @@ class JsObject(JsObjectBase):
     def length(self):
         return len(self._x_daedalus_js_attrs)
 
+    def keys(self):
+        """implements a python api for BUILD_MAP_UNPACK"""
+        return self._x_daedalus_js_attrs.keys()
+
+    def values(self):
+        """implements dual of keys() for convenience"""
+        return self._x_daedalus_js_attrs.values()
+
+JsObject.Token = Token(Token.T_TEXT, 0, 0, "JsObject")
+
+class JsObjectType(JsObjectBase):
+
     @staticmethod
     def keys(inst):
         return JsArray([key
@@ -235,11 +250,10 @@ class JsObject(JsObjectBase):
             for key in inst._x_daedalus_js_attrs.keys()
             if isinstance(key, str)])
 
-
 # workaround the 'is' keyword by setting the attribute directly
-setattr(JsObject, 'is', lambda a, b: a is b)
+setattr(JsObjectType, 'is', lambda a, b: a is b)
 
-JsObject.Token = Token(Token.T_TEXT, 0, 0, "JsObject")
+JsObjectType.Token = Token(Token.T_TEXT, 0, 0, "JsObjectType")
 
 def JsNew(constructor, *args):
 
@@ -249,7 +263,6 @@ def JsNew(constructor, *args):
         return obj
     else:
         return constructor(*args)
-
 
 JsNew.Token = Token(Token.T_TEXT, 0, 0, "JsNew")
 
@@ -527,7 +540,7 @@ def defaultGlobals():
         'null': None,
         'JsStr': JsStr,
         'JsObject': JsObject,
-        'Object': JsObject,
+        'Object': JsObjectType,
         'JsArray': JsArray,
         'JsNew': JsNew,
         'Promise': JsPromise,
