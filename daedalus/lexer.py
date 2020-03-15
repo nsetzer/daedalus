@@ -36,7 +36,7 @@ reserved_words = {
     'boolean', 'byte', 'char', 'double', 'false', 'int', 'long', 'null', 'short', 'true',
     # keywords
     'await', 'break', 'case',
-    'catch', 'class', 'const', 'continue', 'debugger', 'default',
+    'class', 'const', 'continue', 'debugger', 'default',
     'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends',
     'final', 'finally', 'float', 'for', 'function', 'goto', 'if',
     'implements', 'import', 'in', 'instanceof', 'interface', 'let',
@@ -49,7 +49,7 @@ reserved_words = {
 # TODO: e.x. {public: 'abc123'} will fail since public is a keyword
 reserved_words_extra = {
     'private', 'protected', 'public', 'native',
-    'abstract', 'arguments', 'synchronized', 'from', 'module', "pyimport"
+    'abstract', 'arguments', 'synchronized', 'from', 'module', "pyimport", "catch"
 }
 
 # symbols for operators that have length 1

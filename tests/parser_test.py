@@ -619,7 +619,7 @@ class ParserKeywordTestCase(unittest.TestCase):
                     TOKEN('T_THROW', 'throw',
                         TOKEN('T_NUMBER', '0'))),
                 TOKEN('T_CATCH', 'catch',
-                    TOKEN('T_GROUPING', '()',
+                    TOKEN('T_ARGLIST', '()',
                         TOKEN('T_TEXT', 'ex')),
                     TOKEN('T_BLOCK', '{}')),
                 TOKEN('T_FINALLY', 'finally',

@@ -89,6 +89,7 @@ class Compiler(object):
             Token.T_GROUPING: self._traverse_grouping,
             Token.T_BRANCH: self._traverse_branch,
             Token.T_WHILE: self._traverse_while,
+            Token.T_DOWHILE: self._traverse_dowhile,
             Token.T_OBJECT: self._traverse_object,
             Token.T_LIST: self._traverse_list,
             Token.T_NEW: self._traverse_new,
@@ -119,10 +120,18 @@ class Compiler(object):
             Token.T_KEYWORD: self._compile_keyword,
             Token.T_DELETE_VAR: self._compile_delete_var,
             Token.T_UNPACK_SEQUENCE: self._compile_unpack_sequence,
+            Token.T_BREAK: self._compile_break,
+            Token.T_CONTINUE: self._compile_continue,
 
             # do nothing
             Token.T_EMPTY_TOKEN: lambda *args: None,
-            Token.T_CLOSURE: lambda *args: None
+            Token.T_CLOSURE: lambda *args: None,
+
+            # do nothing for these nodes until an implementation can be written
+            Token.T_FOR_IN: lambda *args: print("T_FOR_IN not implemeted"),
+            Token.T_TRY: lambda *args: print("T_TRY not implemeted"),
+            Token.T_THROW: lambda *args: print("T_THROW not implemeted"),
+            Token.T_TEMPLATE_STRING : lambda *args: print("T_TEMPLATE_STRING not implemeted")
         }
 
         # compile methods produce opcodes after the token has
@@ -133,6 +142,7 @@ class Compiler(object):
             Token.T_FUNCTIONCALL: self._compile_functioncall,
             Token.T_BRANCH: self._compile_branch,
             Token.T_WHILE: self._compile_while,
+            Token.T_DOWHILE: self._compile_dowhile,
             Token.T_OBJECT: self._compile_object,
             Token.T_LIST: self._compile_list,
             Token.T_NEW: self._compile_new,
@@ -180,6 +190,9 @@ class Compiler(object):
             self.globals.update(globals)
 
         self.module_globals = {}
+
+        self.break_sources = []
+        self.continue_sources = []
 
         self.next_label = 0
 
@@ -354,6 +367,7 @@ class Compiler(object):
                 lineno = op.lineno
             elif op.lineno is None or op.lineno < lineno:
                 op.lineno = lineno
+
     # -------------------------------------------------------------------------
 
     def _traverse_module(self, depth, state, token):
@@ -629,10 +643,31 @@ class Compiler(object):
         nop = BytecodeInstr('NOP')
         self.bc.append(nop)
         nop.add_label(token.label_begin)
+        token.continue_target = nop
 
-        arglist = token.children[0]
+        self.break_sources.append([])
+        self.continue_sources.append([])
+
+        expr_test, expr_block = token.children
         self._push(depth, ST_COMPILE | ST_WHILE, token)
-        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, arglist)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, expr_test)
+
+    def _traverse_dowhile(self, depth, state, token):
+
+        token.label_begin = self._make_label()
+
+        nop = BytecodeInstr('NOP')
+        self.bc.append(nop)
+        nop.add_label(token.label_begin)
+        token.continue_target = nop
+
+        self.break_sources.append([])
+        self.continue_sources.append([])
+
+        expr_block, expr_test = token.children
+        self._push(depth, ST_COMPILE, token)
+        self._push(depth + 1, ST_TRAVERSE | ST_LOAD, expr_test)
+        self._push(depth + 1, ST_TRAVERSE, expr_block)
 
     def _traverse_object(self, depth, state, token):
 
@@ -841,6 +876,10 @@ class Compiler(object):
 
 
 
+        self.break_sources.append([])
+        self.continue_sources.append([])
+
+
 
         self._push(depth, ST_COMPILE | ST_PHASE_1, token)
         self._push(depth, ST_TRAVERSE, arglist.children[0])
@@ -1034,13 +1073,14 @@ class Compiler(object):
     def _compile_while(self, depth, state, token):
 
         if state & ST_WHILE:
+            expr_test, expr_block = token.children
 
             token.label_false = self._make_label()
             instr = BytecodeJumpInstr('POP_JUMP_IF_FALSE', token.label_end)
             self.bc.append(instr)
 
             self._push(depth, ST_COMPILE, token)
-            self._push(depth, ST_TRAVERSE, token.children[1])
+            self._push(depth, ST_TRAVERSE, expr_block)
 
         else:
             self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', token.label_begin))
@@ -1048,6 +1088,19 @@ class Compiler(object):
             nop = BytecodeInstr('NOP')
             self.bc.append(nop)
             nop.add_label(token.label_end)
+
+            token.break_target = nop
+            self._finalize_break_continue(token)
+
+    def _compile_dowhile(self, depth, state, token):
+
+        self.bc.append(BytecodeJumpInstr('POP_JUMP_IF_TRUE', token.label_begin))
+
+        nop = BytecodeInstr("NOP")
+        self.bc.append(nop)
+        token.break_target = nop
+
+        self._finalize_break_continue(token)
 
     def _compile_object(self, depth, state, token):
         """
@@ -1085,7 +1138,7 @@ class Compiler(object):
 
     def _compile_keyword(self, depth, state, token):
 
-        if token.value in ['this', 'null', 'false', 'true']:
+        if token.value in ['this', 'null', 'false', 'true', 'super']:
             return self._compile_text(depth, state, token)
         else:
             raise CompileError(token, "Unsupported keyword")
@@ -1167,6 +1220,8 @@ class Compiler(object):
             nop.add_label(token.label_begin)
             self.bc.append(nop)
 
+            token.continue_target = nop
+
             self._push(depth, ST_COMPILE | ST_PHASE_2, token)
             self._push(depth, ST_TRAVERSE, arglist.children[1])
 
@@ -1186,6 +1241,10 @@ class Compiler(object):
             nop = BytecodeInstr('NOP')
             self.bc.append(nop)
             nop.add_label(token.label_end)
+
+            token.break_target = nop
+
+            self._finalize_break_continue(token)
 
     def _compile_ternary(self, depth, state, token):
 
@@ -1214,6 +1273,7 @@ class Compiler(object):
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
 
     def _compile_build_tuple(self, depth, state, token):
+
         self.bc.append(BytecodeInstr('BUILD_TUPLE', int(token.value)))
 
     def _compile_build_map_unpack(self, depth, state, token):
@@ -1222,7 +1282,18 @@ class Compiler(object):
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
 
     def _compile_build_map(self, depth, state, token):
+
         self.bc.append(BytecodeInstr('BUILD_MAP', int(token.value)))
+
+    def _compile_break(self, depth, state, token):
+        tgt = self._make_label()
+        self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', tgt))
+        self.break_sources[-1].append(tgt)
+
+    def _compile_continue(self, depth, state, token):
+        tgt = self._make_label()
+        self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', tgt))
+        self.continue_sources[-1].append(tgt)
 
     # -------------------------------------------------------------------------
 
@@ -1336,6 +1407,15 @@ class Compiler(object):
             kind, index = self._token2index(child, False)
             self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
 
+    def _finalize_break_continue(self, token):
+        sources = self.break_sources.pop()
+        for lbl in sources:
+            token.break_target.add_label(lbl)
+
+        sources = self.continue_sources.pop()
+        for lbl in sources:
+            token.continue_target.add_label(lbl)
+
 def main():  # pragma: no cover
 
     text1 = """
@@ -1406,13 +1486,18 @@ def main():  # pragma: no cover
 
     //x = [1,2,3]
     //y = [...x, 4+5]
-    x = {a:0, b:1}
-    y = {...x, c:2}
-    console.log(x, y)
+    //x = {a:0, b:1}
+    //y = {...x, c:2}
+    //console.log(x, y)
     //f = ()=>{console.log("And", arguments.length)}
     //x = [1,2,3]
     //f(...x)
 
+    x = 0;
+    while(x < 5) {
+        console.log(x++)
+        break
+    }
     """
 
     tokens = Lexer().lex(text1)

@@ -1492,10 +1492,15 @@ class Parser(object):
         token.children = [rhs]
         token.type = Token.T_TRY
 
-        i2 = self.peek_keyword(tokens, token, index, 1)
-        while (i2 is not None and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'catch'):
-            rhs1 = self.consume_keyword(tokens, token, index, 1)
-            rhs2 = self.consume(tokens, token, index, 1)
+        i2 = self.peek_token(tokens, token, index, 1)
+        # consequence of making catch not a KEYWORD is that
+        # it gets processed as a function call
+        #while (i2 is not None and tokens[i2].type == Token.T_TEXT and tokens[i2].value == 'catch'):
+        while (i2 is not None and tokens[i2].type == Token.T_FUNCTIONCALL and tokens[i2].children[0].value == 'catch'):
+            rhs1 = self.consume(tokens, token, index, 1)
+            rhs1, rhs2 = rhs1.children
+            #rhs1 = self.consume_keyword(tokens, token, index, 1)
+            #rhs2 = self.consume(tokens, token, index, 1)
             rhs3 = self.consume(tokens, token, index, 1)
             if rhs3.type != Token.T_GROUPING:
                 self.warn(rhs3, Parser.W_BLOCK_UNSAFE)
@@ -1581,8 +1586,13 @@ def main():  # pragma: no cover
     text1 = """
         //for (const x of iterable) {}
         //for (const x in iterable) {}
-        f(...x)
-        [...x]
+          try {
+                throw 0;
+            } catch (ex) {
+
+            } finally {
+
+            }
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)
