@@ -108,7 +108,7 @@ class TransformGrouping(TransformBase):
         v = child.value
 
         if (t == Token.T_TEXT) or \
-           (t == Token.T_PREFIX and v == '...') or \
+           (t == Token.T_SPREAD) or \
            (t == Token.T_BINARY and (v == ':')) or \
            (t == Token.T_COMMA):
             return None

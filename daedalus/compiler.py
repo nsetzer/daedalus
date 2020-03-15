@@ -104,6 +104,7 @@ class Compiler(object):
             Token.T_TERNARY: self._traverse_ternary,
             Token.T_INSTANCE_OF: self._traverse_instance_of,
 
+
             Token.T_VAR: self._traverse_var,
 
             Token.T_PYIMPORT: self._traverse_pyimport,
@@ -154,6 +155,14 @@ class Compiler(object):
             Token.T_ATTR: self._compile_attr,
             Token.T_DELETE_VAR: self._compile_delete_var,
             Token.T_UNPACK_SEQUENCE: self._compile_unpack_sequence,
+
+            # python specific helper methods
+            'T_BUILD_TUPLE_UNPACK_WITH_CALL': self._compile_build_tuple_unpack_with_call,
+            'T_BUILD_TUPLE_UNPACK': self._compile_build_tuple_unpack,
+            'T_BUILD_TUPLE': self._compile_build_tuple,
+
+            'T_BUILD_MAP_UNPACK': self._compile_build_map_unpack,
+            'T_BUILD_MAP': self._compile_build_map,
         }
 
         self.bc = ConcreteBytecode2()
@@ -220,6 +229,8 @@ class Compiler(object):
         # not all expressions produce a value this ensures there is something
         # on the stack that can be assigned to '_'
         if self.flags & Compiler.CF_REPL:
+            self.bc.append(BytecodeInstr('LOAD_CONST', 0))
+            self.bc.append(BytecodeInstr('LOAD_CONST', 0))
             self.bc.append(BytecodeInstr('LOAD_CONST', 0))
 
         if ast.type == Token.T_MODULE:
@@ -374,6 +385,7 @@ class Compiler(object):
 
         self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
 
+        # hack to fix LHS of object property
         if token.value == ':':
             if token.children[0].type == Token.T_TEXT:
                 token.children[0].type = Token.T_STRING
@@ -394,11 +406,49 @@ class Compiler(object):
             self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
 
     def _traverse_functioncall(self, depth, state, token):
-        self._push(depth, ST_COMPILE, token)
 
-        flag0 = ST_TRAVERSE | ST_LOAD
-        for child in reversed(token.children):
-            self._push(depth, flag0, child)
+
+        expr_call, expr_args = token.children
+        unpack = any(child.type == Token.T_SPREAD for child in expr_args.children)
+
+        if unpack:
+            tuple_count = 0
+            count = 0
+            children = []
+            for child in expr_args.children:
+                if child.type == Token.T_SPREAD:
+                    if count > 0:
+                        token = Token('T_BUILD_TUPLE',0,0, str(count))
+                        children.append((ST_COMPILE, token))
+                        tuple_count += 1
+
+                    children.append((ST_TRAVERSE, child.children[0]))
+                    tuple_count += 1
+                    count = 0
+                else:
+                    children.append((ST_TRAVERSE|ST_LOAD, child))
+                    count += 1
+            if count > 0:
+                token = Token('T_BUILD_TUPLE',0,0, str(count))
+                children.append((ST_COMPILE, token))
+                tuple_count += 1
+
+
+            token = Token('T_BUILD_TUPLE_UNPACK_WITH_CALL',0,0, str(tuple_count))
+            self._push(depth, ST_COMPILE, token)
+
+            flag0 = ST_TRAVERSE | ST_LOAD
+
+            for new_state, child in reversed(children):
+                self._push(depth + 1, flag0, child)
+            self._push(depth, flag0, expr_call)
+
+        else:
+            self._push(depth, ST_COMPILE, token)
+
+            flag0 = ST_TRAVERSE | ST_LOAD
+            self._push(depth, flag0, expr_args)
+            self._push(depth, flag0, expr_call)
 
     def _traverse_arglist(self, depth, state, token):
 
@@ -586,21 +636,91 @@ class Compiler(object):
 
     def _traverse_object(self, depth, state, token):
 
-        kind, index = self._token2index(JsObject.Token, True)
-        self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+        unpack = any(child.type == Token.T_SPREAD for child in token.children)
 
-        self._push(depth, ST_COMPILE, token)
-        for child in reversed(token.children):
-            self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
+        if unpack:
+
+            tuple_count = 0
+            count = 0
+            children = []
+            for child in token.children:
+                if child.type == Token.T_SPREAD:
+                    if count > 0:
+                        token = Token('T_BUILD_MAP',0,0, str(count))
+                        children.append((ST_COMPILE, token))
+                        tuple_count += 1
+
+                    children.append((ST_TRAVERSE, child.children[0]))
+                    tuple_count += 1
+                    count = 0
+                else:
+                    children.append((ST_TRAVERSE|ST_LOAD, child))
+                    count += 1
+            if count > 0:
+                token = Token('T_BUILD_MAP',0,0, str(count))
+                children.append((ST_COMPILE, token))
+                tuple_count += 1
+
+            kind, index = self._token2index(JsObject.Token, True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+
+            token = Token('T_BUILD_MAP_UNPACK',0,0, str(tuple_count))
+            self._push(depth, ST_COMPILE, token)
+
+            for new_state, child in reversed(children):
+                self._push(depth + 1, new_state, child)
+
+        else:
+            kind, index = self._token2index(JsObject.Token, True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+
+            self._push(depth, ST_COMPILE, token)
+            for child in reversed(token.children):
+                self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
 
     def _traverse_list(self, depth, state, token):
 
-        kind, index = self._token2index(JsArray.Token, True)
-        self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+        unpack = any(child.type == Token.T_SPREAD for child in token.children)
 
-        self._push(depth, ST_COMPILE, token)
-        for child in reversed(token.children):
-            self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
+        if unpack:
+
+            tuple_count = 0
+            count = 0
+            children = []
+            for child in token.children:
+                if child.type == Token.T_SPREAD:
+                    if count > 0:
+                        token = Token('T_BUILD_TUPLE',0,0, str(count))
+                        children.append((ST_COMPILE, token))
+                        tuple_count += 1
+
+                    children.append((ST_TRAVERSE, child.children[0]))
+                    tuple_count += 1
+                    count = 0
+                else:
+                    children.append((ST_TRAVERSE|ST_LOAD, child))
+                    count += 1
+            if count > 0:
+                token = Token('T_BUILD_TUPLE',0,0, str(count))
+                children.append((ST_COMPILE, token))
+                tuple_count += 1
+
+            kind, index = self._token2index(JsArray.Token, True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+
+            token = Token('T_BUILD_TUPLE_UNPACK',0,0, str(tuple_count))
+            self._push(depth, ST_COMPILE, token)
+
+            for new_state, child in reversed(children):
+                self._push(depth + 1, new_state, child)
+        else:
+
+            kind, index = self._token2index(JsArray.Token, True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index, lineno=token.line))
+
+            self._push(depth, ST_COMPILE, token)
+            for child in reversed(token.children):
+                self._push(depth + 1, ST_TRAVERSE | ST_LOAD, child)
 
     def _traverse_new(self, depth, state, token):
 
@@ -756,6 +876,7 @@ class Compiler(object):
             self._push(depth + 1, ST_TRAVERSE, child)
         kind, index = self._token2index(JsInstanceof.Token, load=True)
         self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+
     # -------------------------------------------------------------------------
 
     def _compile_binary(self, depth, state, token):
@@ -1081,6 +1202,28 @@ class Compiler(object):
     def _compile_instance_of(self, depth, state, token):
 
         self.bc.append(BytecodeInstr('CALL_FUNCTION', 2))
+
+    def _compile_build_tuple_unpack_with_call(self, depth, state, token):
+
+        self.bc.append(BytecodeInstr('BUILD_TUPLE_UNPACK_WITH_CALL', int(token.value)))
+        self.bc.append(BytecodeInstr('CALL_FUNCTION_EX', 0))
+
+    def _compile_build_tuple_unpack(self, depth, state, token):
+
+        self.bc.append(BytecodeInstr('BUILD_TUPLE_UNPACK', int(token.value)))
+        self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
+
+    def _compile_build_tuple(self, depth, state, token):
+        self.bc.append(BytecodeInstr('BUILD_TUPLE', int(token.value)))
+
+    def _compile_build_map_unpack(self, depth, state, token):
+
+        self.bc.append(BytecodeInstr('BUILD_MAP_UNPACK', int(token.value)))
+        self.bc.append(BytecodeInstr('CALL_FUNCTION', 1))
+
+    def _compile_build_map(self, depth, state, token):
+        self.bc.append(BytecodeInstr('BUILD_MAP', int(token.value)))
+
     # -------------------------------------------------------------------------
 
     def _push(self, depth, state, token):
@@ -1259,9 +1402,16 @@ def main():  # pragma: no cover
     // 0 && 1
     //console.log(true, false, undefined, null)
     // console.log(0?1:2)
-    x = 0
-    y = 1
-    if (x instanceof y) {}
+    //if (x instanceof y) {}
+
+    //x = [1,2,3]
+    //y = [...x, 4+5]
+    x = {a:0, b:1}
+    y = {...x, c:2}
+    console.log(x, y)
+    //f = ()=>{console.log("And", arguments.length)}
+    //x = [1,2,3]
+    //f(...x)
 
     """
 

@@ -403,15 +403,22 @@ class Parser(object):
                 return self._offset
 
         if token.type == Token.T_GROUPING and token.value == '[]':
-            i1 = self.peek_token(tokens, token, index, -1)
-            if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
-                lhs = self.consume(tokens, token, index, -1)
-                tok1 = Token(Token.T_SUBSCR, token.line, token.index, "")
-                tok1.children = [lhs] + token.children
-                tokens[index - 1] = tok1
-                return self._offset
-            else:
+            # special case if the square bracket starts a new line
+            # then assume this is the start of a list
+            # alternative would be to check if the rhs is a assignment operator
+            if index > 1 and tokens[index-1].type == Token.T_NEWLINE:
                 token.type = Token.T_LIST
+
+            else:
+                i1 = self.peek_token(tokens, token, index, -1)
+                if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
+                    lhs = self.consume(tokens, token, index, -1)
+                    tok1 = Token(Token.T_SUBSCR, token.line, token.index, "")
+                    tok1.children = [lhs] + token.children
+                    tokens[index - 1] = tok1
+                    return self._offset
+                else:
+                    token.type = Token.T_LIST
 
         return 1
 
@@ -550,6 +557,8 @@ class Parser(object):
             return 1
 
         token.children.append(self.consume(tokens, token, index, 1))
+
+
         token.type = Token.T_PREFIX
 
         return 1
@@ -577,7 +586,11 @@ class Parser(object):
 
         rhs = self.consume(tokens, token, index, 1)
         token.children.append(rhs)
-        token.type = Token.T_PREFIX
+
+        if token.value == '...':
+            token.type = Token.T_SPREAD
+        else:
+            token.type = Token.T_PREFIX
 
         return 1
 
@@ -1568,7 +1581,8 @@ def main():  # pragma: no cover
     text1 = """
         //for (const x of iterable) {}
         //for (const x in iterable) {}
-        for (;;x++) {};
+        f(...x)
+        [...x]
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)

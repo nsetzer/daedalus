@@ -95,7 +95,7 @@ class ParserUnaryOpTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_OBJECT', '{}',
-                TOKEN('T_PREFIX', '...',
+                TOKEN('T_SPREAD', '...',
                     TOKEN('T_TEXT', 'a')))
         )
 

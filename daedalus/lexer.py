@@ -147,6 +147,7 @@ class Token(object):
     T_LOGICAL_AND = "T_LOGICAL_AND"
     T_LOGICAL_OR = "T_LOGICAL_OR"
     T_INSTANCE_OF = "T_INSTANCE_OF"
+    T_SPREAD = "T_SPREAD"
 
     # these variables are assigned by the transform engine for variable scopes
     T_GLOBAL_VAR = 'T_GLOBAL_VAR'
