@@ -317,7 +317,7 @@ class JsFile(object):
                 self.module_imports[token.value] = dict(fromlist)
 
             elif token.type == Token.T_IMPORT:
-                pass
+                i += 1
 
             elif token.type == Token.T_EXPORT:
                 self.exports.append(token.value)
@@ -489,6 +489,8 @@ class Builder(object):
         self.files = {}
         self.modules = {}
         self.source_types = {}
+
+        self.python = False
 
         if static_data is None:
             static_data = {}
@@ -665,7 +667,7 @@ class Builder(object):
         css = "\n".join(styles)
         error = None
         try:
-            js = Formatter(opts={'minify': minify}).compile(ast)
+            js = Formatter(opts={'minify': minify}).format(ast)
 
         except TokenError as e:
             filepath = ""
