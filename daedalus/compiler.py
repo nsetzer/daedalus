@@ -523,6 +523,42 @@ class Compiler(object):
 
         Use a new Compiler to compile the function. the name and code
         object are stored as constants inside the current scope
+
+        All Javascript AST nodes for a function call have the same form
+
+            T_FUNCTION
+                T_TEXT<name>
+                T_ARGLIST<name>
+                T_BLOCK<name>
+                T_CLOSURE<name>
+
+        All Javascript functions have the same python function signature
+            - all arguments are positional arguments with default values
+              the default value is undefined if not specified
+            - any number of arguments can be passed and extra arguments
+              are collected into a magic variable
+            - the 'this' variable is implemented as a keyword only argument
+              and is inaccessible from the javascript code definition
+
+
+        Given:
+            function f(arg0) {}
+
+        Produce:
+
+            def f(arg0=undefined, *_x_daedalus_js_args, this=undefined)
+
+        In order to implement function binding ever Javascript Function is
+        wrapped by a JsFunction instance which will automatically pass in
+        the correct instance for 'this' when the function is called
+
+        arrow functions automatically bind to the 'this' in the current scope
+
+        anonymous functions automatically bind to undefined, and must
+        be manually bound by the user
+
+        constructors must have 'this' passed in -- which is implement in JsNew
+
         """
         flags = 0
         sub = Compiler(name.value, self.bc.filename, flags)
