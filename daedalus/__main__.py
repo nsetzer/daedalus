@@ -6,6 +6,8 @@ import logging
 
 from .builder import Builder
 from .server import SampleServer
+from .repl import Repl
+from .jseval import compile_file, JsContext
 
 def makedirs(path):
     if not os.path.exists(path):
@@ -170,7 +172,6 @@ class CompileCLI(CLI):
             wf.write(css)
             wf.write("\n")
 
-
 class CompileModuleCLI(CLI):
     """
     compile a js file (and all imports) into a single file
@@ -243,6 +244,87 @@ class ServeCLI(CLI):
         server.setCert(args.cert, args.keyfile)
         server.run()
 
+class AstCLI(CLI):
+
+    def register(self, parser):
+        subparser = parser.add_parser('ast',
+            help="print ast for source file")
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+
+        with open(jspath) as rf:
+            text = rf.read()
+
+        ast = JsContext().parsejs(text)
+
+        print(ast.toString(3))
+
+class DisCLI(CLI):
+
+    def register(self, parser):
+        subparser = parser.add_parser('dis',
+            help="print disassembly")
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+
+        cc = compile_file(jspath)
+
+        cc.dump()
+
+class RunCLI(CLI):
+
+    def register(self, parser):
+        subparser = parser.add_parser('run',
+            help="run a script")
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+
+        cc = compile_file(jspath)
+
+        try:
+            v = cc.execute()
+        finally:
+            print("&&")
+        print("!!")
+        print(v)
+
+
 def getArgs():
     parser = argparse.ArgumentParser(
         description='unopinionated javascript framework')
@@ -260,18 +342,24 @@ def register_parsers(parser):
     CompileCLI().register(parser)
     CompileModuleCLI().register(parser)
     ServeCLI().register(parser)
+    AstCLI().register(parser)
+    DisCLI().register(parser)
+    RunCLI().register(parser)
 
 def main():
 
-    args = getArgs()
-
-    FORMAT = '%(levelname)-8s - %(message)s'
-    logging.basicConfig(level=logging.INFO, format=FORMAT)
-
-    if not hasattr(args, 'func'):
-        parser.print_help()
+    if len(sys.argv) == 1:
+        Repl().main()
     else:
-        args.func(args)
+        args = getArgs()
+
+        FORMAT = '%(levelname)-8s - %(message)s'
+        logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+        if not hasattr(args, 'func'):
+            parser.print_help()
+        else:
+            args.func(args)
 
 
 if __name__ == '__main__':

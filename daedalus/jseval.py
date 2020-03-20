@@ -10,10 +10,13 @@ from importlib.util import spec_from_file_location, MAGIC_NUMBER, cache_from_sou
 
 from .lexer import Lexer, TokenError
 from .parser import Parser
+from .formatter import Formatter
 from .compiler import Compiler
 from .builder import Builder
 from .builtins import JsObject
 from .util import Namespace
+from .transform import TransformAssignScope, \
+    TransformClassToFunction, TransformMinifyScope
 
 def save_module(path, co):
     """
@@ -75,7 +78,35 @@ class JsContext(object):
 
         self.globals = {}
 
-    def evaljs(self, text):
+    def parsejs(self, text):
+        """
+        run the same parser used for compiling
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+
+        transform = TransformClassToFunction()
+        transform.transform(ast)
+
+        transform = TransformAssignScope()
+        transform.transform(ast)
+
+        return ast
+
+    def minifyjs(self, text):
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+
+        transform = TransformMinifyScope()
+        transform.transform(ast)
+
+        mintext = Formatter().format(ast)
+
+        return mintext
+
+    def compilejs(self, text):
 
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
@@ -86,7 +117,13 @@ class JsContext(object):
 
         compiler.compile(ast)
 
-        result = interp.function_body()
+        return compiler
+
+    def evaljs(self, text):
+
+        compiler = self.compilejs(text)
+
+        result = compiler.function_body()
 
         if isinstance(result, dict):
             self.globals.update(result)
@@ -99,13 +136,22 @@ class JsContext(object):
 
 
 def main():
-    try:
-        compile_file("daedalus")
-    except TokenError as e:
-        print("-"*40)
-        print(e.token.file)
-        print(e.token.toString(3))
-        raise e
+
+    text = JsContext().minifyjs("""
+        function f2() {
+
+        }
+        return f2
+        """)
+    print(text)
+
+    #try:
+    #    compile_file("daedalus")
+    #except TokenError as e:
+    #    print("-"*40)
+    #    print(e.token.file)
+    #    print(e.token.toString(3))
+    #    raise e
 
 
 if __name__ == '__main__':

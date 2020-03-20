@@ -201,7 +201,7 @@ class LexerBasicTestCase(unittest.TestCase):
         expected = [
             Token(Token.T_TEXT, 1, 0, 'x'),
             Token(Token.T_SPECIAL, 1, 2, '='),
-            Token(Token.T_TEXT, 1, 5, '/a+/')
+            Token(Token.T_REGEX, 1, 5, '/a+/')
         ]
         tokens = list(Lexer().lex(text))
 

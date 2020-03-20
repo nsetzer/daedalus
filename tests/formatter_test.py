@@ -1,3 +1,4 @@
+#! cd .. && python3 -m tests.formatter_test
 
 
 import unittest
@@ -5,21 +6,7 @@ from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
-from daedalus.formatter import Formatter, SourceMap, isalphanum
-
-class SourceMapTestCase(unittest.TestCase):
-
-    def test_001_b64decode(self):
-        srcmap = SourceMap()
-
-        self.assertEqual(srcmap.b64decode('uDt7D0TkuK'), [55, -1974, 314, 5346])
-        self.assertEqual(srcmap.b64decode('gvDn1EilwhEQ4xDpo3vP'), [1776, -2387, 2121809, 8, 1820, -8121988])
-
-    def test_001_b64encode(self):
-        srcmap = SourceMap()
-
-        self.assertEqual(srcmap.b64encode([55, -1974, 314, 5346]), 'uDt7D0TkuK')
-        self.assertEqual(srcmap.b64encode([1776, -2387, 2121809, 8, 1820, -8121988]), 'gvDn1EilwhEQ4xDpo3vP')
+from daedalus.formatter import Formatter, isalphanum
 
 class FormatterUtilTestCase(unittest.TestCase):
 
@@ -53,6 +40,94 @@ class FormatterTestCase(unittest.TestCase):
         output = self.formatter.format(ast)
 
         self.assertEqual(output, expected)
+
+    def test_001_comment(self):
+        self._chkeq("""
+            x = 1 // comment
+        """, "x=1")
+
+    def test_001_comment_multiline(self):
+        self._chkeq("""
+            /*
+            comment
+            */
+            x = 1
+        """, "x=1")
+
+    def test_001_comment_documentation(self):
+
+        text = """
+        /**
+         * comment
+         */
+        x = 1
+        """
+
+        expected = "/**\n         * comment\n         */;x=1"
+        tokens = Lexer({'preserve_documentation': True}).lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(output, expected)
+
+    def test_001_regex(self):
+        self._chkeq("""
+            x = /ab+c/g
+        """, "x=/ab+c/g")
+
+    def test_001_escape_newline(self):
+        self._chkeq("""
+           x = a \
+               + b
+        """, "x=a+b")
+
+    @unittest.skip("not implemented")
+    def test_001_generator_function(self):
+        self._chkeq("""
+           function* g() {
+            yield 1
+           }
+        """, "function*(){yield 1}")
+
+    def test_001_number_int(self):
+        self._chkeq("""
+            x = 1234
+        """, "x=1234")
+
+    def test_001_number_int_neg(self):
+        self._chkeq("""
+            x=-1234
+        """, "x=-1234")
+
+    def test_001_number_float_1(self):
+        self._chkeq("""
+            x = 1.2
+        """, "x=1.2")
+
+    def test_001_number_float_2(self):
+        self._chkeq("""
+            x = .234
+        """, "x=.234")
+
+    def test_001_number_string_single(self):
+        self._chkeq("""
+            x = 'abc'
+        """, "x='abc'")
+
+    def test_001_number_string_double(self):
+        self._chkeq("""
+            x = "abc"
+        """, "x=\"abc\"")
+
+    def test_001_number_string_format(self):
+        self._chkeq("""
+            x = `abc ${def}`
+        """, "x=`abc ${def}`")
+
+    def test_001_number_string_escape(self):
+        self._chkeq("""
+            x = '\\x00'
+        """, "x='\\x00'")
 
     def test_001_expr_1(self):
 
@@ -502,6 +577,84 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(output, expected)
 
+    def test_001_optional_chaining_attr(self):
+        #self._chkeq("a ?. b", "a?.b")
+        self._chkeq("a ?. b", "((a)||{}).b")
+
+    #def test_001_optional_chaining_call(self):
+    #    self._chkeq("a?.()", "a?.()")
+
+    #def test_001_optional_chaining_subscr(self):
+    #    self._chkeq("a?.[]", "a?.[]")
+
+    def test_001_spread_call(self):
+        self._chkeq("f(...x, 1, 2, 3, ...y)", "f(...x,1,2,3,...y)")
+
+    def test_001_spread_list(self):
+        self._chkeq("y = [...x]", "y=[...x]")
+
+    def test_001_spread_obj(self):
+        self._chkeq("y = {...x}", "y={...x}")
+
+    def test_001_yield(self):
+        self._chkeq("yield value", 'yield value')
+
+    def test_001_generator(self):
+        self._chkeq("function* g() {yield 1}", 'function*g(){yield 1}')
+
+    def test_001_anonymous_generator(self):
+        self._chkeq("function* () {yield 1}", 'function*(){yield 1}')
+
+    def test_001_list_newline(self):
+        self._chkeq("""
+            a = 0
+            [b] = [a]
+        """, 'a=0;[b]=[a]')
+
+    def test_001_instanceof(self):
+        self._chkeq("if (x instanceof y){}", 'if(x instanceof y){}')
+
+    def test_001_logical_and(self):
+        self._chkeq("if (x && y){}", 'if(x&&y){}')
+
+    def test_001_logical_or(self):
+        self._chkeq("if (x || y){}", 'if(x||y){}')
+
+    def test_001_generator(self):
+        self._chkeq("""
+            function* g1() {
+                yield 1
+                yield* g2()
+                yield 2
+            }
+        """, 'function*g1(){yield 1;yield*g2();yield 2}')
+
+    def test_001_anonymous_generator(self):
+        self._chkeq("""
+            function*() {
+                yield 1
+            }
+        """, 'function*(){yield 1}')
+
+    def test_001_async_generator(self):
+        self._chkeq("""
+            async function* g1() {
+                await f2()
+            }
+        """, 'async function*g1(){await f2()}')
+
+    def test_001_async_anonymous_generator(self):
+        self._chkeq("""
+            async function* () {
+                yield 1
+            }
+        """, 'async function*(){yield 1}')
+
+    def test_001_static_method(self):
+        self._chkeq("""
+            class C {static f() {} f2(){}}
+        """, 'class C{static f(){};f2(){}}')
+
 class FormatterStressTestCase(unittest.TestCase):
 
     @classmethod
@@ -568,8 +721,10 @@ class FormatterStressTestCase(unittest.TestCase):
     def test_002_deep_2(self):
 
         # mutual recursion in the parser limits the depth
+        # now there is no limit at least to N=2000
+        # there is however significant slowdown for large N
 
-        N = 487
+        N = 500
         text = ("(" * N) + (")" * N)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)

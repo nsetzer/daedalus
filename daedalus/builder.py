@@ -6,7 +6,7 @@ from . import __path__
 import json
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser
-from .transform import TransformExtractStyleSheet
+from .transform import TransformExtractStyleSheet, TransformMinifyScope
 from .formatter import Formatter
 from ast import literal_eval
 
@@ -664,9 +664,19 @@ class Builder(object):
             styles = jsm.styles
             source_size = jsm.source_size
 
+
+
         css = "\n".join(styles)
         error = None
         try:
+            #TransformMinifyScope().transform(ast)
+            #                20.03KB gzipped (74.23KB uncompressed)
+            #Compiled Size:  16.94KB gzipped (68.3KB uncompressed)
+            #Saved 15.41% off the gzipped size (8.00% without gzip)
+            #                20.04KB gzipped (86.95KB uncompressed)
+            #Compiled Size:  18.16KB gzipped (73.21KB uncompressed)
+            #Saved 9.36% off the gzipped size (15.81% without gzip)
+
             js = Formatter(opts={'minify': minify}).format(ast)
 
         except TokenError as e:

@@ -16,6 +16,7 @@ TODO: warning when two lines are arranged such that:
 
 The parser interprets it as:
     a = b[c] = d
+
 """
 import sys
 import ast
@@ -77,7 +78,7 @@ class Parser(object):
             (L2R, self.visit_ternary, ['?']),
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
-            (L2R, self.visit_lambda, ['=>']),
+            (R2L, self.visit_lambda, ['=>']),
             (L2R, self.visit_assign, ['=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
@@ -88,6 +89,8 @@ class Parser(object):
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_keyword, []),
+            (L2R, self.visit_async, ['async']),
+            (L2R, self.visit_static, ['static']),
             (L2R, self.visit_keyword_import_export, []),
             (L2R, self.visit_cleanup, []),
         ]
@@ -150,7 +153,7 @@ class Parser(object):
                 break
             elif tok1.type == Token.T_NEWLINE:
                 j += direction
-            elif tok1.type == Token.T_KEYWORD and tok1.value not in ("true", "false", "null", "this", "new", "function", "class"):
+            elif tok1.type == Token.T_KEYWORD and tok1.value not in ("true", "false", "null", "this", "new", "function", "function*", "class"):
                 break
             else:
                 return j
@@ -182,7 +185,7 @@ class Parser(object):
         self._offset is reset on ever call, and should be cached
         """
 
-        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "class", "catch")
+        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "function*", "class", "catch")
         self._offset = 0
         index_tok1 = index + direction
         while 0 <= index_tok1 < len(tokens):
@@ -388,13 +391,16 @@ class Parser(object):
             # or (tokens[i1].type == Token.T_BINARY and tokens[i1].value in (".", "?."))
             if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
                 lhs = self.consume(tokens, token, index, -1)
-                if lhs.type == Token.T_KEYWORD:
+                if lhs.type == Token.T_KEYWORD and lhs.value == "function":
                     tok1 = Token(Token.T_ANONYMOUS_FUNCTION, token.line, token.index, "")
+                elif lhs.type == Token.T_KEYWORD and lhs.value == "function*":
+                    tok1 = Token(Token.T_ANONYMOUS_GENERATOR, token.line, token.index, "")
                 else:
                     tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
+
                 tok1.children = [lhs, token]
 
-                if tok1.type == Token.T_ANONYMOUS_FUNCTION:
+                if tok1.type == Token.T_ANONYMOUS_FUNCTION or tok1.type == Token.T_ANONYMOUS_GENERATOR:
                     tok1.children[0] = Token(Token.T_TEXT, token.line, token.index, "Anonymous")
                     tok1.children.append(self.consume(tokens, token, index + self._offset - 1, 1))
 
@@ -589,8 +595,16 @@ class Parser(object):
 
         if token.value == '...':
             token.type = Token.T_SPREAD
+
+        elif token.value == 'yield':
+            token.type = Token.T_YIELD
+
+        elif token.value == 'yield*':
+            token.type = Token.T_YIELD_FROM
+
         else:
             token.type = Token.T_PREFIX
+
 
         return 1
 
@@ -821,6 +835,56 @@ class Parser(object):
 
         return 1
 
+    def visit_async(self, parent, tokens, index, operators):
+
+        token = tokens[index]
+        if token.type != Token.T_KEYWORD or token.value not in operators:
+            return 1
+
+        # --
+
+        rhs = self.consume(tokens, token, index, 1)
+
+        if rhs.type == Token.T_FUNCTION:
+            rhs.type = Token.T_ASYNC_FUNCTION
+
+        elif rhs.type == Token.T_ANONYMOUS_FUNCTION:
+            rhs.type = Token.T_ASYNC_ANONYMOUS_FUNCTION
+
+        elif rhs.type == Token.T_GENERATOR:
+            rhs.type = Token.T_ASYNC_GENERATOR
+
+        elif rhs.type == Token.T_ANONYMOUS_GENERATOR:
+            rhs.type = Token.T_ASYNC_ANONYMOUS_GENERATOR
+
+        else:
+            raise ParseError(rhs, "unexpected token on rhs of 'async'")
+
+        tokens[index] = rhs
+
+        return 1
+
+    def visit_static(self, parent, tokens, index, operators):
+
+        token = tokens[index]
+        if token.type != Token.T_KEYWORD or token.value not in operators:
+            return 1
+
+        # --
+
+        rhs = self.consume(tokens, token, index, 1)
+
+        if rhs.type == Token.T_FUNCTIONCALL:
+            rhs.type = Token.T_STATIC_METHOD
+
+        else:
+            raise ParseError(rhs, "unexpected token on rhs of 'static'")
+
+        tokens[index] = rhs
+
+        return 1
+
+
     def visit_keyword(self, parent, tokens, index, operators):
 
         token = tokens[index]
@@ -856,6 +920,9 @@ class Parser(object):
         elif token.value == 'function':
             self.collect_keyword_function(tokens, index)
 
+        elif token.value == 'function*':
+            self.collect_keyword_function(tokens, index)
+
         elif token.value == 'if':
             self.collect_keyword_if(tokens, index)
 
@@ -872,6 +939,10 @@ class Parser(object):
             self.collect_keyword_while(tokens, index)
 
         elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default"):
+            pass
+        elif token.value == 'in':
+            # TODO: this may be consumed in a higher layer...
+            # is there  a better way for this lower layer to signal that
             pass
         else:
             self.warn(token, Parser.W_UNSUPPORTED)
@@ -992,8 +1063,13 @@ class Parser(object):
         token.children.append(rhs1)
 
         for i, child in enumerate(rhs1.children):
+            # a function call inside of an object is actually a method def
             if child.type == Token.T_FUNCTIONCALL:
                 child.type = Token.T_METHOD
+                child.children.append(self.consume(rhs1.children, child, i, 1))
+            # the static keyword converted a function call into static method
+            # get the body of the method
+            if child.type == Token.T_STATIC_METHOD:
                 child.children.append(self.consume(rhs1.children, child, i, 1))
 
     def collect_keyword_switch_case(self, tokens, index):
@@ -1347,7 +1423,10 @@ class Parser(object):
         else:
             body.type = Token.T_BLOCK
 
-        token.type = Token.T_FUNCTION
+        if token.value == 'function*':
+            token.type = Token.T_GENERATOR
+        else:
+            token.type = Token.T_FUNCTION
 
     def collect_keyword_if(self, tokens, index):
         """
@@ -1586,19 +1665,16 @@ def main():  # pragma: no cover
     text1 = """
         //for (const x of iterable) {}
         //for (const x in iterable) {}
-          try {
-                throw 0;
-            } catch (ex) {
+        //
+        //async, await, static, generator functions, yield, yield from
 
-            } finally {
-
-            }
+        [a[i], a[j]] = [a[j], a[i]];
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)
     mod = Parser().parse(tokens)
 
-    print(mod.toString(2))
+    print(mod.toString(3))
 
 
 if __name__ == '__main__':  # pragma: no cover
