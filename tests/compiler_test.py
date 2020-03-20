@@ -1,3 +1,5 @@
+#! cd .. && python3 -m tests.compiler_test -v
+
 import unittest
 from tests.util import edit_distance
 
@@ -24,12 +26,16 @@ class CompilerTestCase(unittest.TestCase):
     def tearDown(self):
         super().tearDown()
 
-    def evaljs(self, text):
+    def evaljs(self, text, diag=False):
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
 
         interpreter = Compiler()
         interpreter.compile(ast)
+        if diag:
+            print(ast.toString(3))
+        if diag:
+            interpreter.dump()
         return interpreter.execute()
 
     def test_evaljs_lambda_simple_expr(self):
@@ -168,6 +174,18 @@ class CompilerTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 5)
 
+    def test_evaljs_dowhile_loop(self):
+
+        text = """
+            i = 0
+            do {
+                i++
+            } while (i < 5)
+            return i
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 5)
+
     def test_evaljs_arguments(self):
 
         text = """
@@ -266,6 +284,239 @@ class CompilerTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 8)
 
+    def test_spread_fn_call(self):
+
+        text = """
+            x = [2,3,4]
+            function fn() {
+                return arguments.length
+            }
+            return fn(1, ...x, 5)
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 5)
+
+    def test_spread_list(self):
+
+        text = """
+            x = [2,3,4]
+            y = [1, ...x, 5]
+            return y.length
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 5)
+
+    def test_spread_object(self):
+
+        text = """
+            x = {b: 2}
+            y = {a:1, b:5, ...x, c:3}
+            return y
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.a, 1)
+        self.assertEqual(result.b, 2)
+        self.assertEqual(result.c, 3)
+
+    def test_prefix_incr(self):
+
+        text = """
+            x = 0;
+            return ++x;
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 1)
+
+    def test_logical_and_00(self):
+
+        text = """
+            return false && false
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, False)
+
+    def test_logical_and_01(self):
+
+        text = """
+            return false && true
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, False)
+
+    def test_logical_and_10(self):
+
+        text = """
+            return true && false
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, False)
+
+    def test_logical_and_11(self):
+
+        text = """
+            return true && true
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, True)
+
+    def test_logical_or_00(self):
+
+        text = """
+            return false || false
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, False)
+
+    def test_logical_or_01(self):
+
+        text = """
+            return false || true
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, True)
+
+    def test_logical_or_10(self):
+
+        text = """
+            return true || false
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, True)
+
+    def test_logical_or_11(self):
+
+        text = """
+            return true || true
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, True)
+
+    def test_var_let(self):
+
+        text = """
+            let x = 1
+            return x
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 1)
+
+    def test_var_const(self):
+
+        text = """
+            const x = 1
+            return x
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 1)
+
+    def test_var_var(self):
+
+        text = """
+            var x = 1
+            return x
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 1)
+
+    def test_var_multiple(self):
+
+        text = """
+            var x = 1, y=2, z=3
+            return [x,y,z]
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 3)
+        self.assertEqual(result[0], 1)
+        self.assertEqual(result[1], 2)
+        self.assertEqual(result[2], 3)
+
+    def test_for_111(self):
+
+        text = """
+            result = []
+            for (const x=0; x<5; x++) {
+                result.push(x)
+            }
+            return result
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 5)
+
+    def test_for_011(self):
+
+        text = """
+            result = []
+            const x=0
+            for (; x<5; x++) {
+                result.push(x)
+            }
+            return result
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 5)
+
+    def test_for_010(self):
+
+        text = """
+            result = []
+            const x=0
+            for (;x<5;) {
+                result.push(x++)
+            }
+            return result
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 5)
+
+    def test_unpack(self):
+
+        text = """
+            let a=5
+            let b=10
+            [a, b] = [b, a]
+
+            return [a, b]
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 2)
+        self.assertEqual(result[0], 10)
+        self.assertEqual(result[1], 5)
+
+    def test_break_nested_2(self):
+        # This test will segfault or otherwise crash
+        # on linux and windows if the stack is not properly maintained
+        # loads stores, function calls all need to pop the value
+        # when not being used
+
+        text = """
+            sum = 0
+            for (let i =0; i < 10; i++) {
+                for (let j=0; j < 10; j++) {
+                    if (j >= i) {
+                        break
+                    }
+                    sum += i * j
+                }
+                if (sum > 50) {
+                    break
+                }
+            }
+            return sum
+        """
+
+        result = self.evaljs(text)
+        self.assertEqual(result, 85)
+
+    #@unittest.skip("crashes on windows")
+    def test_static_method(self):
+
+        text = """
+            class C { static m() { return 123 } }
+            return C.m()
+        """
+        result = self.evaljs(text, False)
+        self.assertEqual(result, 123)
+
     def test_evaljs_class(self):
 
         text = """
@@ -283,6 +534,7 @@ class CompilerTestCase(unittest.TestCase):
         """
         result = self.evaljs(text)
         self.assertEqual(result, 50)
+
 
 def main():
     unittest.main()

@@ -84,6 +84,9 @@ class JsUndefined(JsObjectBase):
         if JsUndefined._instance != None:
             raise Exception("singleton")
 
+    def __getattr__(self, name):
+        raise RuntimeError("attribute access of undefined")
+
     def __repr__(self):
         return "undefined"
 
@@ -189,7 +192,7 @@ class JsArray(JsObjectBase):
         return sep.join(self._x_daedalus_js_seq)
 
 
-JsArray.Token = Token(Token.T_TEXT, 0, 0, "JsArray")
+JsArray.Token = Token(Token.T_TEXT, 1, 0, "JsArray")
 
 class JsObject(JsObjectBase):
     def __init__(self, attrs=None):
@@ -307,9 +310,13 @@ class JsArguments(JsObjectBase):
             code = frame.f_back.f_code
             code_locals = frame.f_back.f_locals
             nvars = code.co_argcount
-
             if index < nvars:
+                # access positiona; arguments
                 rv = code_locals[code.co_varnames[index]]
+
+            elif index == nvars and code.co_varnames[-1] != '_x_daedalus_js_args':
+                # the user supplied a rest variable
+                rv = code_locals[code.co_varnames[-1]]
             else:
                 # javascript functions store extra arguments inside
                 # this magic variable

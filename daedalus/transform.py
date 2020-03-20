@@ -58,9 +58,12 @@ class TransformGrouping(TransformBase):
         for child in token.children:
 
             if child.type == Token.T_GROUPING and child.value == "{}":
-
                 if (token.type == Token.T_MODULE) or \
                    (token.type == Token.T_ANONYMOUS_FUNCTION) or \
+                   (token.type == Token.T_ANONYMOUS_GENERATOR) or \
+                   (token.type == Token.T_ASYNC_GENERATOR) or \
+                   (token.type == Token.T_ASYNC_ANONYMOUS_GENERATOR) or \
+                   (token.type == Token.T_STATIC_METHOD) or \
                    (token.type == Token.T_METHOD) or \
                    (token.type == Token.T_CLASS) or \
                    (token.type == Token.T_BLOCK) or \
@@ -89,7 +92,7 @@ class TransformGrouping(TransformBase):
         # if the object contents have not been flattened
 
         if token.type != Token.T_GROUPING or token.value != "{}":
-            return TransformError(token, "expected object")
+            return TransformError(token, "expected grouping")
 
         if len(token.children) > 1:
             # likely there is a missing comma
@@ -353,13 +356,16 @@ class TransformExtractStyleSheet(TransformBase):
         elif len(arglist.children) == 2:
             arg0 = arglist.children[0]
             arg1 = arglist.children[1]
-
-            return self._extract_stylesheet_with_selector(style_name, token, arg0, arg1)
+            # prevent writing the resulting token to javascript
+            # if it does not have any side effects. usually the side
+            # effect is simply writing to the style sheet
+            keep = parent.type in (Token.T_MODULE, Token.T_BLOCK)
+            return self._extract_stylesheet_with_selector(style_name, token, arg0, arg1, keep)
 
         else:
             return False
 
-    def _extract_stylesheet_with_selector(self, style_name, token, selector, obj):
+    def _extract_stylesheet_with_selector(self, style_name, token, selector, obj, keep):
         """
         TODO: only partial support for styles with selectors
 
@@ -388,7 +394,7 @@ class TransformExtractStyleSheet(TransformBase):
         name = "dcs-%s-%d" % (self.uid, self.style_count)
         self.style_count += 1
 
-        token.type = Token.T_STRING
+        token.type = Token.T_EMPTY_TOKEN if keep else Token.T_STRING
         token.value = repr(selector_text)
         token.children = []
 
@@ -508,17 +514,14 @@ class Ref(object):
 
     def __init__(self, flags, label):
         super(Ref, self).__init__()
-
         self.flags = flags
         self.label = label
-        self._identity = 0
 
     def identity(self):
-        # if self._identity > 0:
-        s = 'f' if self.flags & SC_FUNCTION else 'b'
+        raise NotImplementedError()
 
-        return "%s#%s%d" % (self.label, s, self._identity)
-        # return self.label
+    def clone(self, scflags):
+        raise NotImplementedError()
 
     def type(self):
         return Token.T_GLOBAL_VAR if self.flags & SC_GLOBAL else Token.T_LOCAL_VAR
@@ -532,14 +535,39 @@ class Ref(object):
     def __repr__(self):
         return "<*%s>" % (self.identity())
 
+
+class PythonRef(Ref):
+    def __init__(self, scflags, label):
+        super(PythonRef, self).__init__(scflags, label)
+        self._identity = 0
+
+    def identity(self):
+        s = 'f' if self.flags & SC_FUNCTION else 'b'
+        return "%s#%s%d" % (self.label, s, self._identity)
+
     def clone(self, scflags):
-        ref = Ref(scflags, self.label)
+        ref = PythonRef(scflags, self.label)
         ref._identity = self._identity + 1
         return ref
+
+class MinifyRef(Ref):
+    def __init__(self, scflags, label, outLabel):
+        super(MinifyRef, self).__init__(scflags, label)
+        self.outLabel = outLabel
+
+    def identity(self):
+        return self.outLabel
+
+    def clone(self, scflags):
+        return MinifyRef(scflags, self.label, self.outLabel)
 
 class UndefinedRef(Ref):
     def identity(self):
         return self.label
+
+DF_IDENTIFIER = 1
+DF_FUNCTION   = 2
+DF_CLASS      = 3
 
 class VariableScope(object):
     # require three scope instances, for global, function and block scope
@@ -564,9 +592,11 @@ class VariableScope(object):
         # mappings of identifier -> ref, of variables defined
         # in this scope but split into their correct function
         # or block scope.
+        self.gscope = {}        # undefined global vars that are read / updated
         self.fnscope = {}
         self.blscope = [{}]
         self.all_labels = set()
+        self.all_identifiers = set()
 
         if parent:
             self.depth = parent.depth + 1
@@ -604,6 +634,9 @@ class VariableScope(object):
 
         return ref
 
+    def _createRef(self, scflags, label, type_):
+        return PythonRef(scflags, label)
+
     def _define_block(self, token):
         label = token.value
 
@@ -624,10 +657,12 @@ class VariableScope(object):
 
         return None
 
-    def _define_impl(self, scflags, token):
+    def _define_impl(self, scflags, token, type_):
 
+        if token.type not in (Token.T_TEXT, ):
+            raise TokenError(token, "unexpected token type %s" % token.type)
         if not token.value:
-            raise TokenError(token, "empty identifier")
+            raise TokenError(token, "empty identifier for %s %d %s" % (token.type, token.line, token.file))
         label = token.value
 
         if scflags & SC_FUNCTION:
@@ -642,11 +677,12 @@ class VariableScope(object):
             # define, but give a new identity
             new_ref = ref.clone(scflags)
         else:
-            new_ref = Ref(scflags, label)
+            new_ref = self._createRef(scflags, label, type_)
 
         identifier = new_ref.identity()
 
         self.all_labels.add(label)
+        self.all_identifiers.add(identifier)
 
         self.vars.add(identifier)
 
@@ -695,6 +731,7 @@ class VariableScope(object):
 
                 ref = UndefinedRef(0, label)
                 token.type = Token.T_GLOBAL_VAR
+                self.gscope[label] = ref
             else:
                 # define this reference in this scope
                 ref = self.define(SC_BLOCK, token)
@@ -730,10 +767,10 @@ class VariableScope(object):
 
         return ref
 
-    def define(self, scflags, token):
+    def define(self, scflags, token, type_=DF_IDENTIFIER):
 
         try:
-            return self._define_impl(scflags, token)
+            return self._define_impl(scflags, token, type_)
         except TokenError as e:
             scope = self
             while scope:
@@ -791,6 +828,51 @@ class VariableScope(object):
     def _diag(self, token):
         print("%10s" % token.type, list(self.vars), list(self.freevars), list(self.cellvars))
 
+class MinifyVariableScope(VariableScope):
+
+    def __init__(self, name, parent=None):
+        super(MinifyVariableScope, self).__init__(name, parent)
+        self.label_index = 0
+        self.class_counter = 0
+        self.alphabetL = 'abcdefghijklmnopqrstuvwxyz'
+        self.alphabetU = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        self.alphabet1 = self.alphabetL + self.alphabetU + '0123456789'
+
+    def _createRef(self, scflags, label, type_):
+        return MinifyRef(scflags, label, self.nextLabel(type_))
+
+    def nextLabel(self, type_):
+        c = ""
+
+        if type_ == DF_CLASS:
+            # closure compiler can detect duplicate class names even
+            # in different scopes. use the parent scope to keep track
+            # of unique names
+            scope = self.parent
+            while scope.parent is not None:
+                scope = scope.parent
+            c = 'C' + str(scope.class_counter)
+            scope.class_counter += 1
+            return c
+        else:
+            while True:
+                n = self.label_index
+                self.label_index += 1
+
+                c = 'i' + str(n)
+
+                # ensure this new label does not appear in a parent scope
+                found = False
+                scope = self.parent
+                while scope is not None:
+                    if c in scope.all_identifiers:
+                        found = True
+                        break
+                    scope = scope.parent
+
+                if not found:
+                    break
+            return c
 
 ST_MASK     = 0x000FF
 ST_SCOPE_MASK     = 0xFFF00
@@ -801,6 +883,8 @@ ST_GLOBAL   = SC_GLOBAL << 12
 ST_FUNCTION = SC_FUNCTION << 12
 ST_BLOCK    = SC_BLOCK << 12
 ST_CONST    = SC_CONST << 12
+
+
 
 class TransformAssignScope(object):
 
@@ -893,13 +977,43 @@ class TransformAssignScope(object):
             }                   =>      }
             console.log(x)      =>      console.log(x)  // x is undefined here
 
+    Function Scoping
+
+        a variable that is function scope means it is available in any
+        child scope of that function. To support this any function def
+        should be explored after the current function scope is completed.
+
+        Todo: this is currently broken by the transform engine
+
+        Example 1:
+            function f1() {
+              return f2() + 1
+            }
+            function f2() {
+              return 2
+            }
+            console.log(f1())
+
+        Example 2
+            {
+
+              function f1() {
+                return x
+              }
+              let x= 1
+
+            }
+
+            console.log(f1())
+
+
     Variable Scoping
 
         No special transformation is needed in python to support var
 
         Variables defined using var are function scoped
 
-        Example 1:
+
 
     Misc:
 
@@ -940,6 +1054,10 @@ class TransformAssignScope(object):
     def __init__(self):
         super(TransformAssignScope, self).__init__()
 
+        # discover the variable scope if a mode friendly
+        # to python (true) or javascript (false)
+        self.python = True
+
         self.global_scope = None
 
         self.visit_mapping = {
@@ -957,6 +1075,13 @@ class TransformAssignScope(object):
             Token.T_EXPORT: self.visit_export,
             Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
 
+            # method and class are added, but when compiling a
+            # python module we assume a transform has already been
+            # run to remove methods and classes
+            Token.T_METHOD: self.visit_method,
+            Token.T_CLASS: self.visit_class,
+
+
             # Token.T_GROUPING: self.visit_error,
         }
 
@@ -967,6 +1092,9 @@ class TransformAssignScope(object):
             Token.T_FUNCTION: self.finalize_function,
             Token.T_ANONYMOUS_FUNCTION: self.finalize_function,
             Token.T_LAMBDA: self.finalize_function,
+
+            Token.T_METHOD: self.finalize_method,
+
             #Token.T_EXPORT: self.finalize_export,
 
         }
@@ -981,12 +1109,19 @@ class TransformAssignScope(object):
             ST_FINALIZE: self.finalize_default,
         }
 
+        # mapping identifier -> identifier
+        # giving the original identifier for a global variable
+        # and the new name after applying the transform
+        self.globals = {}
+
+    def newScope(self, name, parentScope=None):
+        return VariableScope(name, parentScope)
+
     def transform(self, ast):
 
         self.seq = [self.initialState(ast)]
 
         self._transform(ast)
-
 
     def _transform(self, token):
 
@@ -1005,7 +1140,7 @@ class TransformAssignScope(object):
 
     def initialState(self, token):
 
-        return (ST_VISIT, VariableScope('__main__'), token, None)
+        return (ST_VISIT, self.newScope('__main__'), token, None)
 
     # -------------------------------------------------------------------------
 
@@ -1030,53 +1165,124 @@ class TransformAssignScope(object):
         self._push_finalize(scope, token, parent)
         self._push_children(scope, token, flags)
 
-    def visit_function(self, flags, scope, token, parent):
+    def _handle_function(self, flags, scope, token, parent, anonymous=False):
         scflags = (flags & ST_SCOPE_MASK) >> 12
-        scope.define(scflags, token.children[0])
+        if not anonymous:
+            scope.define(scflags, token.children[0])
 
         name = scope.name + "." + token.children[0].value
-        next_scope = VariableScope(name, scope)
+        next_scope = self.newScope(name, scope)
 
-        for child in token.children[1].children:
-            next_scope.define(SC_FUNCTION, child)
+        #for child in token.children[1].children:
+        #    next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
         self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
+
+        for child in reversed(token.children[1].children):
+            if child.type == Token.T_ASSIGN:
+                # tricky, the rhs is a variable in THIS scope
+                # while the lhs is a variable in the NEXT scope
+                lhs, rhs = child.children
+                next_scope.define(SC_FUNCTION, lhs)
+                self._push_tokens(ST_VISIT, scope, [rhs], child)
+            elif child.type == Token.T_SPREAD:
+                tok, = child.children
+                next_scope.define(SC_FUNCTION, tok)
+            else:
+                next_scope.define(SC_FUNCTION, child)
+
+    def visit_function(self, flags, scope, token, parent):
+        self._handle_function(flags, scope, token, parent, False)
+
+    def visit_method(self, flags, scope, token, parent):
+        scflags = (flags & ST_SCOPE_MASK) >> 12
+        if token.children[0].value != "constructor":
+            scope.define(scflags, token.children[0])
+
+        name = scope.name + "." + token.children[0].value
+        next_scope = self.newScope(name, scope)
+
+        #for child in token.children[1].children:
+        #    next_scope.define(SC_FUNCTION, child)
+
+        self._push_finalize(next_scope, token, parent)
+        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
+
+        for child in reversed(token.children[1].children):
+            if child.type == Token.T_ASSIGN:
+                # tricky, the rhs is a variable in THIS scope
+                # while the lhs is a variable in the NEXT scope
+                lhs, rhs = child.children
+                next_scope.define(SC_FUNCTION, lhs)
+                self._push_tokens(ST_VISIT, scope, [rhs], child)
+            elif child.type == Token.T_SPREAD:
+                tok, = child.children
+                next_scope.define(SC_FUNCTION, tok)
+            else:
+                next_scope.define(SC_FUNCTION, child)
+
+    def visit_class(self, flags, scope, token, parent):
+        scflags = (flags & ST_SCOPE_MASK) >> 12
+        scope.define(scflags, token.children[0], DF_CLASS)
+
+        # load the class name(s) this class extends from
+        if len(token.children[1].children) > 0:
+            self._push_tokens(flags, scope, token.children[1].children, token.children[1])
+            #for child in token.children[1].children:
+            #    scope.load(child)
+
+        name = scope.name + "." + token.children[0].value
+        next_scope = self.newScope(name, scope)
+
+        #for child in token.children[2].children:
+        #    next_scope.define(SC_FUNCTION, child)
+        self._push_children(next_scope, token.children[2], flags)
 
     def visit_anonymous_function(self, flags, scope, token, parent):
 
-        name = scope.name + "." + token.children[0].value
-        next_scope = VariableScope(name, scope)
-
-        # define each positional argument in the next scope
-        for child in token.children[1].children:
-            next_scope.define(SC_FUNCTION, child)
-
-        self._push_finalize(next_scope, token, parent)
-        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
+        self._handle_function(flags, scope, token, parent, True)
 
     def visit_lambda(self, flags, scope, token, parent):
 
-        # fix some js-isms that are not really valid python
 
         # lambdas allow for no arglist, but that makes compiling harder
-        if token.children[1].type == Token.T_TEXT:
-            tok = token.children[1]
-            token.children[1] = Token(Token.T_ARGLIST, tok.line, tok.index, '()', [tok])
 
-        # lambdas can be a single expression if it returns a value
-        if token.children[2].type != Token.T_BLOCK:
-            tok = token.children[2]
-            token.children[2] = Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])
+        # fix some js-isms that are not really valid python
+        if self.python:
+            if token.children[1].type == Token.T_TEXT:
+                tok = token.children[1]
+                token.children[1] = Token(Token.T_ARGLIST, tok.line, tok.index, '()', [tok])
+
+            # lambdas can be a single expression if it returns a value
+            if token.children[2].type != Token.T_BLOCK:
+                tok = token.children[2]
+                token.children[2] = Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])
 
         name = scope.name + "." + token.children[0].value
-        next_scope = VariableScope(name, scope)
+        next_scope = self.newScope(name, scope)
 
-        for child in token.children[1].children:
-            next_scope.define(SC_FUNCTION, child)
+        #for child in token.children[1].children:
+        #    next_scope.define(SC_FUNCTION, child)
 
         self._push_finalize(next_scope, token, parent)
         self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
+
+        if token.children[1].type == Token.T_TEXT:
+            next_scope.define(SC_FUNCTION, token.children[1])
+        else:
+            for child in reversed(token.children[1].children):
+                if child.type == Token.T_ASSIGN:
+                    # tricky, the rhs is a variable in THIS scope
+                    # while the lhs is a variable in the NEXT scope
+                    lhs, rhs = child.children
+                    next_scope.define(SC_FUNCTION, lhs)
+                    self._push_tokens(ST_VISIT, scope, [rhs], child)
+                elif child.type == Token.T_SPREAD:
+                    tok, = child.children
+                    next_scope.define(SC_FUNCTION, tok)
+                else:
+                    next_scope.define(SC_FUNCTION, child)
 
     def visit_var(self, flags, scope, token, parent):
         flags = 0
@@ -1171,8 +1377,9 @@ class TransformAssignScope(object):
     def visit_unpack_sequence(self, flags, scope, token, parent):
         scflags = (flags & ST_SCOPE_MASK) >> 12
 
-        for child in token.children:
-            scope.define(scflags, child)
+        #for child in token.children:
+        #    scope.store(child)
+        self._push_children(scope, token, flags)
 
     # -------------------------------------------------------------------------
 
@@ -1184,26 +1391,51 @@ class TransformAssignScope(object):
         if scope.cellvars or scope.freevars:
             raise TokenError(token, "unexpected closure")
 
+        self.globals = {}
+        for name, ref in scope.gscope.items():
+            self.globals[name] = ref.identity()
+        for name, ref in scope.fnscope.items():
+            self.globals[name] = ref.identity()
+        for name, ref in scope.blscope[0].items():
+            self.globals[name] = ref.identity()
+
     def finalize_block(self, flags, scope, token, parent):
 
         if parent and parent.type in [Token.T_LAMBDA, Token.T_FUNCTION, Token.T_ANONYMOUS_FUNCTION]:
             pass
         else:
+
             vars = scope.popBlockScope()
-            for var in vars.values():
-                token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
+            if self.python:
+                for var in vars.values():
+                    token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
 
     def finalize_function(self, flags, scope, token, parent):
 
-        closure = Token(Token.T_CLOSURE, 0, 0, "")
+        if self.python:
+            closure = Token(Token.T_CLOSURE, 0, 0, "")
 
-        for name in sorted(scope.cellvars):
-            closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
+            for name in sorted(scope.cellvars):
+                closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
 
-        for name in sorted(scope.freevars):
-            closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
+            for name in sorted(scope.freevars):
+                closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
 
-        token.children.append(closure)
+            token.children.append(closure)
+
+    def finalize_method(self, flags, scope, token, parent):
+
+        if self.python:
+
+            closure = Token(Token.T_CLOSURE, 0, 0, "")
+
+            for name in sorted(scope.cellvars):
+                closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
+
+            for name in sorted(scope.freevars):
+                closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
+
+            token.children.append(closure)
 
     # -------------------------------------------------------------------------
 
@@ -1230,7 +1462,63 @@ class TransformAssignScope(object):
     def _store(self, scope, token):
         pass
 
-class TransformClassToFunction(TransformBase):
+class TransformMinifyScope(TransformAssignScope):
+    """
+    Minify javascript by intelligently renaming variables to shorter identifiers
+
+    This is largely an experiment and does the renaming in a single pass.
+    There could be a significant number of improvements
+
+    - come up with better ways to encode the names in a single pass fashion
+    - keep track of all scopes and wait to assign until the end
+    - keep track of al references and sort by frequency
+    - assign names based on frequency of store/load counts
+
+
+    """
+    def __init__(self):
+        super(TransformMinifyScope, self).__init__()
+
+        self.python = False
+
+    def newScope(self, name, parentScope=None):
+        return MinifyVariableScope(name, parentScope)
+
+class TransformBaseV2(object):
+    def __init__(self):
+        super(TransformBaseV2, self).__init__()
+
+    def transform(self, ast):
+
+        self.scan(ast)
+
+    def scan(self, token):
+
+        tmp = Token(Token.T_SPECIAL, 0, 0, "", [token])
+        tokens = [tmp]
+
+        while tokens:
+            # process tokens from in the order they are discovered. (DFS)
+            token = tokens.pop()
+
+            # visit each child in the order they appear
+            # allow for the visit method to alter token.children
+            index = 0
+            while index < len(token.children):
+                child = token.children[index]
+                self.visit(token, child, index)
+                index += 1
+
+            # once every child has been visited push the available
+            # children onto the stack to be processed
+
+            for child in reversed(token.children):
+                tokens.append(child)
+
+    def visit(self, token, child, index):
+        raise NotImplementedError()
+
+class TransformClassToFunction(TransformBaseV2):
     """
 
     Given:
@@ -1259,12 +1547,12 @@ class TransformClassToFunction(TransformBase):
     into the body of the function
     """
 
-    def visit(self, token, parent):
+    def visit(self, token, child, index):
 
-        if token.type == Token.T_CLASS:
-            self.visit_class(token)
+        if child.type == Token.T_CLASS:
+            self.visit_class(token, child, index)
 
-    def visit_class(self, token):
+    def visit_class(self, parent, token, index):
         # TODO: implement inheritance
 
         name = token.children[0]
@@ -1274,12 +1562,46 @@ class TransformClassToFunction(TransformBase):
         constructor = None
 
         methods = []
+        static_methods = []
 
         for child in clsbody.children:
             if child.type == Token.T_METHOD and child.children[0].value == 'constructor':
                 constructor = child
+            elif child.type == Token.T_STATIC_METHOD:
+                static_methods.append(child)
+
             else:
                 methods.append(child)
+
+        if constructor is None:
+            constructor = Token(Token.T_LAMBDA, 0, 0, '=>',
+                    [Token(Token.T_TEXT, 0, 0, 'Anonymous'),
+                    Token(Token.T_ARGLIST, 0, 0, '()'),
+                    Token(Token.T_BLOCK, 0, 0, '{}')]
+                )
+
+
+        # process all static methods.
+        # after the class method is defined, define new methods on
+        # the created object by inserting statements that add the attribute
+        # TODO: consider an IIFI for inline classes with static methods
+        ln = token.line
+        co = token.index
+        for method in static_methods:
+            var = Token(Token.T_BINARY, ln, co, '.', [
+                Token(Token.T_TEXT, ln, co, name.value),
+                Token(Token.T_ATTR, ln, co, method.children[0].value)
+            ])
+            # TODO: this function has a name, and probably shouldnt
+            # be an anonymous function. the compiler would need to
+            # support the ST_LOAD flag when creating a function otherwise.
+            method.type = Token.T_ANONYMOUS_FUNCTION
+            static = Token(Token.T_ASSIGN, ln, co, '=', [
+                var,
+                method
+            ])
+            parent.children.insert(index+1, static)
+        print(static_methods)
 
         token.type = Token.T_FUNCTION
         token.value = 'function'
@@ -1384,6 +1706,71 @@ def main_var():
         c = '=' if l1 == l2 else ' '
         print("%3d: %-40s %s %-40s" % (i + 1, l1, c, l2))
 
+def main_var2():
+    from .parser import Parser
+    text = """
+
+            {
+
+              function f1() {
+                return x
+              }
+              let x= 1
+
+            }
+
+            console.log(f1())
+
+    """
+
+    tokens = Lexer().lex(text)
+    ast = Parser().parse(tokens)
+
+    tr = TransformMinifyScope()
+    tr.transform(ast)
+
+    print(ast.toString(3))
+
+def main_cls():
+    from .parser import Parser
+    text = """
+
+    class C { static m() { return 123 } }
+    return C.m()
+
+    """
+
+    tokens = Lexer().lex(text)
+    ast = Parser().parse(tokens)
+
+
+    tr = TransformClassToFunction()
+    tr.transform(ast)
+
+    print(ast.toString(3))
+
+def labels():
+    alphabetL = 'abcdefghijklmnopqrstuvwxyz'
+    alphabetU = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    alphabet1 = alphabetL + alphabetU + '0123456789'
+
+
+    for n in range(256):
+
+        c = ""
+
+        j = n & 0b1111
+        c += alphabetL[j]
+
+        n>>=4
+
+        while n > 0:
+            j = n & 0b11111
+            c = alphabet1[j] + c
+            n>>=5
+
+        print(c)
+
 
 if __name__ == '__main__':
-    main_var()
+    main_var2()

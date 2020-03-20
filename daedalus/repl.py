@@ -90,25 +90,36 @@ class Repl(object):
 
         text = text.strip()
 
-        if not text.strip():
+        if not text:
             return
 
-        if text == "quit" or text == "exit" or text == "q":
+        elif text == "quit" or text == "exit" or text == "q":
             raise ExitRepl()
 
-        if text == "help":
-            return
+        elif text == "help":
+            pass
 
-        if text == "diag":
-            return
+        elif text == "diag":
+            pass
 
-        result = self.ctxt.evaljs(text)
+        elif text.startswith("ast "):
+            text = text[4:]
+            ast = self.ctxt.parsejs(text)
+            print(ast.toString(3, pad=".  "))
 
-        if isinstance(result, dict):
-            if result and "_" in result:
-                print(result["_"])
+        elif text.startswith("dis "):
+            text = text[4:]
+            compiler = self.ctxt.compilejs(text)
+            compiler.dump()
+
         else:
-            print(result)
+            result = self.ctxt.evaljs(text)
+
+            if isinstance(result, dict):
+                if result and "_" in result:
+                    print(result["_"])
+            else:
+                print(result)
 
 def main():
 
