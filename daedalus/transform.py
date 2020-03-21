@@ -825,6 +825,12 @@ class VariableScope(object):
     def popBlockScope(self):
         return self.blscope.pop()
 
+    def flattenBlockScope(self):
+        out = {}
+        for scope in self.blscope:
+            out.update(scope)
+        return out
+
     def _diag(self, token):
         print("%10s" % token.type, list(self.vars), list(self.freevars), list(self.cellvars))
 
@@ -885,7 +891,26 @@ ST_BLOCK    = SC_BLOCK << 12
 ST_CONST    = SC_CONST << 12
 
 
-
+isConstructor = lambda token: token.type == Token.T_METHOD and token.children[0].value == "constructor"
+isFunction = lambda token: token.type in (
+            Token.T_FUNCTION,
+            Token.T_GENERATOR,
+            Token.T_ASYNC_GENERATOR,
+            Token.T_METHOD,
+            Token.T_STATIC_METHOD,
+            Token.T_ANONYMOUS_FUNCTION,
+            Token.T_ASYNC_ANONYMOUS_FUNCTION,
+            Token.T_ANONYMOUS_GENERATOR,
+            Token.T_ASYNC_ANONYMOUS_GENERATOR,
+            Token.T_LAMBDA,
+    )
+isAnonymousFunction = lambda token: token.type in (
+            Token.T_ANONYMOUS_FUNCTION,
+            Token.T_ASYNC_ANONYMOUS_FUNCTION,
+            Token.T_ANONYMOUS_GENERATOR,
+            Token.T_ASYNC_ANONYMOUS_GENERATOR,
+            Token.T_LAMBDA,
+    )
 class TransformAssignScope(object):
 
     """
@@ -1061,10 +1086,20 @@ class TransformAssignScope(object):
         self.global_scope = None
 
         self.visit_mapping = {
-            Token.T_ASSIGN: self.visit_assign,
             Token.T_FUNCTION: self.visit_function,
+            Token.T_GENERATOR: self.visit_function,
+            Token.T_ASYNC_GENERATOR: self.visit_function,
+            Token.T_METHOD: self.visit_function,
+            Token.T_STATIC_METHOD: self.visit_function,
+
             Token.T_ANONYMOUS_FUNCTION: self.visit_anonymous_function,
+            Token.T_ASYNC_ANONYMOUS_FUNCTION: self.visit_anonymous_function,
+            Token.T_ANONYMOUS_GENERATOR: self.visit_anonymous_function,
+            Token.T_ASYNC_ANONYMOUS_GENERATOR: self.visit_anonymous_function,
+
             Token.T_LAMBDA: self.visit_lambda,
+
+            Token.T_ASSIGN: self.visit_assign,
             Token.T_BLOCK: self.visit_block,
             Token.T_MODULE: self.visit_module,
             Token.T_TEXT: self.visit_text,
@@ -1074,11 +1109,11 @@ class TransformAssignScope(object):
             Token.T_PYIMPORT: self.visit_pyimport,
             Token.T_EXPORT: self.visit_export,
             Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
+            Token.T_FOR: self.visit_for,
 
             # method and class are added, but when compiling a
             # python module we assume a transform has already been
             # run to remove methods and classes
-            Token.T_METHOD: self.visit_method,
             Token.T_CLASS: self.visit_class,
 
 
@@ -1086,16 +1121,22 @@ class TransformAssignScope(object):
         }
 
         self.finalize_mapping = {
-            Token.T_BLOCK: self.finalize_block,
-            Token.T_MODULE: self.finalize_module,
 
             Token.T_FUNCTION: self.finalize_function,
+            Token.T_GENERATOR: self.finalize_function,
+            Token.T_ASYNC_GENERATOR: self.finalize_function,
+            Token.T_METHOD: self.finalize_function,
+            Token.T_STATIC_METHOD: self.finalize_function,
+
             Token.T_ANONYMOUS_FUNCTION: self.finalize_function,
+            Token.T_ASYNC_ANONYMOUS_FUNCTION: self.finalize_function,
+            Token.T_ANONYMOUS_GENERATOR: self.finalize_function,
+            Token.T_ASYNC_ANONYMOUS_GENERATOR: self.finalize_function,
+
             Token.T_LAMBDA: self.finalize_function,
 
-            Token.T_METHOD: self.finalize_method,
-
-            #Token.T_EXPORT: self.finalize_export,
+            Token.T_BLOCK: self.finalize_block,
+            Token.T_MODULE: self.finalize_module,
 
         }
 
@@ -1157,27 +1198,35 @@ class TransformAssignScope(object):
 
     def visit_block(self, flags, scope, token, parent):
 
-        if parent and parent.type in [Token.T_LAMBDA, Token.T_FUNCTION, Token.T_ANONYMOUS_FUNCTION]:
-            pass
-        else:
-            scope.pushBlockScope()
+        if isFunction(parent):
+            # this should never happen
+            raise TransformError(parent, "visit block for function not allowed")
+
+        scope.pushBlockScope()
 
         self._push_finalize(scope, token, parent)
         self._push_children(scope, token, flags)
 
-    def _handle_function(self, flags, scope, token, parent, anonymous=False):
+    def _handle_function(self, flags, scope, token, parent):
+
         scflags = (flags & ST_SCOPE_MASK) >> 12
-        if not anonymous:
+
+        # define the name of the function when it is not an
+        # anonymous function and not a class constructor.
+        if not isAnonymousFunction(token) and not isConstructor(token):
             scope.define(scflags, token.children[0])
 
         name = scope.name + "." + token.children[0].value
         next_scope = self.newScope(name, scope)
 
-        #for child in token.children[1].children:
-        #    next_scope.define(SC_FUNCTION, child)
-
+        # finalize the function scope once all children have been processed
         self._push_finalize(next_scope, token, parent)
-        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
+
+        if token.children[2].type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(token.children[2], "expected block in for loop body")
+
+        self._push_children(next_scope, token.children[2])
 
         for child in reversed(token.children[1].children):
             if child.type == Token.T_ASSIGN:
@@ -1193,55 +1242,12 @@ class TransformAssignScope(object):
                 next_scope.define(SC_FUNCTION, child)
 
     def visit_function(self, flags, scope, token, parent):
-        self._handle_function(flags, scope, token, parent, False)
 
-    def visit_method(self, flags, scope, token, parent):
-        scflags = (flags & ST_SCOPE_MASK) >> 12
-        if token.children[0].value != "constructor":
-            scope.define(scflags, token.children[0])
-
-        name = scope.name + "." + token.children[0].value
-        next_scope = self.newScope(name, scope)
-
-        #for child in token.children[1].children:
-        #    next_scope.define(SC_FUNCTION, child)
-
-        self._push_finalize(next_scope, token, parent)
-        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
-
-        for child in reversed(token.children[1].children):
-            if child.type == Token.T_ASSIGN:
-                # tricky, the rhs is a variable in THIS scope
-                # while the lhs is a variable in the NEXT scope
-                lhs, rhs = child.children
-                next_scope.define(SC_FUNCTION, lhs)
-                self._push_tokens(ST_VISIT, scope, [rhs], child)
-            elif child.type == Token.T_SPREAD:
-                tok, = child.children
-                next_scope.define(SC_FUNCTION, tok)
-            else:
-                next_scope.define(SC_FUNCTION, child)
-
-    def visit_class(self, flags, scope, token, parent):
-        scflags = (flags & ST_SCOPE_MASK) >> 12
-        scope.define(scflags, token.children[0], DF_CLASS)
-
-        # load the class name(s) this class extends from
-        if len(token.children[1].children) > 0:
-            self._push_tokens(flags, scope, token.children[1].children, token.children[1])
-            #for child in token.children[1].children:
-            #    scope.load(child)
-
-        name = scope.name + "." + token.children[0].value
-        next_scope = self.newScope(name, scope)
-
-        #for child in token.children[2].children:
-        #    next_scope.define(SC_FUNCTION, child)
-        self._push_children(next_scope, token.children[2], flags)
+        self._handle_function(flags, scope, token, parent)
 
     def visit_anonymous_function(self, flags, scope, token, parent):
 
-        self._handle_function(flags, scope, token, parent, True)
+        self._handle_function(flags, scope, token, parent)
 
     def visit_lambda(self, flags, scope, token, parent):
 
@@ -1257,32 +1263,32 @@ class TransformAssignScope(object):
             # lambdas can be a single expression if it returns a value
             if token.children[2].type != Token.T_BLOCK:
                 tok = token.children[2]
-                token.children[2] = Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])
+
+                token.children[2] = Token(Token.T_BLOCK, tok.line, tok.index, '{}',
+                    [Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])])
+
+        self._handle_function(flags, scope, token, parent)
+
+    def visit_class(self, flags, scope, token, parent):
+
+        """
+        this method is implemented only for the case when minifying javascript
+        """
+        scflags = (flags & ST_SCOPE_MASK) >> 12
+        scope.define(scflags, token.children[0], DF_CLASS)
+
+        # load the class name(s) this class extends from
+        if len(token.children[1].children) > 0:
+            self._push_tokens(flags, scope, token.children[1].children, token.children[1])
+            #for child in token.children[1].children:
+            #    scope.load(child)
 
         name = scope.name + "." + token.children[0].value
         next_scope = self.newScope(name, scope)
 
-        #for child in token.children[1].children:
+        #for child in token.children[2].children:
         #    next_scope.define(SC_FUNCTION, child)
-
-        self._push_finalize(next_scope, token, parent)
-        self._push_tokens(ST_VISIT, next_scope, [token.children[2]], token)
-
-        if token.children[1].type == Token.T_TEXT:
-            next_scope.define(SC_FUNCTION, token.children[1])
-        else:
-            for child in reversed(token.children[1].children):
-                if child.type == Token.T_ASSIGN:
-                    # tricky, the rhs is a variable in THIS scope
-                    # while the lhs is a variable in the NEXT scope
-                    lhs, rhs = child.children
-                    next_scope.define(SC_FUNCTION, lhs)
-                    self._push_tokens(ST_VISIT, scope, [rhs], child)
-                elif child.type == Token.T_SPREAD:
-                    tok, = child.children
-                    next_scope.define(SC_FUNCTION, tok)
-                else:
-                    next_scope.define(SC_FUNCTION, child)
+        self._push_children(next_scope, token.children[2], flags)
 
     def visit_var(self, flags, scope, token, parent):
         flags = 0
@@ -1381,6 +1387,26 @@ class TransformAssignScope(object):
         #    scope.store(child)
         self._push_children(scope, token, flags)
 
+    def visit_for(self, flags, scope, token, parent):
+        """
+        for a C-Style for loop process the argument list
+        as if it was inside the body of the loop.
+
+        this allows for two consecutive loops to define the same
+        iteration variable as const or with let
+        """
+
+        arglist, body = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in for loop body")
+
+        scope.pushBlockScope()
+
+        self._push_children(scope, body, flags)
+        self._push_children(scope, arglist, flags)
+
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
@@ -1401,32 +1427,17 @@ class TransformAssignScope(object):
 
     def finalize_block(self, flags, scope, token, parent):
 
-        if parent and parent.type in [Token.T_LAMBDA, Token.T_FUNCTION, Token.T_ANONYMOUS_FUNCTION]:
-            pass
-        else:
+        print(scope.flattenBlockScope())
 
-            vars = scope.popBlockScope()
-            if self.python:
-                for var in vars.values():
-                    token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
+        vars = scope.popBlockScope()
+
+        if self.python:
+            for var in vars.values():
+                token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
 
     def finalize_function(self, flags, scope, token, parent):
 
         if self.python:
-            closure = Token(Token.T_CLOSURE, 0, 0, "")
-
-            for name in sorted(scope.cellvars):
-                closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
-
-            for name in sorted(scope.freevars):
-                closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
-
-            token.children.append(closure)
-
-    def finalize_method(self, flags, scope, token, parent):
-
-        if self.python:
-
             closure = Token(Token.T_CLOSURE, 0, 0, "")
 
             for name in sorted(scope.cellvars):
@@ -1442,7 +1453,7 @@ class TransformAssignScope(object):
     def _push_finalize(self, scope, token, parent, flags=0):
         self.seq.append((ST_FINALIZE | flags, scope, token, parent))
 
-    def _push_children(self, scope, token, flags):
+    def _push_children(self, scope, token, flags=0):
         for child in reversed(token.children):
             self.seq.append((ST_VISIT | (flags & ST_SCOPE_MASK), scope, child, token))
 
@@ -1710,23 +1721,30 @@ def main_var2():
     from .parser import Parser
     text = """
 
+        {
             {
 
               function f1() {
-                return x
+                return x + y
               }
+
               let x= 1
 
+              console.log(f1())
             }
 
-            console.log(f1())
-
+            let y = 2;
+        }
     """
 
-    tokens = Lexer().lex(text)
-    ast = Parser().parse(tokens)
 
-    tr = TransformMinifyScope()
+    tokens = Lexer().lex(text)
+    parser =  Parser()
+    parser.python = True
+    ast = parser.parse(tokens)
+
+    #tr = TransformMinifyScope()
+    tr = TransformAssignScope()
     tr.transform(ast)
 
     print(ast.toString(3))

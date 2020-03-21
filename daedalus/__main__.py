@@ -320,9 +320,7 @@ class RunCLI(CLI):
         try:
             v = cc.execute()
         finally:
-            print("&&")
-        print("!!")
-        print(v)
+            print(v)
 
 
 def getArgs():
