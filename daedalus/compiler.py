@@ -253,8 +253,6 @@ class Compiler(object):
         # on the stack that can be assigned to '_'
         if self.flags & Compiler.CF_REPL:
             self.bc.append(BytecodeInstr('LOAD_CONST', 0))
-            self.bc.append(BytecodeInstr('LOAD_CONST', 0))
-            self.bc.append(BytecodeInstr('LOAD_CONST', 0))
 
         if ast.type == Token.T_MODULE:
             kind, index = self._token2index(JsUndefined.Token, load=True)
@@ -514,13 +512,15 @@ class Compiler(object):
         block = token.children[2]
         closure = token.children[3]
 
-        if state&ST_LOAD:
-            raise CompileError(token, 'ST_LOAD flag unexpected at this time')
+
 
         self._build_function(state|ST_LOAD, token, name, arglist, block, closure, autobind=False)
 
         kind, index = self._token2index(name, False)
         self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
+
+        if state&ST_LOAD:
+            self.bc.append(BytecodeInstr('LOAD_CONST', 0))
 
     def _traverse_anonymous_function(self, depth, state, token):
 
@@ -1525,22 +1525,16 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-    //console.log(true, false, undefined, null)
-    // console.log(0?1:2)
-    //if (x instanceof y) {}
 
-    function f(a, ...rest) {
-        console.log(0, arguments[0])
-        console.log(1, arguments[1])
-        return rest.length
-    }
-    function g(a) {console.log(arguments[0])}
+    if (false) {console.log("!")}
 
-    console.log(f(1,2,3,4,5,6))
     """
 
     tokens = Lexer().lex(text1)
-    ast = Parser().parse(tokens)
+    parser = Parser()
+    parser.python = True
+    ast = parser.parse(tokens)
+    print(ast.toString(3))
 
     interp = Compiler(flags=Compiler.CF_REPL)
 
@@ -1548,7 +1542,7 @@ def main():  # pragma: no cover
         interp.compile(ast)
 
     finally:
-        print(ast.toString())
+        print(ast.toString(3))
 
     interp.dump()
 

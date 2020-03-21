@@ -91,9 +91,9 @@ class Parser(object):
             #(L2R, self.visit_lambda, ['=>']),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
+            (L2R, self.visit_static, ['static']),
             (L2R, self.visit_keyword, []),
             (L2R, self.visit_async, ['async']),
-            (L2R, self.visit_static, ['static']),
             (L2R, self.visit_keyword_import_export, []),
             (L2R, self.visit_cleanup, []),
         ]
@@ -394,21 +394,59 @@ class Parser(object):
             # or (tokens[i1].type == Token.T_BINARY and tokens[i1].value in (".", "?."))
             if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
                 lhs = self.consume(tokens, token, index, -1)
-                if lhs.type == Token.T_KEYWORD and lhs.value == "function":
+                i2 = self.peek_keyword(tokens, token, index-1, -1)
+                getblock = False
+                n = 0
+                # fixes for the forms :
+                #       f = function(){}
+                #       f = function*(){}
+                #       f = async function(){}
+                #       f = async function*(){}
+                if i2 and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'async':
+
+                    tok_async = self.consume_keyword(tokens, token, index-1, -1)
+                    self._offset -= 1
+                    n = 1
+                    if lhs.type == Token.T_KEYWORD and lhs.value == "function":
+                        tok1 = Token(Token.T_ASYNC_ANONYMOUS_FUNCTION, token.line, token.index, "")
+                        getblock = True
+                    elif lhs.type == Token.T_KEYWORD and lhs.value == "function*":
+                        tok1 = Token(Token.T_ASYNC_ANONYMOUS_GENERATOR, token.line, token.index, "")
+                        getblock = True
+                    else:
+                        raise ParseError(tok_async, "unexpected keyword")
+
+                elif lhs.type == Token.T_KEYWORD and lhs.value == "function":
                     tok1 = Token(Token.T_ANONYMOUS_FUNCTION, token.line, token.index, "")
+                    getblock = True
                 elif lhs.type == Token.T_KEYWORD and lhs.value == "function*":
                     tok1 = Token(Token.T_ANONYMOUS_GENERATOR, token.line, token.index, "")
+                    getblock = True
                 else:
                     tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
 
                 tok1.children = [lhs, token]
 
-                if tok1.type == Token.T_ANONYMOUS_FUNCTION or tok1.type == Token.T_ANONYMOUS_GENERATOR:
+                if getblock:
                     tok1.children[0] = Token(Token.T_TEXT, token.line, token.index, "Anonymous")
-                    tok1.children.append(self.consume(tokens, token, index + self._offset - 1, 1))
+                    tokb = self.consume(tokens, token, index + self._offset - 1, 1)
+
+                    if tokb.type != Token.T_GROUPING:
+                        if self.python:
+                            tmp = Token(Token.T_BLOCK, tokb.line, tokb.index, '{}')
+                            tmp.children= [tokb]
+                            tokb = tmp
+                        else:
+                            self.warn(tokb, Parser.W_BLOCK_UNSAFE)
+                    else:
+                        tokb.type = Token.T_BLOCK
+
+                    tok1.children.append(tokb)
+
+                print('offset', self._offset)
 
                 token.type = Token.T_ARGLIST
-                tokens[index - 1] = tok1
+                tokens[index - n - 1] = tok1
                 return self._offset
 
         if token.type == Token.T_GROUPING and token.value == '[]':
@@ -1075,11 +1113,38 @@ class Parser(object):
             # a function call inside of an object is actually a method def
             if child.type == Token.T_FUNCTIONCALL:
                 child.type = Token.T_METHOD
-                child.children.append(self.consume(rhs1.children, child, i, 1))
+
+                tokb = self.consume(rhs1.children, child, i, 1)
+
+                if tokb.type != Token.T_GROUPING:
+                    if self.python:
+                        tmp = Token(Token.T_BLOCK, tokb.line, tokb.index, '{}')
+                        tmp.children= [tokb]
+                        tokb = tmp
+                    else:
+                        self.warn(tokb, Parser.W_BLOCK_UNSAFE)
+                else:
+                    tokb.type = Token.T_BLOCK
+
+                child.children.append(tokb)
+
             # the static keyword converted a function call into static method
             # get the body of the method
             if child.type == Token.T_STATIC_METHOD:
-                child.children.append(self.consume(rhs1.children, child, i, 1))
+
+                tokb = self.consume(rhs1.children, child, i, 1)
+
+                if tokb.type != Token.T_GROUPING:
+                    if self.python:
+                        tmp = Token(Token.T_BLOCK, tokb.line, tokb.index, '{}')
+                        tmp.children= [tokb]
+                        tokb = tmp
+                    else:
+                        self.warn(tokb, Parser.W_BLOCK_UNSAFE)
+                else:
+                    tokb.type = Token.T_BLOCK
+
+                child.children.append(tokb)
 
     def collect_keyword_switch_case(self, tokens, index):
         token = tokens[index]
@@ -1714,7 +1779,7 @@ def main():  # pragma: no cover
         //
         //async, await, static, generator functions, yield, yield from
 
-        [a[i], a[j]] = [a[j], a[i]];
+        class C { static m () {}}
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)

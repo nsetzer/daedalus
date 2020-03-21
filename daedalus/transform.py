@@ -59,9 +59,11 @@ class TransformGrouping(TransformBase):
 
             if child.type == Token.T_GROUPING and child.value == "{}":
                 if (token.type == Token.T_MODULE) or \
+                   (token.type == Token.T_ASYNC_FUNCTION) or \
                    (token.type == Token.T_ANONYMOUS_FUNCTION) or \
                    (token.type == Token.T_ANONYMOUS_GENERATOR) or \
                    (token.type == Token.T_ASYNC_GENERATOR) or \
+                   (token.type == Token.T_ASYNC_ANONYMOUS_FUNCTION) or \
                    (token.type == Token.T_ASYNC_ANONYMOUS_GENERATOR) or \
                    (token.type == Token.T_STATIC_METHOD) or \
                    (token.type == Token.T_METHOD) or \
@@ -487,6 +489,13 @@ class TransformExtractStyleSheet(TransformBase):
         m.update(text.encode('utf-8'))
         return m.hexdigest()[:8]
 
+class DeferedToken(object):
+    def __init__(self, token):
+        super(DeferedToken, self).__init__()
+        self.blrefs = {}
+        self.fnrefs = {}
+        self.token = token
+
 
 SC_GLOBAL   = 0x001
 SC_FUNCTION = 0x002
@@ -534,7 +543,6 @@ class Ref(object):
 
     def __repr__(self):
         return "<*%s>" % (self.identity())
-
 
 class PythonRef(Ref):
     def __init__(self, scflags, label):
@@ -595,27 +603,11 @@ class VariableScope(object):
         self.gscope = {}        # undefined global vars that are read / updated
         self.fnscope = {}
         self.blscope = [{}]
+        self.blscope_stale = {}
         self.all_labels = set()
         self.all_identifiers = set()
 
-        if parent:
-            self.depth = parent.depth + 1
-        else:
-            self.depth = 0
-
-    def _getScope(self, scflags):
-
-        if scflags & SC_GLOBAL:
-            scope = self
-            while scope.parent is not None:
-                scope = scope.parent
-            return scope.fnscope, None
-        elif scflags & SC_FUNCTION:
-            return self.fnscope, None
-        else:
-            if not self.blscope:
-                return self.fnscope, None
-            return self.blscope[-1], self.fnscope
+        self.defered_functions = []
 
     def _getRef(self, scope, label):
 
@@ -635,6 +627,7 @@ class VariableScope(object):
         return ref
 
     def _createRef(self, scflags, label, type_):
+
         return PythonRef(scflags, label)
 
     def _define_block(self, token):
@@ -646,6 +639,12 @@ class VariableScope(object):
         for bl in reversed(self.blscope):
             if label in bl:
                 return bl[label]
+
+        # two subsequent block scopes (not nested, but parallel)
+        # may define the same variable identifier, but it will
+        # have a different closure
+        if label in self.blscope_stale:
+            return self.blscope_stale[label]
 
         return None
 
@@ -699,7 +698,6 @@ class VariableScope(object):
 
         # print("define name", self.depth, token.value, token.line, scope2str(scflags), self.name)
 
-
         return new_ref
 
     def _load_store(self, token, load):
@@ -708,56 +706,59 @@ class VariableScope(object):
         ref = None
 
         # search for the scope the defines this label
-        scopes = [self]
-        while scopes[-1] is not None:
-            if label in scopes[-1].fnscope:
-                break
 
-            if any([label in bl for bl in scopes[-1].blscope]):
-                break
-
-            # TODO: maybe replace above with this?
-            #if label in scopes[-1].all_labels:
-            #    break
-
-            scopes.append(scopes[-1].parent)
-
-        if scopes[-1] is None:
-            # not found in an existing scope
-            if load:
-                # attempting to load an undefined reference
-                if label in self.all_labels:
-                    raise TokenError(token, "read from deleted var")
-
-                ref = UndefinedRef(0, label)
-                token.type = Token.T_GLOBAL_VAR
-                self.gscope[label] = ref
-            else:
-                # define this reference in this scope
-                ref = self.define(SC_BLOCK, token)
-
-            if ref is None:
-                raise TokenError(token, "identity error (1) in %s" % self.name)
-
-        elif scopes[-1] is not self:
-            # found in a parent scope
-            scope = scopes[-1]
-
-            ref = self._getRef(scope, label)
-
-            if not ref.isGlobal():
-                token.type = Token.T_FREE_VAR
-                scope.cellvars.add(ref.identity())
-                for scope2 in scopes[:-1]:
-                    scope2.freevars.add(ref.identity())
-
-            if ref is None:
-                raise TokenError(token, "identity error (2) in %s" % self.name)
-        else:
+        if label in self.fnscope:
             ref = self._getRef(self, label)
 
-            if ref is None:
-                raise TokenError(token, "identity error (3) in %s" % self.name)
+        elif any([label in bl for bl in self.blscope]):
+            ref = self._getRef(self, label)
+
+        else:
+            scopes = [self.parent]
+            found = False
+            while scopes[-1] is not None:
+
+                if scopes[-1].contains(label):
+                    found = True
+                    break;
+
+                scopes.append(scopes[-1].parent)
+
+            if not found:
+                # not found in an existing scope
+                if load:
+                    # attempting to load an undefined reference
+                    if label in self.all_labels:
+                        raise TokenError(token, "read from deleted var")
+
+                    ref = UndefinedRef(0, label)
+                    token.type = Token.T_GLOBAL_VAR
+                    self.gscope[label] = ref
+                else:
+                    # define this reference in this scope
+                    ref = self.define(SC_BLOCK, token)
+
+                if ref is None:
+                    raise TokenError(token, "identity error (1) in %s" % self.name)
+
+            else:
+                # found in a parent scope
+                scope = scopes[-1]
+
+                #ref = self._getRef(scope, label)
+                ref = scope.refs[label]
+
+                if ref is None:
+                    raise TokenError(token, "identity error (2) in %s" % self.name)
+
+                if not ref.isGlobal():
+                    token.type = Token.T_FREE_VAR
+
+                    identity = ref.identity()
+                    scope.defineCellVar(identity)
+                    for scope2 in scopes[:-1]:
+                        scope2.defineFreeVar(identity)
+                    self.freevars.add(identity)
 
         token.value = ref.identity()
         if token.type == Token.T_TEXT:
@@ -769,61 +770,23 @@ class VariableScope(object):
 
     def define(self, scflags, token, type_=DF_IDENTIFIER):
 
-        try:
-            return self._define_impl(scflags, token, type_)
-        except TokenError as e:
-            scope = self
-            while scope:
-                print("-" * 50)
-                print(scope.name)
-                print(scope.all_labels)
-                print(scope.freevars)
-                print(scope.cellvars)
-                print(scope.fnscope.keys())
-                print([list(bl.keys()) for bl in scope.blscope])
-                scope = scope.parent
-
-            raise e
+        return self._define_impl(scflags, token, type_)
 
     def load(self, token):
 
-        try:
-            return self._load_store(token, True)
-        except TokenError as e:
-            scope = self
-            while scope:
-                print("-" * 50)
-                print(scope.name)
-                print(scope.all_labels)
-                print(scope.freevars)
-                print(scope.cellvars)
-                print(scope.fnscope.keys())
-                print([list(bl.keys()) for bl in scope.blscope])
-                scope = scope.parent
-            raise e
+        return self._load_store(token, True)
 
     def store(self, token):
 
-        try:
-            return self._load_store(token, False)
-        except TokenError as e:
-            scope = self
-            while scope:
-                print("-" * 50)
-                print(scope.name)
-                print(scope.all_labels)
-                print(scope.freevars)
-                print(scope.cellvars)
-                print(scope.fnscope.keys())
-                print([list(bl.keys()) for bl in scope.blscope])
-                scope = scope.parent
-            raise e
+        return self._load_store(token, False)
 
     def pushBlockScope(self):
         self.blscope.append({})
 
     def popBlockScope(self):
-        return self.blscope.pop()
+        mapping = self.blscope.pop()
+        self.blscope_stale.update(mapping)
+        return mapping
 
     def flattenBlockScope(self):
         out = {}
@@ -831,8 +794,44 @@ class VariableScope(object):
             out.update(scope)
         return out
 
+    def defer(self, token):
+        self.defered_functions.append(DeferedToken(token))
+
+    def updateDefered(self):
+
+        for key, ref in self.fnscope.items():
+            for defered in self.defered_functions:
+                if key not in defered.fnrefs:
+                    defered.fnrefs[key] = ref
+
+    def updateDeferedBlock(self):
+
+        refs = self.flattenBlockScope()
+        for key, ref in refs.items():
+            for defered in self.defered_functions:
+                if key not in defered.blrefs:
+                    defered.blrefs[key] = ref
+
     def _diag(self, token):
         print("%10s" % token.type, list(self.vars), list(self.freevars), list(self.cellvars))
+
+class VariableScopeReference(object):
+    def __init__(self, scope, refs):
+        super(VariableScopeReference, self).__init__()
+        self.refs = refs
+        self.scope = scope
+        self.parent = scope.parent
+
+    def contains(self, identity):
+        return identity in self.refs
+
+    def defineCellVar(self, identity):
+
+        self.scope.cellvars.add(identity)
+
+    def defineFreeVar(self, identity):
+
+        self.scope.freevars.add(identity)
 
 class MinifyVariableScope(VariableScope):
 
@@ -884,6 +883,7 @@ ST_MASK     = 0x000FF
 ST_SCOPE_MASK     = 0xFFF00
 ST_VISIT    = 0x001
 ST_FINALIZE = 0x002
+ST_DEFERED  = 0x004
 ST_STORE    = 0x100
 ST_GLOBAL   = SC_GLOBAL << 12
 ST_FUNCTION = SC_FUNCTION << 12
@@ -894,6 +894,7 @@ ST_CONST    = SC_CONST << 12
 isConstructor = lambda token: token.type == Token.T_METHOD and token.children[0].value == "constructor"
 isFunction = lambda token: token.type in (
             Token.T_FUNCTION,
+            Token.T_ASYNC_FUNCTION,
             Token.T_GENERATOR,
             Token.T_ASYNC_GENERATOR,
             Token.T_METHOD,
@@ -911,6 +912,7 @@ isAnonymousFunction = lambda token: token.type in (
             Token.T_ASYNC_ANONYMOUS_GENERATOR,
             Token.T_LAMBDA,
     )
+
 class TransformAssignScope(object):
 
     """
@@ -1087,15 +1089,16 @@ class TransformAssignScope(object):
 
         self.visit_mapping = {
             Token.T_FUNCTION: self.visit_function,
+            Token.T_ASYNC_FUNCTION: self.visit_function,
             Token.T_GENERATOR: self.visit_function,
             Token.T_ASYNC_GENERATOR: self.visit_function,
             Token.T_METHOD: self.visit_function,
             Token.T_STATIC_METHOD: self.visit_function,
 
-            Token.T_ANONYMOUS_FUNCTION: self.visit_anonymous_function,
-            Token.T_ASYNC_ANONYMOUS_FUNCTION: self.visit_anonymous_function,
-            Token.T_ANONYMOUS_GENERATOR: self.visit_anonymous_function,
-            Token.T_ASYNC_ANONYMOUS_GENERATOR: self.visit_anonymous_function,
+            Token.T_ANONYMOUS_FUNCTION: self.visit_function,
+            Token.T_ASYNC_ANONYMOUS_FUNCTION: self.visit_function,
+            Token.T_ANONYMOUS_GENERATOR: self.visit_function,
+            Token.T_ASYNC_ANONYMOUS_GENERATOR: self.visit_function,
 
             Token.T_LAMBDA: self.visit_lambda,
 
@@ -1123,6 +1126,7 @@ class TransformAssignScope(object):
         self.finalize_mapping = {
 
             Token.T_FUNCTION: self.finalize_function,
+            Token.T_ASYNC_FUNCTION: self.finalize_function,
             Token.T_GENERATOR: self.finalize_function,
             Token.T_ASYNC_GENERATOR: self.finalize_function,
             Token.T_METHOD: self.finalize_function,
@@ -1140,14 +1144,33 @@ class TransformAssignScope(object):
 
         }
 
+        self.defered_mapping = {
+            Token.T_FUNCTION: self.defered_function,
+            Token.T_ASYNC_FUNCTION: self.defered_function,
+            Token.T_GENERATOR: self.defered_function,
+            Token.T_ASYNC_GENERATOR: self.defered_function,
+            Token.T_METHOD: self.defered_function,
+            Token.T_STATIC_METHOD: self.defered_function,
+
+            Token.T_ANONYMOUS_FUNCTION: self.defered_function,
+            Token.T_ASYNC_ANONYMOUS_FUNCTION: self.defered_function,
+            Token.T_ANONYMOUS_GENERATOR: self.defered_function,
+            Token.T_ASYNC_ANONYMOUS_GENERATOR: self.defered_function,
+
+            Token.T_LAMBDA: self.defered_function,
+            Token.T_MODULE: self.defered_function,
+        }
+
         self.states = {
             ST_VISIT: self.visit_mapping,
-            ST_FINALIZE: self.finalize_mapping
+            ST_FINALIZE: self.finalize_mapping,
+            ST_DEFERED: self.defered_mapping,
         }
 
         self.state_defaults = {
             ST_VISIT: self.visit_default,
             ST_FINALIZE: self.finalize_default,
+            ST_DEFERED: self.defered_default,
         }
 
         # mapping identifier -> identifier
@@ -1194,6 +1217,7 @@ class TransformAssignScope(object):
 
     def visit_module(self, flags, scope, token, parent):
         self._push_finalize(scope, token, parent)
+        self._push_defered(scope, token, parent)
         self._push_children(scope, token, flags)
 
     def visit_block(self, flags, scope, token, parent):
@@ -1207,24 +1231,20 @@ class TransformAssignScope(object):
         self._push_finalize(scope, token, parent)
         self._push_children(scope, token, flags)
 
-    def _handle_function(self, flags, scope, token, parent):
-
-        scflags = (flags & ST_SCOPE_MASK) >> 12
-
-        # define the name of the function when it is not an
-        # anonymous function and not a class constructor.
-        if not isAnonymousFunction(token) and not isConstructor(token):
-            scope.define(scflags, token.children[0])
+    def _handle_function(self, scope, token, refs):
 
         name = scope.name + "." + token.children[0].value
-        next_scope = self.newScope(name, scope)
+
+        parent = VariableScopeReference(scope, refs)
+        next_scope = self.newScope(name, parent)
 
         # finalize the function scope once all children have been processed
-        self._push_finalize(next_scope, token, parent)
+        self._push_finalize(next_scope, token, None)
+        self._push_defered(next_scope, token, None)
 
         if token.children[2].type != Token.T_BLOCK:
             # the parser should be run in python mode
-            raise TransformError(token.children[2], "expected block in for loop body")
+            raise TransformError(token.children[2], "expected block in function body")
 
         self._push_children(next_scope, token.children[2])
 
@@ -1243,31 +1263,45 @@ class TransformAssignScope(object):
 
     def visit_function(self, flags, scope, token, parent):
 
-        self._handle_function(flags, scope, token, parent)
 
-    def visit_anonymous_function(self, flags, scope, token, parent):
 
-        self._handle_function(flags, scope, token, parent)
+        # define the name of the function when it is not an
+        # anonymous function and not a class constructor.
+        if not isAnonymousFunction(token) and not isConstructor(token):
+            scflags = (flags & ST_SCOPE_MASK) >> 12
+            scope.define(scflags, token.children[0])
+
+        #self._handle_function(scope, token, {})
+        scope.defer(token)
 
     def visit_lambda(self, flags, scope, token, parent):
-
 
         # lambdas allow for no arglist, but that makes compiling harder
 
         # fix some js-isms that are not really valid python
         if self.python:
+            #
+            #   x => x
+            #   (x) => x
+            #
             if token.children[1].type == Token.T_TEXT:
                 tok = token.children[1]
                 token.children[1] = Token(Token.T_ARGLIST, tok.line, tok.index, '()', [tok])
 
             # lambdas can be a single expression if it returns a value
+            # convert that expression into a block with a return
+            #
+            #   x => x
+            #   x => { return x }
+            #
             if token.children[2].type != Token.T_BLOCK:
                 tok = token.children[2]
 
                 token.children[2] = Token(Token.T_BLOCK, tok.line, tok.index, '{}',
                     [Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])])
 
-        self._handle_function(flags, scope, token, parent)
+        #self._handle_function(scope, token, {})
+        scope.defer(token)
 
     def visit_class(self, flags, scope, token, parent):
 
@@ -1425,16 +1459,6 @@ class TransformAssignScope(object):
         for name, ref in scope.blscope[0].items():
             self.globals[name] = ref.identity()
 
-    def finalize_block(self, flags, scope, token, parent):
-
-        print(scope.flattenBlockScope())
-
-        vars = scope.popBlockScope()
-
-        if self.python:
-            for var in vars.values():
-                token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
-
     def finalize_function(self, flags, scope, token, parent):
 
         if self.python:
@@ -1448,10 +1472,42 @@ class TransformAssignScope(object):
 
             token.children.append(closure)
 
+    def finalize_block(self, flags, scope, token, parent):
+
+        # .defered_functions[{block_refs: {}, tokens: []}]
+        # every time a block is popped add missing references to block scope vars
+        # when the function finally pops take the function scope vars
+        # overlay the flattened block scope vars and then push new scopes to handle the functions
+
+        scope.updateDeferedBlock()
+
+        vars = scope.popBlockScope()
+
+        if self.python:
+            for var in vars.values():
+                token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
+
+    # -------------------------------------------------------------------------
+
+    def defered_default(self, flags, scope, token, parent):
+        raise TransformError(token, "unexpected defered token")
+
+    def defered_function(self, flags, scope, token, parent):
+
+        scope.updateDeferedBlock()
+        scope.updateDefered()
+        for defered in scope.defered_functions:
+            refs = {**defered.fnrefs, **defered.blrefs}
+            self._handle_function(scope, defered.token, refs)
+
+
     # -------------------------------------------------------------------------
 
     def _push_finalize(self, scope, token, parent, flags=0):
         self.seq.append((ST_FINALIZE | flags, scope, token, parent))
+
+    def _push_defered(self, scope, token, parent, flags=0):
+        self.seq.append((ST_DEFERED | flags, scope, token, parent))
 
     def _push_children(self, scope, token, flags=0):
         for child in reversed(token.children):
@@ -1612,7 +1668,6 @@ class TransformClassToFunction(TransformBaseV2):
                 method
             ])
             parent.children.insert(index+1, static)
-        print(static_methods)
 
         token.type = Token.T_FUNCTION
         token.value = 'function'
@@ -1734,9 +1789,35 @@ def main_var2():
             }
 
             let y = 2;
+
+            var a=1;
+            var a=2;
         }
     """
 
+    text = """
+
+        function f() {
+            let a = []
+            {
+
+                let x = 2
+                function f1(){return x}
+                a.push(f1)
+            }
+
+            {
+                let x = 4
+                function f1(){return x}
+                a.push(f1)
+            }
+            return a
+        }
+
+        a = f()
+        console.log(a.length)
+
+    """
 
     tokens = Lexer().lex(text)
     parser =  Parser()
