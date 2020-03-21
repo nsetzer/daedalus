@@ -261,7 +261,9 @@ class JsFile(object):
             tokens = Lexer().lex(source)
             for token in tokens:
                 token.file = self.source_path
-            ast = Parser().parse(tokens)
+            parser = Parser()
+            parser.python = self.python
+            ast = parser.parse(tokens)
             uid = TransformExtractStyleSheet.generateUid(self.source_path)
             tr1 = TransformExtractStyleSheet(uid)
             tr1.transform(ast)

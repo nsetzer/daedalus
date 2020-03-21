@@ -84,7 +84,9 @@ class JsContext(object):
         """
 
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
+        parser = Parser()
+        parser.python = True
+        ast = parser.parse(tokens)
 
         transform = TransformClassToFunction()
         transform.transform(ast)
@@ -95,6 +97,10 @@ class JsContext(object):
         return ast
 
     def minifyjs(self, text):
+
+        """
+        minify the input text using traditional javascript rules
+        """
 
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
@@ -109,7 +115,9 @@ class JsContext(object):
     def compilejs(self, text):
 
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
+        parser = Parser()
+        parser.python = True
+        ast = parser.parse(tokens)
 
         compiler = Compiler(filename="<string>",
             globals=self.globals,

@@ -50,8 +50,11 @@ class Parser(object):
     W_VAR_USED = 6
     W_UNSAFE_BOOLEAN_TEST = 7  # Note: could be expanded to testing between operator &&, ||
 
-    def __init__(self,):
+    def __init__(self):
         super(Parser, self).__init__()
+
+        # when true, output an AST which is more friendly for compiling
+        self.python = False
 
         L2R = 1
         R2L = -1
@@ -1055,8 +1058,14 @@ class Parser(object):
 
         if rhs1.type == Token.T_FUNCTIONCALL:
             raise ParseError(rhs1, "remove () from class def")
+
         if rhs1.type != Token.T_GROUPING:
-            self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
+            if self.python:
+                tmp = Token(Token.T_BLOCK, rhs1.line, rhs1.index, '{}')
+                tmp.children= [rhs1]
+                rhs1 = tmp
+            else:
+                self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
         else:
             rhs1.type = Token.T_BLOCK
 
@@ -1118,7 +1127,12 @@ class Parser(object):
             raise ParseError(rhs2, "expected while")
 
         if rhs1.type != Token.T_GROUPING:
-            self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
+            if self.python:
+                tmp = Token(Token.T_BLOCK, rhs1.line, rhs1.index, '{}')
+                tmp.children= [rhs1]
+                rhs1 = tmp
+            else:
+                self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
         else:
             rhs1.type = Token.T_BLOCK
 
@@ -1386,7 +1400,12 @@ class Parser(object):
             token.children = [rhs1]
 
         if rhs2.type != Token.T_GROUPING:
-            self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
+            if self.python:
+                tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
+                tmp.children= [rhs2]
+                rhs2 = tmp
+            else:
+                self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
         else:
             rhs2.type = Token.T_BLOCK
 
@@ -1411,7 +1430,6 @@ class Parser(object):
 
         # function body
         body = self.consume(tokens, token, index, 1)
-        token.children.append(body)
 
         if token.children[1].type not in (Token.T_GROUPING, Token.T_ARGLIST):
             raise ParseError(token, "expected arglist")
@@ -1419,7 +1437,12 @@ class Parser(object):
         token.children[1].type = Token.T_ARGLIST
 
         if body.type != Token.T_GROUPING:
-            self.warn(body, Parser.W_BLOCK_UNSAFE)
+            if self.python:
+                tmp = Token(Token.T_BLOCK, body.line, body.index, '{}')
+                tmp.children= [body]
+                body = tmp
+            else:
+                self.warn(body, Parser.W_BLOCK_UNSAFE)
         else:
             body.type = Token.T_BLOCK
 
@@ -1427,6 +1450,8 @@ class Parser(object):
             token.type = Token.T_GENERATOR
         else:
             token.type = Token.T_FUNCTION
+
+        token.children.append(body)
 
     def collect_keyword_if(self, tokens, index):
         """
@@ -1565,9 +1590,15 @@ class Parser(object):
 
         rhs = self.consume(tokens, token, index, 1)
         if rhs.type != Token.T_GROUPING:
-            self.warn(rhs, Parser.W_BLOCK_UNSAFE)
+            if self.python:
+                tmp = Token(Token.T_BLOCK, rhs.line, rhs.index, '{}')
+                tmp.children= [rhs]
+                rhs = tmp
+            else:
+                self.warn(rhs, Parser.W_BLOCK_UNSAFE)
         else:
             rhs.type = Token.T_BLOCK
+
         token.children = [rhs]
         token.type = Token.T_TRY
 
@@ -1582,7 +1613,12 @@ class Parser(object):
             #rhs2 = self.consume(tokens, token, index, 1)
             rhs3 = self.consume(tokens, token, index, 1)
             if rhs3.type != Token.T_GROUPING:
-                self.warn(rhs3, Parser.W_BLOCK_UNSAFE)
+                if self.python:
+                    tmp = Token(Token.T_BLOCK, rhs3.line, rhs3.index, '{}')
+                    tmp.children= [rhs3]
+                    rhs3 = tmp
+                else:
+                    self.warn(rhs3, Parser.W_BLOCK_UNSAFE)
             else:
                 rhs3.type = Token.T_BLOCK
             rhs1.children.append(rhs2)
@@ -1595,7 +1631,12 @@ class Parser(object):
             rhs1 = self.consume_keyword(tokens, token, index, 1)
             rhs2 = self.consume(tokens, token, index, 1)
             if rhs2.type != Token.T_GROUPING:
-                self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
+                if self.python:
+                    tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
+                    tmp.children= [rhs2]
+                    rhs2 = tmp
+                else:
+                    self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
             else:
                 rhs3.type = Token.T_BLOCK
             rhs1.children.append(rhs2)
@@ -1624,7 +1665,12 @@ class Parser(object):
             rhs1.type = Token.T_ARGLIST
 
         if rhs2.type != Token.T_GROUPING:
-            self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
+            if self.python:
+                tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
+                tmp.children= [rhs2]
+                rhs2 = tmp
+            else:
+                self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
         else:
             rhs2.type = Token.T_BLOCK
 
