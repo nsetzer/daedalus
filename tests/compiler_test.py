@@ -284,6 +284,77 @@ class CompilerTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 8)
 
+    def test_evaljs_fib_closure2(self):
+        """
+        this test only works if the closure is properly identified
+        and the STORE_DEREF is used for both assignments to x
+        """
+
+        text = """
+            function main() {
+                x = 1
+
+                function f() { return x }
+
+                x = 2
+
+                return f()
+            }
+
+            return main();
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 2)
+
+    def test_evaljs_fib_closure3(self):
+        """
+        this only works if the function scope is deferred until
+        after the current function scope is fully evaluated
+        """
+
+        text = """
+            function f() {
+                let a = []
+                {
+                    function f1(){return x}
+                    let x = 4
+                    a.push(f1)
+                }
+
+                {
+                    function f1(){return x}
+                    let x = 8
+                    a.push(f1)
+                }
+                return a
+            }
+
+            a = f()
+            return [a.length, a[0](), a[1]()]
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 3)
+        self.assertEqual(result[0], 2)
+        self.assertEqual(result[1], 4)
+        self.assertEqual(result[2], 8)
+
+    def test_evaljs_fib_closure4(self):
+        """
+        this only works if the function scope is deferred until
+        after the current function scope is fully evaluated
+        """
+
+        text = """
+
+            function f1() { return f3() } // f3 not yet defined
+            function f2() { return 1234 }
+            function f3() { return f2() }
+
+            return f1()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result, 1234)
+
     def test_spread_fn_call(self):
 
         text = """

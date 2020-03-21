@@ -81,13 +81,61 @@ class FormatterTestCase(unittest.TestCase):
                + b
         """, "x=a+b")
 
-    @unittest.skip("not implemented")
     def test_001_generator_function(self):
         self._chkeq("""
            function* g() {
             yield 1
            }
-        """, "function*(){yield 1}")
+        """, "function*g(){yield 1}")
+
+    def test_001_anonymous_generator_function(self):
+        self._chkeq("""
+           g = function*() {
+            yield 1
+           }
+        """, "g=function*(){yield 1}")
+
+    def test_001_async_generator_function(self):
+        self._chkeq("""
+           async function* g() {
+            yield 1
+           }
+        """, "async function*g(){yield 1}")
+
+    def test_001_async_anonymous_generator_function(self):
+        self._chkeq("""
+           g = async function* () {
+            yield 1
+           }
+        """, "g=async function*(){yield 1}")
+
+    def test_001_async_function(self):
+        self._chkeq("""
+           async function f() {
+            return 1
+           }
+        """, "async function f(){return 1}")
+
+    def test_001_async_anonymous_function(self):
+        self._chkeq("""
+           f = async function () {
+            return 1
+           }
+        """, "f=async function(){return 1}")
+
+    def test_001_function(self):
+        self._chkeq("""
+           function f() {
+            return 1
+           }
+        """, "function f(){return 1}")
+
+    def test_001_anonymous_function(self):
+        self._chkeq("""
+           f = function () {
+            return 1
+           }
+        """, "f=function(){return 1}")
 
     def test_001_number_int(self):
         self._chkeq("""

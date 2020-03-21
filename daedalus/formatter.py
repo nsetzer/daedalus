@@ -252,10 +252,20 @@ class Formatter(object):
                 for child in reversed(token.children[1:]):
                     seq.append((depth, None, child))
                 seq.append((depth, Token.T_KEYWORD, "function*"))
+            elif token.type == Token.T_ASYNC_FUNCTION:
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+                seq.append((depth, Token.T_KEYWORD, "function"))
+                seq.append((depth, Token.T_KEYWORD, "async"))
             elif token.type == Token.T_ASYNC_GENERATOR:
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
                 seq.append((depth, Token.T_KEYWORD, "function*"))
+                seq.append((depth, Token.T_KEYWORD, "async"))
+            elif token.type == Token.T_ASYNC_ANONYMOUS_FUNCTION:
+                for child in reversed(token.children[1:]):
+                    seq.append((depth, None, child))
+                seq.append((depth, Token.T_KEYWORD, "function"))
                 seq.append((depth, Token.T_KEYWORD, "async"))
             elif token.type == Token.T_ASYNC_ANONYMOUS_GENERATOR:
                 for child in reversed(token.children[1:]):
@@ -369,7 +379,7 @@ class Formatter(object):
 def main():  # pragma: no cover
 
     text1 = """
-    function* (x) { yield  g() }
+    async function (x) { return 1 }
     """
 
     #text1 = open("./res/daedalus/index.js").read()
