@@ -40,6 +40,7 @@ class Token(object):
     T_ASSIGN = "T_ASSIGN"
 
     # tokens created by the parser (processed keywords)
+    T_GET_ATTR = "T_GET_ATTR"
     T_BREAK = "T_BREAK"
     T_BRANCH = "T_BRANCH"
     T_CASE = "T_CASE"
@@ -96,6 +97,9 @@ class Token(object):
     T_CLOSURE = 'T_CLOSURE'
     T_CELL_VAR = 'T_CELL_VAR'
     T_FREE_VAR = 'T_FREE_VAR'
+
+    T_TEMPLATE_EXPRESSION = "T_TEMPLATE_EXPRESSION"
+    T_TAGGED_TEMPLATE = "T_TAGGED_TEMPLATE"
 
     # a token which stands for no token
     T_EMPTY_TOKEN = "T_EMPTY_TOKEN"
@@ -184,4 +188,35 @@ class Token(object):
         tok.children = [c.clone() for c in self.children]
         tok.__dict__.update(keys)
         return tok
+
+    @staticmethod
+    def deepCopy(token):
+
+        queue = []
+
+        root = Token(token.type, token.line, token.index, token.value)
+
+        root.file = token.file
+        root.original_value = token.original_value
+
+        for child in reversed(token.children):
+            queue.append((child, root))
+
+        while queue:
+            tok, parent = queue.pop()
+
+            new_tok = Token(tok.type, tok.line, tok.index, tok.value)
+
+            new_tok.file = tok.file
+            new_tok.original_value = tok.original_value
+
+            parent.children.append(new_tok)
+
+            for child in reversed(tok.children):
+                queue.append((child, new_tok))
+
+        return root
+
+
+
 

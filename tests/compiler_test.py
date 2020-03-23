@@ -284,7 +284,7 @@ class CompilerTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 8)
 
-    def test_evaljs_fib_closure2(self):
+    def test_evaljs_closure2(self):
         """
         this test only works if the closure is properly identified
         and the STORE_DEREF is used for both assignments to x
@@ -306,7 +306,7 @@ class CompilerTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 2)
 
-    def test_evaljs_fib_closure3(self):
+    def test_evaljs_closure3(self):
         """
         this only works if the function scope is deferred until
         after the current function scope is fully evaluated
@@ -338,7 +338,7 @@ class CompilerTestCase(unittest.TestCase):
         self.assertEqual(result[1], 4)
         self.assertEqual(result[2], 8)
 
-    def test_evaljs_fib_closure4(self):
+    def test_evaljs_closure4(self):
         """
         this only works if the function scope is deferred until
         after the current function scope is fully evaluated
@@ -553,6 +553,15 @@ class CompilerTestCase(unittest.TestCase):
         self.assertEqual(result[0], 10)
         self.assertEqual(result[1], 5)
 
+    def test_unpack_rest(self):
+
+        text = """
+            [a,b,...rest]=[1,2,3,4,5]
+            return rest
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result.length, 3)
+
     def test_break_nested_2(self):
         # This test will segfault or otherwise crash
         # on linux and windows if the stack is not properly maintained
@@ -578,7 +587,6 @@ class CompilerTestCase(unittest.TestCase):
         result = self.evaljs(text)
         self.assertEqual(result, 85)
 
-    #@unittest.skip("crashes on windows")
     def test_static_method(self):
 
         text = """

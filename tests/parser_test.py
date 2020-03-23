@@ -1,3 +1,4 @@
+#! cd .. && python3 -m tests.parser_test
 
 
 import unittest
@@ -101,6 +102,22 @@ class ParserUnaryOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_tagged_template(self):
+
+        text = "myTag`b${c}a`"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TAGGED_TEMPLATE', '',
+                TOKEN('T_TEXT', 'myTag'),
+                TOKEN('T_TEMPLATE_STRING', '`b${c}a`',
+                    TOKEN('T_STRING', 'b'),
+                    TOKEN('T_TEMPLATE_EXPRESSION', 'c',
+                        TOKEN('T_TEXT', 'c')),
+                    TOKEN('T_STRING', 'a'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
 class ParserBinOpTestCase(unittest.TestCase):
 
     def test_001_assign(self):
@@ -180,7 +197,7 @@ class ParserBinOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '.',
+            TOKEN('T_GET_ATTR', '.',
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_ATTR', 'b'))
         )
@@ -592,7 +609,7 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_FUNCTIONCALL', '',
-                TOKEN('T_BINARY', '.',
+                TOKEN('T_GET_ATTR', '.',
                     TOKEN('T_KEYWORD', 'super'),
                     TOKEN('T_ATTR', 'onClick')),
                 TOKEN('T_ARGLIST', '()'))
@@ -625,6 +642,41 @@ class ParserKeywordTestCase(unittest.TestCase):
                 TOKEN('T_FINALLY', 'finally',
                     TOKEN('T_OBJECT', '{}')))
         )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_lambda_assign(self):
+        """
+        this test can only pass if binary operators
+        are collected right-to-left and the arrow
+        operator is treated at the same precedence
+        """
+        text = """
+            const f = (d,k,v) => d[k] = v
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'f'),
+                    TOKEN('T_LAMBDA', '=>',
+                        TOKEN('T_TEXT', 'Anonymous'),
+                        TOKEN('T_ARGLIST', '()',
+                            TOKEN('T_TEXT', 'd'),
+                            TOKEN('T_TEXT', 'k'),
+                            TOKEN('T_TEXT', 'v')
+                        ),
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_SUBSCR', '',
+                                TOKEN('T_TEXT', 'd'),
+                                TOKEN('T_TEXT', 'k'))
+                            ),
+                            TOKEN('T_TEXT', 'v')
+                        )
+                    )
+                )
+            )
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -775,7 +827,7 @@ class ParserClassTestCase(unittest.TestCase):
                         TOKEN('T_TEXT', 'onClick'),
                         TOKEN('T_ARGLIST', '()',
                             TOKEN('T_TEXT', 'event')),
-                        TOKEN('T_OBJECT', '{}'))))
+                        TOKEN('T_BLOCK', '{}'))))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -789,7 +841,7 @@ class ParserClassTestCase(unittest.TestCase):
             TOKEN('T_CLASS', 'class',
                 TOKEN('T_TEXT', 'A'),
                 TOKEN('T_KEYWORD', 'extends',
-                    TOKEN('T_BINARY', '.',
+                    TOKEN('T_GET_ATTR', '.',
                         TOKEN('T_TEXT', 'X'),
                         TOKEN('T_ATTR', 'Y'))),
                 TOKEN('T_BLOCK', '{}'))

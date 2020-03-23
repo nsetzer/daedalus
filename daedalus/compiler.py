@@ -79,6 +79,7 @@ class Compiler(object):
         self.traverse_mapping = {
             Token.T_MODULE: self._traverse_module,
             Token.T_BINARY: self._traverse_binary,
+            Token.T_GET_ATTR: self._traverse_binary,
             Token.T_ASSIGN: self._traverse_assign,
             Token.T_FUNCTIONCALL: self._traverse_functioncall,
             Token.T_ARGLIST: self._traverse_arglist,
@@ -139,6 +140,7 @@ class Compiler(object):
         # been traversed
         self.compile_mapping = {
             Token.T_BINARY: self._compile_binary,
+            Token.T_GET_ATTR: self._compile_binary,
             Token.T_ASSIGN: self._compile_assign,
             Token.T_FUNCTIONCALL: self._compile_functioncall,
             Token.T_BRANCH: self._compile_branch,
@@ -1450,11 +1452,32 @@ class Compiler(object):
 
     def _compile_unpack_sequence(self, depth, state, token):
 
-        self.bc.append(BytecodeInstr('UNPACK_SEQUENCE', len(token.children), lineno=token.line))
+        use_spread = any(child.type == Token.T_SPREAD for child in token.children)
 
+        # unpack the rest parameter and convert the python tuple into a js array
+        if use_spread:
+            kind, index = self._token2index(JsArray.Token, True)
+            self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+            self.bc.append(BytecodeInstr('ROT_TWO', lineno=token.line))
+            self.bc.append(BytecodeInstr('UNPACK_EX', len(token.children)-1, lineno=token.line))
+
+        else:
+            self.bc.append(BytecodeInstr('UNPACK_SEQUENCE', len(token.children), lineno=token.line))
+
+        finished = False
         for child in token.children:
-            kind, index = self._token2index(child, False)
-            self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
+            if child.type == Token.T_SPREAD:
+                child = child.children[0]
+                kind, index = self._token2index(child, False)
+                self.bc.append(BytecodeInstr('CALL_FUNCTION', 1, lineno=token.line))
+                self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
+
+                finished = True
+            else:
+                if finished:
+                    raise CompileError(child, "variable after rest parameter in sequence unpack")
+                kind, index = self._token2index(child, False)
+                self.bc.append(BytecodeInstr('STORE_' + kind, index, lineno=token.line))
 
     def _finalize_break_continue(self, token):
         sources = self.break_sources.pop()
@@ -1526,7 +1549,7 @@ def main():  # pragma: no cover
 
     text1 = """
 
-    if (false) {console.log("!")}
+    [a,b,...rest]=[1,2,3,4,5]
 
     """
 

@@ -119,7 +119,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
         for src, dst in names.items():
             tok = TOKEN('T_ASSIGN', '=',
                 TOKEN('T_VAR', 'const', TOKEN('T_TEXT', dst)),
-                TOKEN('T_BINARY', '.',
+                TOKEN('T_GET_ATTR', '.',
                     TOKEN('T_TEXT', varname),
                     TOKEN('T_ATTR', src)))
             tok_imports1.append(tok)
@@ -137,7 +137,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     if merge:
         tok_iifi = TOKEN('T_MODULE', '',
             TOKEN('T_FUNCTIONCALL', '',
-                TOKEN('T_BINARY', '.',
+                TOKEN('T_GET_ATTR', '.',
                     TOKEN('T_TEXT', 'Object'),
                     TOKEN('T_TEXT', 'assign')),
                 TOKEN('T_ARGLIST', '()',
@@ -147,9 +147,28 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
                         TOKEN('T_ARGLIST', '()', *tok_argument_names)))))
 
     else:
+
+
+        if '.' in modname:
+            parts = modname.split('.')
+
+            lhs = Token(Token.T_TEXT, 1, 0, parts[0])
+            rhs = Token(Token.T_TEXT, 1, 0, parts[1])
+            mod_tok = Token(Token.T_GET_ATTR, 1, 0, '.')
+            mod_tok.children = [lhs, rhs]
+
+            for i in range(2, len(parts)):
+                lhs = mod_tok
+                rhs = Token(Token.T_TEXT, 1, 0, parts[i])
+                mod_tok = Token(Token.T_GET_ATTR, 1, 0, '.')
+                mod_tok.children = [lhs, rhs]
+
+        else:
+            mod_tok = Token(Token.T_TEXT, 1, 0,modname)
+
         tok_iifi = TOKEN('T_MODULE', '',
             TOKEN('T_ASSIGN', '=',
-                TOKEN('T_TEXT', modname),
+                mod_tok,
                 TOKEN('T_FUNCTIONCALL', '',
                     TOKEN('T_GROUPING', '()', tok_fundef),
                     TOKEN('T_ARGLIST', '()', *tok_argument_names))))
@@ -187,7 +206,7 @@ def buildPythonAst(modname, mod, imports, exports):
         for src, dst in names.items():
             tok = TOKEN('T_ASSIGN', '=',
                 TOKEN('T_VAR', 'const', TOKEN('T_TEXT', dst)),
-                TOKEN('T_BINARY', '.',
+                TOKEN('T_GET_ATTR', '.',
                     TOKEN('T_TEXT', varname),
                     TOKEN('T_ATTR', src)))
             tok_imports1.append(tok)
@@ -630,7 +649,7 @@ class Builder(object):
         if len(jsm.module_exports) > 1:
             sys.stderr.write("warning: root module exports more than one symbol")
 
-        export_name = jsm.name() + "." + list(jsm.module_exports)[0]
+
 
         if standalone is False:
             order = self._sort_modules(jsm)
@@ -671,7 +690,10 @@ class Builder(object):
         css = "\n".join(styles)
         error = None
         try:
-            #TransformMinifyScope().transform(ast)
+            self.globals = {}
+            #ast = Token.deepCopy(ast)
+            #self.globals = TransformMinifyScope().transform(ast)
+
             #                20.03KB gzipped (74.23KB uncompressed)
             #Compiled Size:  16.94KB gzipped (68.3KB uncompressed)
             #Saved 15.41% off the gzipped size (8.00% without gzip)
@@ -680,6 +702,8 @@ class Builder(object):
             #Saved 9.36% off the gzipped size (15.81% without gzip)
 
             js = Formatter(opts={'minify': minify}).format(ast)
+
+
 
         except TokenError as e:
             filepath = ""
@@ -698,6 +722,11 @@ class Builder(object):
 
         if error:
             raise error
+
+        if self.globals:
+            export_name = self.globals[jsm.name()] + "." + list(jsm.module_exports)[0]
+        else:
+            export_name = jsm.name() + "." + list(jsm.module_exports)[0]
 
         final_source_size = len(js)
         p = 100 * final_source_size / source_size
@@ -718,7 +747,11 @@ class Builder(object):
         index_html = self.find("index.html")
         with open(index_html, "r") as hfile:
             html = hfile.read()
-        render_function = 'daedalus.render'
+
+        if self.globals:
+            render_function = self.globals['daedalus'] + '.render'
+        else:
+            render_function = 'daedalus.render'
 
         html = html \
             .replace("<!--FAVICON-->", self.getHtmlFavIcon()) \
