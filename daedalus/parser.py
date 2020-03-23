@@ -23,7 +23,7 @@ import ast
 from .lexer import Lexer, Token, TokenError
 from .transform import TransformGrouping, \
     TransformFlatten, TransformOptionalChaining, TransformNullCoalescing, \
-    TransformMagicConstants, TransformRemoveSemicolons
+    TransformMagicConstants, TransformRemoveSemicolons, TransformBase
 
 class ParseError(TokenError):
     pass
@@ -39,6 +39,72 @@ def prefix_count(text, char):
         else:
             break;
     return count
+
+class TransformTemplateString(TransformBase):
+
+    def visit(self, token, parent):
+
+        if token.type == Token.T_TEMPLATE_STRING:
+            segments = self.parse_string(token)
+
+            tokens = []
+            for isExpr, text in segments:
+                if not text:
+                    continue
+                type_ = Token.T_TEMPLATE_EXPRESSION if isExpr else Token.T_STRING
+                tok = Token(type_, 1, 0, text)
+                if isExpr:
+                    ast = Parser().parse(Lexer().lex(text))
+                    tok.children = ast.children
+
+                tokens.append(tok)
+            token.children = tokens
+
+    def parse_string(self, token):
+        """
+        parse a template string and get the text and expression segments
+        """
+        segments = []
+        text = token.value[1:-1]
+        index=0;
+        state = 0
+        start = 0
+        stack = 0
+        while index < len(text):
+            c = text[index]
+
+            if state == 2:
+                if c == '{':
+                    stack += 1
+
+                elif c == '}':
+                    if stack == 0:
+                        state = 0
+                        segments.append((1, text[start:index]))
+                        start = index + 1
+                    else:
+                        stack -= 1
+
+            else:
+                if c == '\\':
+                    index += 1
+                elif state == 0:
+
+                    if c == '$':
+                        state = 1
+
+                elif state == 1:
+
+                    if c == '{':
+                        state = 2
+                        segments.append((0, text[start:index-1]))
+                        start = index + 1
+
+            index += 1
+
+        segments.append((0, text[start:index]))
+
+        return segments
 
 class Parser(object):
 
@@ -81,14 +147,17 @@ class Parser(object):
             (L2R, self.visit_ternary, ['?']),
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
-            (R2L, self.visit_lambda, ['=>']),
-            (L2R, self.visit_assign, ['=', '+=', '-=', '**=', '*=', '/=',
+            (R2L, self.visit_assign_v2, ['=>', '=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
+            #(R2L, self.visit_lambda, ['=>']),
+            #(L2R, self.visit_assign, ['=', '+=', '-=', '**=', '*=', '/=',
+            #                          '&=', '<<=', '>>=', '&=', '^=',
+            #                          '|=']),
+            #(L2R, self.visit_lambda, ['=>']),
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_binary, [':']),
-            #(L2R, self.visit_lambda, ['=>']),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_static, ['static']),
@@ -139,6 +208,7 @@ class Parser(object):
         TransformOptionalChaining().transform(mod)
         TransformNullCoalescing().transform(mod)
         TransformMagicConstants().transform(mod)
+        TransformTemplateString().transform(mod)
 
         return mod
 
@@ -310,6 +380,7 @@ class Parser(object):
             x?.()
             function()  - anonymous function
             []          - square brakets with no prefix declare a new list
+            tag`template`
 
         produce:
 
@@ -351,7 +422,7 @@ class Parser(object):
             if rhs.type == Token.T_TEXT:
                 rhs.type = Token.T_ATTR
 
-            token.type = Token.T_BINARY
+            token.type = Token.T_GET_ATTR
             token.children = [lhs, rhs]
             return self._offset
 
@@ -389,7 +460,7 @@ class Parser(object):
 
             return self._offset
 
-        if token.type == Token.T_GROUPING and token.value == '()':
+        elif token.type == Token.T_GROUPING and token.value == '()':
             i1 = self.peek_token(tokens, token, index, -1)
             # or (tokens[i1].type == Token.T_BINARY and tokens[i1].value in (".", "?."))
             if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
@@ -443,13 +514,11 @@ class Parser(object):
 
                     tok1.children.append(tokb)
 
-                print('offset', self._offset)
-
                 token.type = Token.T_ARGLIST
                 tokens[index - n - 1] = tok1
                 return self._offset
 
-        if token.type == Token.T_GROUPING and token.value == '[]':
+        elif token.type == Token.T_GROUPING and token.value == '[]':
             # special case if the square bracket starts a new line
             # then assume this is the start of a list
             # alternative would be to check if the rhs is a assignment operator
@@ -466,6 +535,19 @@ class Parser(object):
                     return self._offset
                 else:
                     token.type = Token.T_LIST
+
+        elif token.type == Token.T_TEMPLATE_STRING:
+
+            i1 = self.peek_token(tokens, token, index, -1)
+            if i1 is not None and tokens[i1].type == Token.T_TEXT:
+
+                lhs = self.consume(tokens, token, index, -1)
+                tok = Token(Token.T_TAGGED_TEMPLATE, token.line, token.index, '')
+
+                tok.children = lhs, token
+                tokens[index-1] = tok
+
+                return self._offset
 
         return 1
 
@@ -692,6 +774,18 @@ class Parser(object):
             token.type = Token.T_BINARY
 
         return self._offset
+
+    def visit_assign_v2(self, parent, tokens, index, operators):
+        """
+        Example:
+            const f = (d,k,v) => d[k] = v
+
+        collect binary operators Right-To-Left
+        """
+        if tokens[index].value == '=>':
+            return self.visit_lambda(parent, tokens, index, operators)
+        else:
+            return self.visit_assign(parent, tokens, index, operators)
 
     def visit_assign(self, parent, tokens, index, operators):
         """
@@ -1272,10 +1366,10 @@ class Parser(object):
 
     def _collect_keyword_import_get_name(self, module):
 
-        if module.type == Token.T_BINARY:
+        if module.type == Token.T_GET_ATTR:
             text = ""
             node = module
-            while node.type == Token.T_BINARY:
+            while node.type == Token.T_GET_ATTR:
                 if node.children[1].type == Token.T_ATTR:
                     text = node.children[1].value + text
                 else:
@@ -1283,7 +1377,7 @@ class Parser(object):
 
                 text = '.' + text
 
-                if node.children[0].type == Token.T_BINARY:
+                if node.children[0].type == Token.T_GET_ATTR:
                     node = node.children[0]
                 elif node.children[0].type == Token.T_TEXT:
                     text = node.children[0].value + text
@@ -1773,14 +1867,7 @@ def main():  # pragma: no cover
     export default class a {}
     """
 
-    text1 = """
-        //for (const x of iterable) {}
-        //for (const x in iterable) {}
-        //
-        //async, await, static, generator functions, yield, yield from
-
-        class C { static m () {}}
-    """
+    text1 = """myTag`width: ${s.width}px`"""
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)
     mod = Parser().parse(tokens)

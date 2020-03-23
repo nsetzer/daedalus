@@ -660,6 +660,7 @@ class VariableScope(object):
 
         if token.type not in (Token.T_TEXT, ):
             raise TokenError(token, "unexpected token type %s" % token.type)
+
         if not token.value:
             raise TokenError(token, "empty identifier for %s %d %s" % (token.type, token.line, token.file))
         label = token.value
@@ -822,8 +823,10 @@ class VariableScopeReference(object):
         self.scope = scope
         self.parent = scope.parent
 
-    def contains(self, identity):
-        return identity in self.refs
+        self.class_counter = 0
+
+    def contains(self, label):
+        return label in self.refs
 
     def defineCellVar(self, identity):
 
@@ -833,18 +836,31 @@ class VariableScopeReference(object):
 
         self.scope.freevars.add(identity)
 
+    def containsIdentity(self, identity):
+        return any(ref.identity()==identity for ref in self.refs.values())
+
+
+alphabetL = 'abcdefghijklmnopqrstuvwxyz'
+alphabetU = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+alphabetN = '0123456789'
+# an alphabet that encodes with the following properties
+#  using 4 bits is only lowercase
+#  using 5 bits contains only lowercase and numbers
+#  using 6 bits is a valid javascript identifier
+alphabet64 = alphabetL + alphabetN + alphabetU + "_$"
+
 class MinifyVariableScope(VariableScope):
 
     def __init__(self, name, parent=None):
         super(MinifyVariableScope, self).__init__(name, parent)
         self.label_index = 0
         self.class_counter = 0
-        self.alphabetL = 'abcdefghijklmnopqrstuvwxyz'
-        self.alphabetU = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        self.alphabet1 = self.alphabetL + self.alphabetU + '0123456789'
 
     def _createRef(self, scflags, label, type_):
-        return MinifyRef(scflags, label, self.nextLabel(type_))
+
+        ident =  self.nextLabel(type_) # + '_' + label
+
+        return MinifyRef(scflags, label, ident)
 
     def nextLabel(self, type_):
         c = ""
@@ -864,17 +880,28 @@ class MinifyVariableScope(VariableScope):
                 n = self.label_index
                 self.label_index += 1
 
-                c = 'i' + str(n)
+                # first letter is lowercase, then base64 encode
+                # any remaining bits
+                c = alphabet64[n & 0b1111]
+                n>>=4
+                while n > 0:
+                    c = alphabet64[n & 0b111111] + c
+                    n>>=6
 
+                # prevent the identifier from being the same as a reserved word
+                # 'do' is 0b111110 and comes up fairly frequently
+                if c in Lexer.reserved_words:
+                    continue
                 # ensure this new label does not appear in a parent scope
                 found = False
                 scope = self.parent
                 while scope is not None:
-                    if c in scope.all_identifiers:
+                    if scope.containsIdentity(c):
                         found = True
                         break
                     scope = scope.parent
 
+                # this name is unique, use it!
                 if not found:
                     break
             return c
@@ -1113,6 +1140,7 @@ class TransformAssignScope(object):
             Token.T_EXPORT: self.visit_export,
             Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
             Token.T_FOR: self.visit_for,
+            Token.T_GET_ATTR: self.visit_get_attr,
 
             # method and class are added, but when compiling a
             # python module we assume a transform has already been
@@ -1142,6 +1170,8 @@ class TransformAssignScope(object):
             Token.T_BLOCK: self.finalize_block,
             Token.T_MODULE: self.finalize_module,
 
+            Token.T_CLASS: self.finalize_function,
+
         }
 
         self.defered_mapping = {
@@ -1159,6 +1189,8 @@ class TransformAssignScope(object):
 
             Token.T_LAMBDA: self.defered_function,
             Token.T_MODULE: self.defered_function,
+
+            Token.T_CLASS: self.defered_function,
         }
 
         self.states = {
@@ -1187,6 +1219,11 @@ class TransformAssignScope(object):
 
         self._transform(ast)
 
+        vars = dict(self.global_scope.fnscope)
+        vars.update(self.global_scope.flattenBlockScope())
+
+        return {label:ref.identity() for label,ref in vars.items()}
+
     def _transform(self, token):
 
         while self.seq:
@@ -1203,8 +1240,8 @@ class TransformAssignScope(object):
                 fn(flags, scope, token, parent)
 
     def initialState(self, token):
-
-        return (ST_VISIT, self.newScope('__main__'), token, None)
+        self.global_scope = self.newScope('__main__')
+        return (ST_VISIT, self.global_scope, token, None)
 
     # -------------------------------------------------------------------------
 
@@ -1231,45 +1268,14 @@ class TransformAssignScope(object):
         self._push_finalize(scope, token, parent)
         self._push_children(scope, token, flags)
 
-    def _handle_function(self, scope, token, refs):
-
-        name = scope.name + "." + token.children[0].value
-
-        parent = VariableScopeReference(scope, refs)
-        next_scope = self.newScope(name, parent)
-
-        # finalize the function scope once all children have been processed
-        self._push_finalize(next_scope, token, None)
-        self._push_defered(next_scope, token, None)
-
-        if token.children[2].type != Token.T_BLOCK:
-            # the parser should be run in python mode
-            raise TransformError(token.children[2], "expected block in function body")
-
-        self._push_children(next_scope, token.children[2])
-
-        for child in reversed(token.children[1].children):
-            if child.type == Token.T_ASSIGN:
-                # tricky, the rhs is a variable in THIS scope
-                # while the lhs is a variable in the NEXT scope
-                lhs, rhs = child.children
-                next_scope.define(SC_FUNCTION, lhs)
-                self._push_tokens(ST_VISIT, scope, [rhs], child)
-            elif child.type == Token.T_SPREAD:
-                tok, = child.children
-                next_scope.define(SC_FUNCTION, tok)
-            else:
-                next_scope.define(SC_FUNCTION, child)
-
     def visit_function(self, flags, scope, token, parent):
-
-
 
         # define the name of the function when it is not an
         # anonymous function and not a class constructor.
         if not isAnonymousFunction(token) and not isConstructor(token):
-            scflags = (flags & ST_SCOPE_MASK) >> 12
-            scope.define(scflags, token.children[0])
+            if not (token.type == Token.T_METHOD and not self.python):
+                scflags = (flags & ST_SCOPE_MASK) >> 12
+                scope.define(scflags, token.children[0])
 
         #self._handle_function(scope, token, {})
         scope.defer(token)
@@ -1308,21 +1314,11 @@ class TransformAssignScope(object):
         """
         this method is implemented only for the case when minifying javascript
         """
-        scflags = (flags & ST_SCOPE_MASK) >> 12
-        scope.define(scflags, token.children[0], DF_CLASS)
 
-        # load the class name(s) this class extends from
-        if len(token.children[1].children) > 0:
-            self._push_tokens(flags, scope, token.children[1].children, token.children[1])
-            #for child in token.children[1].children:
-            #    scope.load(child)
+        # define the class name in the current scope
+        scope.define(SC_FUNCTION, token.children[0])
 
-        name = scope.name + "." + token.children[0].value
-        next_scope = self.newScope(name, scope)
-
-        #for child in token.children[2].children:
-        #    next_scope.define(SC_FUNCTION, child)
-        self._push_children(next_scope, token.children[2], flags)
+        scope.defer(token)
 
     def visit_var(self, flags, scope, token, parent):
         flags = 0
@@ -1441,6 +1437,13 @@ class TransformAssignScope(object):
         self._push_children(scope, body, flags)
         self._push_children(scope, arglist, flags)
 
+    def visit_get_attr(self, flags, scope, token, parent):
+
+        lhs, rhs = token.children
+
+        self.seq.append((ST_VISIT, scope, rhs, token))
+        self.seq.append((ST_VISIT, scope, lhs, token))
+
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
@@ -1498,7 +1501,77 @@ class TransformAssignScope(object):
         scope.updateDefered()
         for defered in scope.defered_functions:
             refs = {**defered.fnrefs, **defered.blrefs}
-            self._handle_function(scope, defered.token, refs)
+            if defered.token.type == Token.T_CLASS:
+                self._handle_class(scope, defered.token, refs)
+            else:
+                self._handle_function(scope, defered.token, refs)
+
+    def _handle_function(self, scope, token, refs):
+
+        name = scope.name + "." + token.children[0].value
+        parent = VariableScopeReference(scope, refs)
+        next_scope = self.newScope(name, parent)
+
+        # finalize the function scope once all children have been processed
+        self._push_finalize(next_scope, token, None)
+        self._push_defered(next_scope, token, None)
+
+
+
+        # define the arguments to the function in the next scope
+
+        if token.children[1].type == Token.T_ARGLIST:
+            for child in reversed(token.children[1].children):
+                if child.type == Token.T_ASSIGN:
+                    # tricky, the rhs is a variable in THIS scope
+                    # while the lhs is a variable in the NEXT scope
+                    lhs, rhs = child.children
+                    next_scope.define(SC_FUNCTION, lhs)
+                    self._push_tokens(ST_VISIT, scope, [rhs], child)
+                elif child.type == Token.T_SPREAD:
+                    tok, = child.children
+                    next_scope.define(SC_FUNCTION, tok)
+                else:
+                    next_scope.define(SC_FUNCTION, child)
+        elif token.children[1].type == Token.T_TEXT:
+            next_scope.define(SC_FUNCTION, token.children[1])
+        else:
+            raise TransformError(token, "unexpected token type for function arglist")
+
+        # visit the body of the function in the next scope
+        if token.type != Token.T_LAMBDA and token.children[2].type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(token.children[2], "expected block in function body")
+
+        self._push_children(next_scope, token.children[2])
+
+    def _handle_class(self, scope, token, refs):
+
+        name = scope.name + "." + token.children[0].value
+        parent = VariableScopeReference(scope, refs)
+        next_scope = self.newScope(name, parent)
+
+        self._push_finalize(next_scope, token, None)
+        self._push_defered(next_scope, token, None)
+
+
+
+        # load the classes that this new class inherits from using the current scope
+        self._push_children(scope, token.children[1])
+
+
+
+        # load the class name(s) this class extends from
+        #if len(token.children[1].children) > 0:
+        #    self._push_tokens(0, scope, token.children[1].children, token.children[1])
+            #for child in token.children[1].children:
+            #    scope.load(child)
+
+
+
+        #for child in token.children[2].children:
+        #    next_scope.define(SC_FUNCTION, child)
+        self._push_children(next_scope, token.children[2])
 
 
     # -------------------------------------------------------------------------
@@ -1655,7 +1728,7 @@ class TransformClassToFunction(TransformBaseV2):
         ln = token.line
         co = token.index
         for method in static_methods:
-            var = Token(Token.T_BINARY, ln, co, '.', [
+            var = Token(Token.T_GET_ATTR, ln, co, '.', [
                 Token(Token.T_TEXT, ln, co, name.value),
                 Token(Token.T_ATTR, ln, co, method.children[0].value)
             ])
@@ -1797,35 +1870,20 @@ def main_var2():
 
     text = """
 
-        function f() {
-            let a = []
-            {
-
-                let x = 2
-                function f1(){return x}
-                a.push(f1)
-            }
-
-            {
-                let x = 4
-                function f1(){return x}
-                a.push(f1)
-            }
-            return a
-        }
-
-        a = f()
-        console.log(a.length)
+        //const f = (d,k,v) => d[k] = v
+        foo=1234
+        myTag = ()=>null
+        x = myTag`foo: ${foo}`
 
     """
 
     tokens = Lexer().lex(text)
     parser =  Parser()
-    parser.python = True
+    parser.python = False
     ast = parser.parse(tokens)
 
-    #tr = TransformMinifyScope()
-    tr = TransformAssignScope()
+    tr = TransformMinifyScope()
+    #tr = TransformAssignScope()
     tr.transform(ast)
 
     print(ast.toString(3))
@@ -1847,29 +1905,6 @@ def main_cls():
     tr.transform(ast)
 
     print(ast.toString(3))
-
-def labels():
-    alphabetL = 'abcdefghijklmnopqrstuvwxyz'
-    alphabetU = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    alphabet1 = alphabetL + alphabetU + '0123456789'
-
-
-    for n in range(256):
-
-        c = ""
-
-        j = n & 0b1111
-        c += alphabetL[j]
-
-        n>>=4
-
-        while n > 0:
-            j = n & 0b11111
-            c = alphabet1[j] + c
-            n>>=5
-
-        print(c)
-
 
 if __name__ == '__main__':
     main_var2()

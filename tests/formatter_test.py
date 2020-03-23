@@ -339,6 +339,18 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(output, expected)
 
+    def test_001_get_attr(self):
+
+        text = """
+            x.y
+        """
+        expected = "x.y"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(output, expected)
+
     def test_001_ternary_1(self):
 
         text = """
@@ -702,6 +714,25 @@ class FormatterTestCase(unittest.TestCase):
         self._chkeq("""
             class C {static f() {} f2(){}}
         """, 'class C{static f(){};f2(){}}')
+
+    def test_001_unpack_sequence(self):
+
+        self._chkeq("""
+            [a, b, ...rest] = [1,2,3,4,5]
+        """, '[a,b,...rest]=[1,2,3,4,5]')
+
+    def test_001_destructure_object(self):
+        self._chkeq("""
+            var a,b,c,d;
+            var o = {a: 1, b:2, c:3, d:4};
+            {a: a, b:b, c:c, d:d} = o
+        """, 'var a,b,c,d;var o={a:1,b:2,c:3,d:4};{a:a,b:b,c:c,d:d}=o')
+
+    def test_001_tagged_template(self):
+        self._chkeq("""
+            myTag`width: ${width}px`
+        """, 'myTag`width: ${width}px`')
+
 
 class FormatterStressTestCase(unittest.TestCase):
 

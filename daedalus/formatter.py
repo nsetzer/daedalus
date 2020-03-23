@@ -151,7 +151,7 @@ class Formatter(object):
                 else:
                     seq.append((depth, token.type, token.value))
                 seq.append((depth, None, token.children[1]))
-            elif token.type in (Token.T_BINARY, Token.T_LOGICAL_OR, Token.T_LOGICAL_AND, Token.T_INSTANCE_OF):
+            elif token.type in (Token.T_BINARY, Token.T_GET_ATTR, Token.T_LOGICAL_OR, Token.T_LOGICAL_AND, Token.T_INSTANCE_OF):
                 seq.append((depth, None, token.children[1]))
 
                 if token.value.isalpha():
@@ -195,7 +195,25 @@ class Formatter(object):
             elif token.type == Token.T_NUMBER:
 
                 out.append((token.type, token.value))
-            elif token.type in (Token.T_STRING, Token.T_TEMPLATE_STRING):
+            elif token.type == Token.T_TAGGED_TEMPLATE:
+                lhs,rhs = token.children
+                seq.append((depth, None, rhs))
+                seq.append((depth, None, lhs))
+            elif token.type == Token.T_TEMPLATE_EXPRESSION:
+                seq.append((depth, Token.T_SPECIAL, '}'))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+                seq.append((depth, Token.T_SPECIAL, '${'))
+            elif token.type == Token.T_TEMPLATE_STRING:
+                # the value of a template string is the original unparsed value
+                # the children represent the parsed and transformed value
+                # children are either T_STRING or T_TEMPLATE_EXPRESSION
+                seq.append((depth, Token.T_SPECIAL, '`'))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+                seq.append((depth, Token.T_SPECIAL, '`'))
+
+            elif token.type == Token.T_STRING:
 
                 out.append((token.type, token.value))
             elif token.type == Token.T_KEYWORD:
@@ -365,7 +383,6 @@ class Formatter(object):
                 for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
                 seq.append((depth, token.type, token.value))
-
             elif token.type == Token.T_EMPTY_TOKEN:
                 pass
             elif token.type == Token.T_CLOSURE:
@@ -379,7 +396,7 @@ class Formatter(object):
 def main():  # pragma: no cover
 
     text1 = """
-    async function (x) { return 1 }
+    tag`foo: ${bar} px`
     """
 
     #text1 = open("./res/daedalus/index.js").read()

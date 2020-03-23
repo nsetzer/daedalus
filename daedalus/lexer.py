@@ -410,7 +410,7 @@ class Lexer(LexerBase):
                     raise self._error("expected character")
                 self._putch(c)
 
-            elif c == "\n":
+            elif c == "\n" and string_terminal != '`':
                 raise self._error("unterminated string")
 
             elif c == string_terminal:
@@ -571,6 +571,8 @@ class Lexer(LexerBase):
         if self._type == Token.T_SPECIAL and self._tok not in operators3:
             self._error("unknown operator")
         super()._push()
+
+Lexer.reserved_words = {*reserved_words, *reserved_words_extra}
 
 def main():  # pragma: no cover
 
