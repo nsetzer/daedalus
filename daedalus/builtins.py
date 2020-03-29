@@ -211,7 +211,15 @@ class JsObject(JsObjectBase):
 
     def __getattr__(self, name):
         try:
-            return self._x_daedalus_js_attrs[name]
+            if name in self._x_daedalus_js_attrs:
+                return self._x_daedalus_js_attrs[name]
+
+            prototype = self._x_daedalus_js_attrs['prototype']
+            if prototype:
+                if hasattr(prototype, name):
+                    return getattr(prototype, name)
+                return prototype[name]
+            return JsUndefined._instance
         except KeyError:
             return JsUndefined._instance
 
@@ -236,6 +244,11 @@ class JsObject(JsObjectBase):
         """implements dual of keys() for convenience"""
         return self._x_daedalus_js_attrs.values()
 
+    def items(self):
+        """implements dual of keys() for convenience"""
+        return self._x_daedalus_js_attrs.items()
+
+
 JsObject.Token = Token(Token.T_TEXT, 0, 0, "JsObject")
 
 class JsObjectType(JsObjectBase):
@@ -258,9 +271,10 @@ setattr(JsObjectType, 'is', lambda a, b: a is b)
 JsObjectType.Token = Token(Token.T_TEXT, 0, 0, "JsObjectType")
 
 def JsNew(constructor, *args):
-
     if isinstance(constructor, JsFunction):
         obj = JsObject()
+        if constructor.prototype:
+            obj.prototype = constructor.prototype
         constructor.fn(*args, this=obj)
         return obj
     else:
@@ -268,17 +282,55 @@ def JsNew(constructor, *args):
 
 JsNew.Token = Token(Token.T_TEXT, 0, 0, "JsNew")
 
+class JsSuper(JsObjectBase):
+    def __init__(self):
+        super(JsSuper, self).__init__()
+
+
+    def __call__(self, *args):
+        print("call super")
+
+        frame = inspect.currentframe()
+        try:
+            code = frame.f_back.f_code
+            code_locals = frame.f_back.f_locals
+            nvars = code.co_argcount
+            if 'this' in code_locals:
+                this = code_locals['this']
+                print(this)
+
+        finally:
+            del frame
+
+        return None
+
+    def __getitem__(self, varname):
+        print("call super getitem")
+
+JsSuper.Token = Token(Token.T_TEXT, 0, 0, "JsSuper")
+
+
 class JsFunction(JsObjectBase):
     def __init__(self, fn, this=None):
         super(JsFunction, self).__init__()
         self.fn = fn
         self.this = this
+        self.prototype = JsObject()
 
     def __call__(self, *args):
         return self.fn(*args, this=self.this)
 
     def bind(self, obj):
         return JsFunction(self.fn, obj)
+
+    def call(self, this, *args):
+        # https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/call
+        return self.fn(*args, this=this)
+
+    def apply(self, this, arglist):
+        # https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/apply
+        return self.fn(*arglist, this=this)
+
 
 JsFunction.Token = Token(Token.T_TEXT, 0, 0, "JsFunction")
 
@@ -558,5 +610,6 @@ def defaultGlobals():
         'Math': JsMath,
         'JsTypeof': JsTypeof,
         'JsInstanceof': JsInstanceof,
+        'super': JsSuper(),
     }
     return names

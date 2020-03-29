@@ -5,7 +5,7 @@ let sigal_counter = 0
 export function Signal(element, name) {
     const event_name = "onSignal_" + (sigal_counter++) + "_" + name
 
-    const signal = () => {}
+    const signal = {}
     signal._event_name = event_name
     signal._slots = []
     signal.emit = (obj=null) => {

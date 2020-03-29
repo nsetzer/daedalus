@@ -87,7 +87,6 @@ class Token(object):
     T_ASYNC_ANONYMOUS_GENERATOR = "T_ASYNC_ANONYMOUS_GENERATOR"
 
     T_METHOD = "T_METHOD"
-    T_STATIC_METHOD = "T_STATIC_METHOD"
     T_LAMBDA = "T_LAMBDA"  # arrow function
 
     # these variables are assigned by the transform engine for variable scopes

@@ -649,8 +649,6 @@ class Builder(object):
         if len(jsm.module_exports) > 1:
             sys.stderr.write("warning: root module exports more than one symbol")
 
-
-
         if standalone is False:
             order = self._sort_modules(jsm)
             ast = Token(Token.T_MODULE, 0, 0, "")
@@ -691,19 +689,13 @@ class Builder(object):
         error = None
         try:
             self.globals = {}
-            #ast = Token.deepCopy(ast)
-            #self.globals = TransformMinifyScope().transform(ast)
 
-            #                20.03KB gzipped (74.23KB uncompressed)
-            #Compiled Size:  16.94KB gzipped (68.3KB uncompressed)
-            #Saved 15.41% off the gzipped size (8.00% without gzip)
-            #                20.04KB gzipped (86.95KB uncompressed)
-            #Compiled Size:  18.16KB gzipped (73.21KB uncompressed)
-            #Saved 9.36% off the gzipped size (15.81% without gzip)
+            if minify:
+                ast = Token.deepCopy(ast)
+                self.globals = TransformMinifyScope().transform(ast)
 
-            js = Formatter(opts={'minify': minify}).format(ast)
-
-
+            formatter = Formatter(opts={'minify': minify})
+            js = formatter.format(ast)
 
         except TokenError as e:
             filepath = ""

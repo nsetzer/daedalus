@@ -160,7 +160,6 @@ class Parser(object):
             (L2R, self.visit_binary, [':']),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
-            (L2R, self.visit_static, ['static']),
             (L2R, self.visit_keyword, []),
             (L2R, self.visit_async, ['async']),
             (L2R, self.visit_keyword_import_export, []),
@@ -208,6 +207,8 @@ class Parser(object):
         TransformOptionalChaining().transform(mod)
         TransformNullCoalescing().transform(mod)
         TransformMagicConstants().transform(mod)
+
+        # the template transform is last because it recursively uses the parser
         TransformTemplateString().transform(mod)
 
         return mod
@@ -999,27 +1000,6 @@ class Parser(object):
 
         return 1
 
-    def visit_static(self, parent, tokens, index, operators):
-
-        token = tokens[index]
-        if token.type != Token.T_KEYWORD or token.value not in operators:
-            return 1
-
-        # --
-
-        rhs = self.consume(tokens, token, index, 1)
-
-        if rhs.type == Token.T_FUNCTIONCALL:
-            rhs.type = Token.T_STATIC_METHOD
-
-        else:
-            raise ParseError(rhs, "unexpected token on rhs of 'static'")
-
-        tokens[index] = rhs
-
-        return 1
-
-
     def visit_keyword(self, parent, tokens, index, operators):
 
         token = tokens[index]
@@ -1203,43 +1183,52 @@ class Parser(object):
 
         token.children.append(rhs1)
 
-        for i, child in enumerate(rhs1.children):
+        index = 0
+        while index < len(rhs1.children):
+            child = rhs1.children[index]
             # a function call inside of an object is actually a method def
+            offset = 1
             if child.type == Token.T_FUNCTIONCALL:
                 child.type = Token.T_METHOD
 
-                tokb = self.consume(rhs1.children, child, i, 1)
+                # store meta data about the method in the value position
+                # the metadata will be get, set, public, private, static
+                # not all of those keywords are valid javascript
 
-                if tokb.type != Token.T_GROUPING:
-                    if self.python:
-                        tmp = Token(Token.T_BLOCK, tokb.line, tokb.index, '{}')
-                        tmp.children= [tokb]
-                        tokb = tmp
+                li = index - 1
+                if li >= 0:
+                    tok = rhs1.children[li]
+                    if tok.type in (Token.T_KEYWORD, Token.T_TEXT) and \
+                      tok.value in ('get', 'set', 'public', 'private', 'static'):
+                        rhs1.children.pop(li)
+                        offset -= 1
+                        child.value = tok.value
                     else:
-                        self.warn(tokb, Parser.W_BLOCK_UNSAFE)
+                        child.value = ''
                 else:
-                    tokb.type = Token.T_BLOCK
+                    child.value = ''
 
-                child.children.append(tokb)
-
-            # the static keyword converted a function call into static method
-            # get the body of the method
-            if child.type == Token.T_STATIC_METHOD:
-
-                tokb = self.consume(rhs1.children, child, i, 1)
-
-                if tokb.type != Token.T_GROUPING:
-                    if self.python:
-                        tmp = Token(Token.T_BLOCK, tokb.line, tokb.index, '{}')
-                        tmp.children= [tokb]
-                        tokb = tmp
+                ri = index + offset
+                if ri < len(rhs1.children):
+                    tok = rhs1.children.pop(ri)
+                    if tok.type != Token.T_GROUPING:
+                        if self.python:
+                            tmp = Token(Token.T_BLOCK, tok.line, tok.index, '{}')
+                            tmp.children= [tok]
+                            tok = tmp
+                        else:
+                            self.warn(tok, Parser.W_BLOCK_UNSAFE)
                     else:
-                        self.warn(tokb, Parser.W_BLOCK_UNSAFE)
+                        tok.type = Token.T_BLOCK
+                    child.children.append(tok)
+
                 else:
-                    tokb.type = Token.T_BLOCK
+                    raise ParseError(child, "expected function body")
 
-                child.children.append(tokb)
 
+
+
+            index += offset
     def collect_keyword_switch_case(self, tokens, index):
         token = tokens[index]
 
@@ -1867,7 +1856,12 @@ def main():  # pragma: no cover
     export default class a {}
     """
 
-    text1 = """myTag`width: ${s.width}px`"""
+    text1 = """
+
+    class C extends D {
+        static method() {}
+    }
+    """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)
     mod = Parser().parse(tokens)

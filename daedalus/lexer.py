@@ -1,3 +1,4 @@
+#! cd .. && python3 -m daedalus.lexer
 
 # TODO: better support for regex
 import logging
@@ -580,10 +581,7 @@ def main():  # pragma: no cover
     # r.match(2/3)
 
     text1 = """
-    6 * 7
-    6 *= 7
-    6 ** 7
-    x **= 5
+    let $ = 0
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":

@@ -25,7 +25,7 @@ def diag(tokens):
     print([t.value for t in tokens])
 
 def isalphanum(a, b):
-    """ return true if a+b is not a reversable operation"""
+    """ return true if a+b is not a reversible operation"""
     if a and b:
         c1 = a[-1]
         c2 = b[0]
@@ -38,13 +38,13 @@ class Formatter(object):
     def __init__(self, opts=None):
         super(Formatter, self).__init__()
 
-        self.pretty_print = True
-        self.padding = "    "
-
         if not opts:
             opts = {}
 
-        self.minify = opts.get('minify', False)
+        self.minify = opts.get('minify', True)
+        self.pretty_print = not self.minify
+        self.indent_width = int(opts.get('indent', 2))
+        self.max_columns = int(opts.get('columns', 80 if self.pretty_print else 500))
 
     def format(self, mod):
 
@@ -56,17 +56,21 @@ class Formatter(object):
 
         self.tokens = self._format(mod)
 
-        return self._write_minified()
+        if self.pretty_print:
+            return self._write_pretty()
+        else:
+            return self._write_minified()
 
     def _write_minified(self):
 
-        # maximum length for any line is 4095 becuase of limitations
-        # of some javascript compilers
-        width = 240
+        # maximum length for any line is 4095 because of limitations
+        # with some javascript compilers
+
+        width = self.max_columns
         line_len = 0
         prev_type = Token.T_NEWLINE
         prev_text = ""
-        for type, text in self.tokens:
+        for depth, type, text in self.tokens:
 
             if type == Token.T_NEWLINE:
                 continue
@@ -78,6 +82,35 @@ class Formatter(object):
             if line_len > width and text in {'(', '{', '[', ';', ','}:
                 self.stream.write("\n")
                 line_len = 0
+            prev_type = type
+            prev_text = text
+        return self.stream.getvalue()
+
+    def _write_pretty(self):
+
+        width = self.max_columns
+        line_len = 0
+        prev_type = Token.T_NEWLINE
+        prev_text = ""
+        padding = " " * self.indent_width
+        for depth, type, text in self.tokens:
+
+            if line_len == 0 and type != Token.T_NEWLINE:
+                line_len += self.stream.write(padding * (depth-1))
+
+            elif isalphanum(prev_text, text):
+                line_len += self.stream.write(" ")
+
+            line_len += self.stream.write(text)
+
+            if type == Token.T_NEWLINE:
+                line_len = 0
+
+            elif line_len > width and text in {'(', '{', '[', ';', ','}:
+                self.stream.write("\n")
+                line_len += self.stream.write(padding * (depth-1))
+                line_len = 0
+
             prev_type = type
             prev_text = text
         return self.stream.getvalue()
@@ -96,17 +129,23 @@ class Formatter(object):
 
             if isinstance(token, str):
 
-                out.append((state, token))
+                out.append((depth, state, token))
             elif token.type == Token.T_MODULE:
                 insert = False
+                if self.pretty_print and len(token.children) > 0:
+                    seq.append((depth + 1, Token.T_SPECIAL, ";"))
                 for child in reversed(token.children):
                     if insert:
-                        seq.append((depth, Token.T_SPECIAL, ";"))
+                        seq.append((depth + 1, Token.T_NEWLINE, "\n"))
+                        seq.append((depth + 1, Token.T_SPECIAL, ";"))
                     seq.append((depth + 1, None, child))
                     insert = True
             elif token.type == Token.T_BLOCK:
                 seq.append((depth, Token.T_SPECIAL, token.value[1]))
+                seq.append((depth, Token.T_NEWLINE, "\n"))
                 first = True
+                if self.pretty_print and len(token.children) > 0:
+                    seq.append((depth + 1, Token.T_SPECIAL, ";"))
                 for child in reversed(token.children):
                     if child.type in (Token.T_CASE, Token.T_DEFAULT) or first:
                         insert = False
@@ -114,12 +153,25 @@ class Formatter(object):
                         insert = True
 
                     if insert:
-                        seq.append((depth, Token.T_SPECIAL, ";"))
+                        seq.append((depth + 1, Token.T_NEWLINE, "\n"))
+                        seq.append((depth + 1, Token.T_SPECIAL, ";"))
 
                     seq.append((depth + 1, None, child))
 
                     first = False
+
+                seq.append((depth, Token.T_NEWLINE, "\n"))
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
+
+            elif token.type == Token.T_OBJECT:
+                seq.append((depth, Token.T_OBJECT, token.value[1]))
+                insert = False
+                for child in reversed(token.children):
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ","))
+                    seq.append((depth + 1, None, child))
+                    insert = True
+                seq.append((depth, Token.T_OBJECT, token.value[0]))
             elif token.type in (Token.T_OBJECT, Token.T_LIST, Token.T_GROUPING, Token.T_ARGLIST):
                 # commas are implied between clauses
                 if len(token.value)!=2:
@@ -188,13 +240,13 @@ class Formatter(object):
                     seq.append((depth, None, token.children[0]))
             elif token.type in (Token.T_TEXT, Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR, Token.T_FREE_VAR):
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_REGEX:
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_NUMBER:
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_TAGGED_TEMPLATE:
                 lhs,rhs = token.children
                 seq.append((depth, None, rhs))
@@ -212,19 +264,18 @@ class Formatter(object):
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
                 seq.append((depth, Token.T_SPECIAL, '`'))
-
             elif token.type == Token.T_STRING:
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_KEYWORD:
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_ATTR:
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_DOCUMENTATION:
 
-                out.append((token.type, token.value))
+                out.append((depth, token.type, token.value))
             elif token.type == Token.T_NEWLINE:
 
                 raise FormatError(token, "unexpected")
@@ -235,6 +286,8 @@ class Formatter(object):
 
                 seq.append((depth, None, token.children[2]))
                 if len(token.children[1].children) > 0:
+                    if self.pretty_print:
+                        seq.append((depth, Token.T_TEXT, " "))
                     seq.append((depth, None, token.children[1].children[0]))
                     seq.append((depth, Token.T_KEYWORD, "extends"))
                 seq.append((depth, None, token.children[0]))
@@ -248,12 +301,8 @@ class Formatter(object):
                 seq.append((depth, None, token.children[2]))
                 seq.append((depth, None, token.children[1]))
                 seq.append((depth, None, token.children[0]))
-                seq.append((depth, token.type, token.value))
-            elif token.type == Token.T_STATIC_METHOD:
-                seq.append((depth, None, token.children[2]))
-                seq.append((depth, None, token.children[1]))
-                seq.append((depth, None, token.children[0]))
-                seq.append((depth, Token.T_KEYWORD, "static"))
+                if token.value:
+                    seq.append((depth, token.type, token.value))
             elif token.type == Token.T_GENERATOR:
                 seq.append((depth, None, token.children[2]))
                 seq.append((depth, None, token.children[1]))
@@ -364,7 +413,7 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE:
 
-                out.append((token.type, token.value))
+                out.append((depth,token.type, token.value))
             elif token.type == Token.T_RETURN:
                 for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
@@ -396,7 +445,22 @@ class Formatter(object):
 def main():  # pragma: no cover
 
     text1 = """
-    tag`foo: ${bar} px`
+    x = {
+        a: b,
+        1: 2,
+    }
+    if (a == b) {
+        console.log("hello world")
+        console.log("hello world")
+        console.log("hello world")
+        console.log("hello world")
+    }
+
+    class A extends B {
+        constructor () {
+            super();
+        }
+    }
     """
 
     #text1 = open("./res/daedalus/index.js").read()
