@@ -1,6 +1,6 @@
 
 
-import daedalus with {
+from module daedalus import {
     StyleSheet, DomElement,
     TextElement, ListItemElement, ListElement,
     HeaderElement, ButtonElement, NumberInputElement, LinkElement

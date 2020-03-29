@@ -1,7 +1,13 @@
 
 import os
 import sys
-import readline
+
+# magic import for better input support
+# may not be available on windows
+try:
+    import readline
+except ImportError as e:
+    pass
 
 from daedalus.lexer import Lexer, Token, TokenError
 from daedalus.parser import Parser

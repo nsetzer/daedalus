@@ -65,7 +65,6 @@ class TransformGrouping(TransformBase):
                    (token.type == Token.T_ASYNC_GENERATOR) or \
                    (token.type == Token.T_ASYNC_ANONYMOUS_FUNCTION) or \
                    (token.type == Token.T_ASYNC_ANONYMOUS_GENERATOR) or \
-                   (token.type == Token.T_STATIC_METHOD) or \
                    (token.type == Token.T_METHOD) or \
                    (token.type == Token.T_CLASS) or \
                    (token.type == Token.T_BLOCK) or \
@@ -848,6 +847,20 @@ alphabetN = '0123456789'
 #  using 5 bits contains only lowercase and numbers
 #  using 6 bits is a valid javascript identifier
 alphabet64 = alphabetL + alphabetN + alphabetU + "_$"
+# inverts the logic, so that 4 bits produce only uppercase
+alphabet64i = alphabetU + alphabetN + alphabetL + "_$"
+
+def encode_identifier(alphabet, n):
+    """
+    maps the first 16 unique variables to a single character
+    maps the first 1024 unique variables to a 2 character string
+    """
+    c = alphabet[n & 0b1111]
+    n>>=4
+    while n > 0:
+        c = c + alphabet[n & 0b111111]
+        n>>=6
+    return c
 
 class MinifyVariableScope(VariableScope):
 
@@ -869,24 +882,20 @@ class MinifyVariableScope(VariableScope):
             # closure compiler can detect duplicate class names even
             # in different scopes. use the parent scope to keep track
             # of unique names
+            # class names always start with a capital letter
             scope = self.parent
             while scope.parent is not None:
                 scope = scope.parent
-            c = 'C' + str(scope.class_counter)
+
+            n = scope.class_counter
             scope.class_counter += 1
+            c = encode_identifier(alphabet64i, n)
             return c
         else:
             while True:
                 n = self.label_index
                 self.label_index += 1
-
-                # first letter is lowercase, then base64 encode
-                # any remaining bits
-                c = alphabet64[n & 0b1111]
-                n>>=4
-                while n > 0:
-                    c = alphabet64[n & 0b111111] + c
-                    n>>=6
+                c = encode_identifier(alphabet64, n)
 
                 # prevent the identifier from being the same as a reserved word
                 # 'do' is 0b111110 and comes up fairly frequently
@@ -925,7 +934,6 @@ isFunction = lambda token: token.type in (
             Token.T_GENERATOR,
             Token.T_ASYNC_GENERATOR,
             Token.T_METHOD,
-            Token.T_STATIC_METHOD,
             Token.T_ANONYMOUS_FUNCTION,
             Token.T_ASYNC_ANONYMOUS_FUNCTION,
             Token.T_ANONYMOUS_GENERATOR,
@@ -1120,7 +1128,6 @@ class TransformAssignScope(object):
             Token.T_GENERATOR: self.visit_function,
             Token.T_ASYNC_GENERATOR: self.visit_function,
             Token.T_METHOD: self.visit_function,
-            Token.T_STATIC_METHOD: self.visit_function,
 
             Token.T_ANONYMOUS_FUNCTION: self.visit_function,
             Token.T_ASYNC_ANONYMOUS_FUNCTION: self.visit_function,
@@ -1158,7 +1165,6 @@ class TransformAssignScope(object):
             Token.T_GENERATOR: self.finalize_function,
             Token.T_ASYNC_GENERATOR: self.finalize_function,
             Token.T_METHOD: self.finalize_function,
-            Token.T_STATIC_METHOD: self.finalize_function,
 
             Token.T_ANONYMOUS_FUNCTION: self.finalize_function,
             Token.T_ASYNC_ANONYMOUS_FUNCTION: self.finalize_function,
@@ -1180,7 +1186,6 @@ class TransformAssignScope(object):
             Token.T_GENERATOR: self.defered_function,
             Token.T_ASYNC_GENERATOR: self.defered_function,
             Token.T_METHOD: self.defered_function,
-            Token.T_STATIC_METHOD: self.defered_function,
 
             Token.T_ANONYMOUS_FUNCTION: self.defered_function,
             Token.T_ASYNC_ANONYMOUS_FUNCTION: self.defered_function,
@@ -1646,8 +1651,13 @@ class TransformBaseV2(object):
             index = 0
             while index < len(token.children):
                 child = token.children[index]
-                self.visit(token, child, index)
-                index += 1
+                rv = self.visit(token, child, index)
+                if rv is None:
+                    index += 1
+                elif isinstance(rv, int):
+                    indx += rv
+                else:
+                    raise RuntimeError("visit returned non-integer")
 
             # once every child has been visited push the available
             # children onto the stack to be processed
@@ -1693,7 +1703,6 @@ class TransformClassToFunction(TransformBaseV2):
             self.visit_class(token, child, index)
 
     def visit_class(self, parent, token, index):
-        # TODO: implement inheritance
 
         name = token.children[0]
         extends = token.children[1]
@@ -1705,9 +1714,9 @@ class TransformClassToFunction(TransformBaseV2):
         static_methods = []
 
         for child in clsbody.children:
-            if child.type == Token.T_METHOD and child.children[0].value == 'constructor':
+            if child.children[0].value == 'constructor':
                 constructor = child
-            elif child.type == Token.T_STATIC_METHOD:
+            elif child.value == 'static':
                 static_methods.append(child)
 
             else:
@@ -1719,6 +1728,19 @@ class TransformClassToFunction(TransformBaseV2):
                     Token(Token.T_ARGLIST, 0, 0, '()'),
                     Token(Token.T_BLOCK, 0, 0, '{}')]
                 )
+
+        conbody = constructor.children[2]
+
+        # methods assign to the prototype
+        # static methods assign to the class
+        # both as functions
+
+        #ln = name.line
+        #co = name.index
+        #lhs = Token(Token.T_TEXT, ln, co, name.value)
+        #rhs = Token(Token.T_ATTR, ln, co, 'prototype')
+        #getattr = Token(Token.T_GET_ATTR, ln, co, ".")
+        #getattr.children = [lhs, rhs]
 
 
         # process all static methods.
@@ -1907,4 +1929,7 @@ def main_cls():
     print(ast.toString(3))
 
 if __name__ == '__main__':
-    main_var2()
+    for i in range(2000):
+        sys.stdout.write(encode_identifier(alphabet64, i))
+        sys.stdout.write(' ')
+    #main_var2()

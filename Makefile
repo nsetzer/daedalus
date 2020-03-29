@@ -26,7 +26,7 @@ cover:
 
 .PHONY: demo
 demo:
-	python -m daedalus build_html ./examples/minesweeper.js ./docs/index.html
+	python -m daedalus build --onefile ./examples/minesweeper.js ./docs
 
 .PHONY: serve_demo
 serve_demo:

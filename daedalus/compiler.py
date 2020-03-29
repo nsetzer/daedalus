@@ -1171,7 +1171,7 @@ class Compiler(object):
         N = 1
         child = token.children[0]
         if child.type == Token.T_FUNCTIONCALL:
-            N = len(child.children) - 1
+            N += len(child.children[1].children)
         # TODO: pop top if state&ST_LOAD is false
         self.bc.append(BytecodeInstr('CALL_FUNCTION', N))
 
@@ -1548,9 +1548,15 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-
-    [a,b,...rest]=[1,2,3,4,5]
-
+            function Shape() {
+                this.width = 5;
+                this.height = 10;
+                this.area = () => this.width * this.height
+            }
+            console.log(">>>")
+            const s = new Shape()
+            console.log(">>>")
+            //return s.area()
     """
 
     tokens = Lexer().lex(text1)
@@ -1564,12 +1570,15 @@ def main():  # pragma: no cover
     try:
         interp.compile(ast)
 
+    except Exception as e:
+        print(e)
+        return
     finally:
         print(ast.toString(3))
 
     interp.dump()
 
-    print(interp.execute())
+    print(interp.function_body())
 
 if __name__ == '__main__':  # pragma: no cover
     main()
