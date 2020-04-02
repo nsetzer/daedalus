@@ -236,6 +236,8 @@ class Formatter(object):
                     seq.append((depth, None, token.children[1]))
                     seq.append((depth, Token.T_SPECIAL, ","))
                     seq.append((depth, None, token.children[0]))
+                elif len(token.children) == 0:
+                    raise FormatError(token, "no children")
                 else:
                     seq.append((depth, None, token.children[0]))
             elif token.type in (Token.T_TEXT, Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR, Token.T_FREE_VAR):

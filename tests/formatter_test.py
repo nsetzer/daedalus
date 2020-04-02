@@ -733,6 +733,35 @@ class FormatterTestCase(unittest.TestCase):
             myTag`width: ${width}px`
         """, 'myTag`width: ${width}px`')
 
+    @unittest.skip("not implemented")
+    def test_evaljs_scope_hoist_function_def(self):
+        """
+        this test demonstrates how named functions are hosted
+
+        - functions are defined at the top of the current block
+        - default arguments can be modified after defining the function
+        - functions are available after a block scope ends
+        """
+        text = """
+
+            main = function() {
+              // B is undefined
+              console.log("result 1", B) // B is undefined
+              {
+                console.log("result 2", B()) // prints undefined
+                function B(arg=x) {
+                  return arg;
+                }
+                var x = 1
+                console.log("result 3", B()) // prints 1
+                var x = 2;
+                console.log("result 4", B()) // prints 2
+              }
+              console.log("result 5", B) // B is defined
+            }
+            main()
+        """
+        result = self.evaljs(text)
 
 class FormatterStressTestCase(unittest.TestCase):
 

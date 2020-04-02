@@ -1458,7 +1458,7 @@ class Parser(object):
         path = self.consume(tokens, token, index, 1)
 
         if path.type != Token.T_STRING:
-            raise ParseError(module, "expect string for include path")
+            raise ParseError(token, "expect string for include path")
 
         token.children.append(path)
 

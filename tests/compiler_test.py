@@ -670,6 +670,35 @@ class CompilerTestCase(unittest.TestCase):
         """
         result = self.evaljs(text)
 
+    @unittest.skip("not implemented")
+    def test_evaljs_function_arg_scope(self):
+        """
+        this test demonstrates how named functions are hosted
+
+        - functions are defined at the top of the current block
+        - default arguments can be modified after defining the function
+        - functions are available after a block scope ends
+        """
+        text = """
+
+            var main = function() {
+              let a = []
+              let x = 1
+                function A(arg0=x) {
+                return arg0
+              }
+              a.push(A())
+              x = 2
+              a.push(A())
+              return a
+            }
+            return main()
+        """
+        result = self.evaljs(text)
+        self.assertEqual(result[0], 1)
+        self.assertEqual(result[1], 2)
+
+
 def main():
     unittest.main()
 
