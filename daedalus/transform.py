@@ -940,6 +940,13 @@ isFunction = lambda token: token.type in (
             Token.T_ASYNC_ANONYMOUS_GENERATOR,
             Token.T_LAMBDA,
     )
+isNamedFunction = lambda token: token.type in (
+            Token.T_FUNCTION,
+            Token.T_ASYNC_FUNCTION,
+            Token.T_GENERATOR,
+            Token.T_ASYNC_GENERATOR,
+            Token.T_METHOD,
+    )
 isAnonymousFunction = lambda token: token.type in (
             Token.T_ANONYMOUS_FUNCTION,
             Token.T_ASYNC_ANONYMOUS_FUNCTION,
@@ -1260,7 +1267,21 @@ class TransformAssignScope(object):
     def visit_module(self, flags, scope, token, parent):
         self._push_finalize(scope, token, parent)
         self._push_defered(scope, token, parent)
+
+        self._hoist_functions(scope, token)
+
         self._push_children(scope, token, flags)
+
+    def _hoist_functions(self, scope, token):
+        # preprocess each block in order to hoist function definitions
+        # this fixes function naming in block scopes for formatting
+        # javascript, but does nothing to fix compiling javascript to python
+        for child in token.children:
+            if isNamedFunction(child):
+                if not (token.type == Token.T_METHOD and not self.python):
+                    scope.define(0, child.children[0])
+            elif child.type == Token.T_CLASS:
+                scope.define(0, child.children[0])
 
     def visit_block(self, flags, scope, token, parent):
 
@@ -1270,17 +1291,27 @@ class TransformAssignScope(object):
 
         scope.pushBlockScope()
 
+        self._hoist_functions(scope, token)
+
         self._push_finalize(scope, token, parent)
         self._push_children(scope, token, flags)
 
     def visit_function(self, flags, scope, token, parent):
 
+        if isNamedFunction(token):
+            if parent.type not in (Token.T_BLOCK, Token.T_MODULE):
+                # this should never happen
+                raise TransformError(parent, "visit function, parent node is not a block scope: %s>%s" % (parent.type, token.type))
+
         # define the name of the function when it is not an
         # anonymous function and not a class constructor.
-        if not isAnonymousFunction(token) and not isConstructor(token):
-            if not (token.type == Token.T_METHOD and not self.python):
-                scflags = (flags & ST_SCOPE_MASK) >> 12
-                scope.define(scflags, token.children[0])
+        ##if not isAnonymousFunction(token) and not isConstructor(token):
+        ##    scflags = (flags & ST_SCOPE_MASK) >> 12
+        ##    # when processing for javascript output (opposed to compiling
+        ##    # for python) don't define methods
+        ##    if not (token.type == Token.T_METHOD and not self.python):
+        ##        print("!!", hex(scflags))
+        ##        scope.define(scflags, token.children[0])
 
         #self._handle_function(scope, token, {})
         scope.defer(token)
@@ -1321,7 +1352,8 @@ class TransformAssignScope(object):
         """
 
         # define the class name in the current scope
-        scope.define(SC_FUNCTION, token.children[0])
+        # see visit_block
+        #scope.define(SC_FUNCTION, token.children[0])
 
         scope.defer(token)
 
@@ -1548,7 +1580,14 @@ class TransformAssignScope(object):
             # the parser should be run in python mode
             raise TransformError(token.children[2], "expected block in function body")
 
-        self._push_children(next_scope, token.children[2])
+        if token.children[2].type == Token.T_BLOCK:
+
+            self._hoist_functions(next_scope, token.children[2])
+
+            self._push_children(next_scope, token.children[2])
+        else:
+            #raise TransformError(token.children[2], "expected block in function def")
+            self._push_children(next_scope, token.children[2])
 
     def _handle_class(self, scope, token, refs):
 
@@ -1577,7 +1616,6 @@ class TransformAssignScope(object):
         #for child in token.children[2].children:
         #    next_scope.define(SC_FUNCTION, child)
         self._push_children(next_scope, token.children[2])
-
 
     # -------------------------------------------------------------------------
 
@@ -1892,10 +1930,13 @@ def main_var2():
 
     text = """
 
-        //const f = (d,k,v) => d[k] = v
-        foo=1234
-        myTag = ()=>null
-        x = myTag`foo: ${foo}`
+        main() {
+            console.log(f)
+            function f() {}
+            console.log(f)
+        }
+
+
 
     """
 
@@ -1929,7 +1970,4 @@ def main_cls():
     print(ast.toString(3))
 
 if __name__ == '__main__':
-    for i in range(2000):
-        sys.stdout.write(encode_identifier(alphabet64, i))
-        sys.stdout.write(' ')
-    #main_var2()
+    main_var2()

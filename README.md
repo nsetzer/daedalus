@@ -10,7 +10,7 @@ A sample web server is also provided for testing and supports reloading of javas
 
 Supports:
 * ES6
-* Basic Javascript minification (60% of original size)
+* Basic Javascript minification (50% of original size)
 * Precompiled style sheets
 
 ### Install
@@ -29,7 +29,6 @@ python setup.py install
 
 ```bash
 daedalus serve index.js
-daedalus compile index.js index.min.js
 daedalus build index.js ./build
 ```
 
