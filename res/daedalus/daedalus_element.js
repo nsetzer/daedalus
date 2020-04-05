@@ -37,6 +37,10 @@ function generateElementId() {
 
 export class DomElement {
     constructor(type, props, children) {
+        if (type===undefined) {
+            // this would otherwise cause a bizarre rendering error
+            throw `DomElement type is undefined. super called with ${arguments.length} arguments`
+        }
         this.type = type;
         if (props===undefined) {
             this.props = {};
@@ -236,9 +240,7 @@ export class TextElement extends DomElement {
     getText() {
         return this.props.nodeValue;
     }
-
 }
-
 
 export class LinkElement extends DomElement {
 
