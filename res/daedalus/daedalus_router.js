@@ -132,81 +132,170 @@ function patternMatch(pattern, location) {
 }
 
 /**
-@class Router
+ * A class which controls the child element of another DomElement using
+ * the current location.
+ *
+ * This class is designed to be embeddable. The method handleLocationChanged
+ * should be called by the user whenever the location has been changed.
+ */
+export class Router {
 
-*/
-export class Router extends DomElement {
-    constructor(route_list, default_element) {
-        super("div", {}, [])
-
-        this.default_element = default_element
-        this.routes = route_list.map(item => {
-            const re = patternToRegexp(item.pattern);
-            return {re, pattern:item.pattern, element: item.element};
-        })
+    /**
+     * container: a DomElement
+     * default_callback: function(setElementCallback)
+     */
+    constructor(container, default_callback) {
+        this.container = container
+        this.default_callback = default_callback
+        this.routes = [] // list of {pattern, callback, auth, noauth, fallback, re}
         this.current_index = -1
         this.current_location = null
-
-        this.connect(history.locationChanged, this.doRoute.bind(this))
-
     }
 
-    elementMounted() {
-        this.doRoute()
-    }
-
-    doRoute() {
+    handleLocationChanged(location) {
 
         // find the first matching route and displat that child
-        let i=0;
-        while (i < this.routes.length) {
-            const item = this.routes[i]
-            const match = locationMatch(item.re, window.location.pathname)
+        let index=0;
+        while (index < this.routes.length) {
+            const item = this.routes[index]
+            const match = locationMatch(item.re, location)
             if (match !== null) {
 
                 // if the location results in a new child to be diplayed
                 // then display that child. otherwise there is no need
                 // to update the child
-                if (this.current_index !== i) {
-                    // replace a callable with an element when it
-                    // finally routes
-                    if (util.isFunction(item.element)) {
-                        item.element = item.element()
-                    }
-                    this.children = [item.element]
-                    this.update()
+
+                let fn = (element) => this.setElement(index, location, match, element)
+                if (this.doRoute(item, fn, match)) {
+                    return
                 }
-
-                // Note: order matters
-                // updateState after this.update()
-                // otherwise partial parentFiber update effect has no parent dom
-
-                // if the location has changed, update the match for the child
-                if (this.current_location !== window.location.pathname) {
-                    item.element.updateState({match: match})
-                }
-
-                this.current_index = i;
-                this.current_location = window.location.pathname;
-
-
-                return;
             }
-            i += 1;
+            index += 1;
         }
 
-        if (util.isFunction(this.default_element)) {
-            this.default_element = this.default_element()
-        }
-
-        this.current_index = -1;
         // no route, display the default element
-        if (this.default_element) {
-            this.children = [this.default_element]
-            this.update()
+        let fn = (element) => this.setElement(-1, location, null, element)
+        this.default_callback(fn)
+        return
+    }
+
+    /**
+     * item: the route object
+     * fn: a callback function which will set the element in the container
+     * match: the location match result
+     *
+     * When a location matches a known route this function is called
+     * the route object contains a callback which should be called
+     * In which case this method returns true. If this route should not
+     * be followed return false
+     *
+     */
+    doRoute(item, fn, match) {
+        item.callback(fn, match)
+        return true
+    }
+
+    setElement(index, location, match, element) {
+        if (!!element) {
+            console.log(element)
+            if (index != this.current_index) {
+                this.container.children = [element]
+                this.container.update()
+            }
+
+            if (this.current_location !== location) {
+                element.updateState({match: match})
+            }
+
+            this.current_index = index
         } else {
-            this.children = []
-            this.update()
+            this.container.children = []
+            this.current_index = -1
+            this.container.update()
         }
+
+        this.current_location = location
+    }
+
+    addRoute(pattern, callback) {
+        const re = patternToRegexp(pattern);
+        this.routes.push({pattern, callback, re})
+    }
+
+    /**
+     * set the callback to use for the default route, when no
+     * other defined route matches the current location.
+     *
+     * callback :: function(setElementCallback)
+     *   the callback should be a function which accepts asingle arugment,
+     *   a function that will be used to set an element as a child of the
+     *   container
+     */
+    setDefaultRoute(callback) {
+        this.default_callback = callback
+    }
+}
+
+export class AuthenticatedRouter extends Router {
+
+    constructor(container, route_list, default_callback) {
+        super(container, route_list, default_callback)
+        this.authenticated = false;
+    }
+
+    /**
+     *
+     */
+    doRoute(item, fn, match) {
+
+        let has_auth = this.isAuthenticated()
+
+        if (item.auth===true && item.noauth === undefined) {
+
+            if (!!has_auth) {
+                item.callback(fn, match)
+                return true
+            } else if (item.fallback !== undefined) {
+                history.pushState({}, "", item.fallback)
+                return true
+            }
+        }
+
+        if (item.auth===undefined && item.noauth === true) {
+            console.log(item, has_auth)
+            if (!has_auth) {
+                item.callback(fn, match)
+                return true
+            } else if (item.fallback !== undefined) {
+                history.pushState({}, "", item.fallback)
+                return true
+            }
+        }
+
+        if (item.auth===undefined && item.noauth === undefined) {
+            item.callback(fn, match)
+            return true
+        }
+
+        return false
+
+    }
+
+    isAuthenticated() {
+        return this.authenticated;
+    }
+
+    setAuthenticated(value) {
+        this.authenticated = !!value;
+    }
+
+    addAuthRoute(pattern, callback, fallback) {
+        const re = patternToRegexp(pattern);
+        this.routes.push({pattern, callback, auth:true, fallback, re})
+    }
+
+    addNoAuthRoute(pattern, callback, fallback) {
+        const re = patternToRegexp(pattern);
+        this.routes.push({pattern, callback, noauth:true, fallback, re})
     }
 }

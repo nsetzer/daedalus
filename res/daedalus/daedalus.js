@@ -3,7 +3,6 @@ include './daedalus_util.js'
 include './daedalus_element.js'
 include './daedalus_location.js'
 include './daedalus_router.js'
-include './daedalus_auth.js'
 include './daedalus_fileapi.js'
 include './daedalus_platform.js'
 
@@ -129,6 +128,7 @@ function reconcileChildren(parentFiber) {
     while (prev.next) {
         prev = prev.next;
     }
+
     parentFiber.children.forEach(
         (element, index) => {
             if (!element || !element.type) {

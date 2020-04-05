@@ -2,34 +2,36 @@
 ## Import and Export
 
 
-### Module Import
+### Import Daedalus package
 ```javascript
-import module
-import module.submodule
+import module package_name
+import package_name.subpackage
 
-import module with {name[, name...]}
+from module package_name import {name[, name...]}
 
 ```
 
-A javascript file can import other modules which are then made available
-to the current scope using the imported name. Named Exports can brought
-into the current scope by using the *with* keyword and specifing the names
-in a curly bracketed comma separated list.
+Daedalus ignores standard javascript import syntax, To import a daedalus
+package use the 'import module' syntax. The package is made available
+to the current scope using the imported name. Named Exports can be brought
+into the current scope by using the 'from module' syntax and specifing the names
+in a curly bracketed comma separated list. Packages use a dotted-name to
+specify a location on the filesystem.
 
 ### Module Search Path
 
-tbd
+The default search path includes the directory of the root javascript file.
 
-### File Import
+### Module Include
 
 ```javascript
-import './path/to/file.js'
+include './path/to/file.js'
 ```
 
 A Module can be split into multiple files and the compiler will merge the files together.
-An import statement with a relative path to another file will include that file within the module.
+An include statement with a relative path to another file will include that file within the module.
 The contents are wrapped inside an IIFI providing a private namespace for non-exported variables.
-All exported names from the file are available in the current scope and are also marked as exported from the module.
+All exported names from the file are available in the current scope and are automatically exported from the module.
 
 ### Export
 
@@ -83,3 +85,14 @@ a ?? b
 
 ```
 
+## Extended Object Keys
+
+```javascript
+let obj = {
+    min-width: '100px'
+}
+```
+
+When specifying an object the 'key' can be an arbitrary constant expression
+each token will be merged into a single string. This allows for an easier
+way to specify CSS properties.
