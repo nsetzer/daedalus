@@ -524,7 +524,8 @@ class Ref(object):
         super(Ref, self).__init__()
         self.flags = flags
         self.label = label
-
+        self.load_count = 0
+        self.token = None
     def identity(self):
         raise NotImplementedError()
 
@@ -609,6 +610,11 @@ class VariableScope(object):
         self.defered_functions = []
 
     def _getRef(self, scope, label):
+        """
+        returns the reference if it exists for a label in the given scope
+        search the current, then parent block scopes before searching
+        in the function scope
+        """
 
         ref = None
 
@@ -698,6 +704,8 @@ class VariableScope(object):
 
         # print("define name", self.depth, token.value, token.line, scope2str(scflags), self.name)
 
+        new_ref.token = token
+
         return new_ref
 
     def _load_store(self, token, load):
@@ -766,6 +774,9 @@ class VariableScope(object):
 
         # print("load__" if load else "store_", "name", self.depth, token.value, scope2str(ref.flags))
 
+        if load:
+            ref.load_count += 1
+
         return ref
 
     def define(self, scflags, token, type_=DF_IDENTIFIER):
@@ -785,8 +796,27 @@ class VariableScope(object):
 
     def popBlockScope(self):
         mapping = self.blscope.pop()
+
+        for key, ref in mapping.items():
+            if ref.load_count == 0:
+                if ref.token:
+                    print("variable defined but never used: %s %s %s" % (key, ref.token.line, ref.token.index))
+                else:
+                    print("variable defined but never used: %s" % (key,))
+
         self.blscope_stale.update(mapping)
         return mapping
+
+    def popScope(self):
+
+        # proof of concept
+        for scope in [self.blscope[0], self.fnscope]:
+            for key, ref in scope.items():
+                if ref.load_count == 0:
+                    if ref.token:
+                        print("variable defined but never used: %s %s %s" % (key, ref.token.line, ref.token.index))
+                    else:
+                        print("variable defined but never used: %s" % (key,))
 
     def flattenBlockScope(self):
         out = {}
@@ -1488,6 +1518,8 @@ class TransformAssignScope(object):
 
     def finalize_module(self, flags, scope, token, parent):
 
+        scope.popScope()
+
         if scope.cellvars or scope.freevars:
             raise TokenError(token, "unexpected closure")
 
@@ -1502,6 +1534,9 @@ class TransformAssignScope(object):
     def finalize_function(self, flags, scope, token, parent):
 
         if self.python:
+
+            scope.popScope()
+
             closure = Token(Token.T_CLOSURE, 0, 0, "")
 
             for name in sorted(scope.cellvars):
@@ -1909,35 +1944,14 @@ def main_var2():
     from .parser import Parser
     text = """
 
+        var w = 2
+        let z = 2
         {
+            let y = 2
             {
-
-              function f1() {
-                return x + y
-              }
-
-              let x= 1
-
-              console.log(f1())
+                let x = 1
             }
-
-            let y = 2;
-
-            var a=1;
-            var a=2;
         }
-    """
-
-    text = """
-
-        main() {
-            console.log(f)
-            function f() {}
-            console.log(f)
-        }
-
-
-
     """
 
     tokens = Lexer().lex(text)

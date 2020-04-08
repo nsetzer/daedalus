@@ -15,7 +15,6 @@ def findFile(name, search_paths):
     look for a file in a directory, if not found search the
     default resources directory
     """
-
     for path in search_paths:
         filepath = os.path.abspath(os.path.join(path, name))
         if os.path.isfile(filepath):
