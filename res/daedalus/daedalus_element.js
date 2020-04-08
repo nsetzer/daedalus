@@ -371,3 +371,247 @@ export class NumberInputElement extends DomElement {
         this.valueChanged.emit(this.props)
     }
 }
+
+
+// Swap two nodes
+function swap(nodeA, nodeB) {
+    if (!nodeA || !nodeB) {
+        return
+    }
+    const parentA = nodeA.parentNode;
+    const siblingA = nodeA.nextSibling === nodeB ? nodeA : nodeA.nextSibling;
+
+    // Move `nodeA` to before the `nodeB`
+    nodeB.parentNode.insertBefore(nodeA, nodeB);
+
+    // Move `nodeB` to before the sibling of `nodeA`
+    parentA.insertBefore(nodeB, siblingA);
+};
+
+// Check if `nodeA` is above `nodeB`
+function isAbove(nodeA, nodeB) {
+    if (!nodeA || !nodeB) {
+        return false
+    }
+    // Get the bounding rectangle of nodes
+    const rectA = nodeA.getBoundingClientRect();
+    const rectB = nodeB.getBoundingClientRect();
+
+    return (rectA.top + rectA.height / 2 < rectB.top + rectB.height / 2);
+};
+
+function childIndex(node) {
+    let count = 0;
+    while( (node = node.previousSibling) != null ) {
+      count++;
+    }
+    return count
+}
+
+
+const placeholder = StyleSheet({
+    background-color: "#edf2f7",
+    border: "2px dashed #cbd5e0",
+    width: '100%',
+    height: '100%',
+})
+
+/**
+ * Reference implementation for a Draggable Item
+ */
+class DraggableListItem extends DomElement {
+
+    constructor() {
+        super("div", {}, []);
+    }
+
+    onTouchStart(event) {
+        this.attrs.parent.handleChildDragBegin(this, event)
+    }
+
+    onTouchMove(event) {
+        this.attrs.parent.handleChildDragMove(this, event)
+    }
+
+    onTouchEnd(event) {
+        this.attrs.parent.handleChildDragEnd(this, {target: this.getDomNode()})
+    }
+
+    onTouchCancel(event) {
+        this.attrs.parent.handleChildDragEnd(this, {target: this.getDomNode()})
+    }
+
+    onMouseDown(event) {
+        this.attrs.parent.handleChildDragBegin(this, event)
+    }
+
+    onMouseMove(event) {
+        this.attrs.parent.handleChildDragMove(this, event)
+    }
+
+    onMouseLeave(event) {
+        this.attrs.parent.handleChildDragEnd(this, event)
+    }
+
+    onMouseUp(event) {
+        this.attrs.parent.handleChildDragEnd(this, event)
+    }
+}
+
+/**
+ * A div where child elements can be dragged with a mouse or touch event
+ *
+ */
+export class DraggableList extends DomElement {
+
+    constructor() {
+        super("div", {}, [])
+
+
+        this.attrs = {
+            x: null,
+            y: null,
+            placeholder: null,
+            placeholderClassName: placeholder,
+            draggingEle: null,
+            isDraggingStarted: false,
+            indexStart: -1,
+            lockX: true, // prevent moving in the x direction
+        }
+    }
+
+    setPlaceholderClassName(className) {
+        this.attrs.placeholderClassName = className
+    }
+
+    /**
+     * child: a DomElement that is a child of this element
+     * event: a mouse or touch event
+     */
+    handleChildDragBegin(child, event) {
+
+        event.preventDefault()
+
+        let evt = (event?.touches || event?.originalEvent?.touches)
+        if (evt) {
+            event = evt[0]
+        }
+
+        // TODO: function whic uses getDomNode() and reproduces the following
+        //       allow for a button within the element to begin the drag
+
+        this.attrs.draggingEle = child.getDomNode();
+        this.attrs.indexStart = childIndex(this.attrs.draggingEle)
+
+        // Calculate the mouse position
+        const rect = this.attrs.draggingEle.getBoundingClientRect();
+        this.attrs.x = event.clientX - rect.left;
+        //this.attrs.y = event.clientY - rect.top;
+        this.attrs.y = event.pageY - rect.top;
+    }
+
+    handleChildDragMove(child, event) {
+        if (this.attrs.draggingEle!==child.getDomNode()) {
+            return;
+        }
+
+        event.preventDefault()
+
+        let evt = (event?.touches || event?.originalEvent?.touches)
+        if (evt) {
+            event = evt[0]
+        }
+
+        const draggingRect = this.attrs.draggingEle.getBoundingClientRect();
+
+        if (!this.attrs.isDraggingStarted) {
+            this.attrs.isDraggingStarted = true;
+
+            // Let the placeholder take the height of dragging element
+            // So the next element won't move up
+            this.attrs.placeholder = document.createElement('div');
+            this.attrs.placeholder.classList.add(this.attrs.placeholderClassName);
+            this.attrs.draggingEle.parentNode.insertBefore(this.attrs.placeholder, this.attrs.draggingEle.nextSibling);
+            this.attrs.placeholder.style.height = `${draggingRect.height}px`;
+        }
+
+        this.attrs.draggingEle.style.position = 'absolute';
+
+        //let rect = this.getDomNode().getBoundingClientRect()
+        //let top = rect.top
+        //let bot = rect.bottom
+        // Set position for dragging element
+        //the original equation, which does not support scrolling is
+        //  let ypos = event.pageY - this.attrs.y
+        // this fixed version may not allways work
+        let ypos = event.pageY - this.attrs.y + window.scrollY
+        //if (ypos > top && ypos < bot) {}
+        this.attrs.draggingEle.style.top = `${ypos}px`;
+
+
+        if (!this.attrs.lockX) {
+            this.attrs.draggingEle.style.left = `${event.pageX - this.attrs.x}px`;
+        }
+
+        // The current order
+        // prevEle
+        // draggingEle
+        // placeholder
+        // nextEle
+        const prevEle = this.attrs.draggingEle.previousElementSibling;
+        const nextEle = this.attrs.placeholder.nextElementSibling;
+
+        // The dragging element is above the previous element
+        // User moves the dragging element to the top
+        if (prevEle && isAbove(this.attrs.draggingEle, prevEle)) {
+            // The current order    -> The new order
+            // prevEle              -> placeholder
+            // draggingEle          -> draggingEle
+            // placeholder          -> prevEle
+            swap(this.attrs.placeholder, this.attrs.draggingEle);
+            swap(this.attrs.placeholder, prevEle);
+            return;
+        }
+
+        // The dragging element is below the next element
+        // User moves the dragging element to the bottom
+        if (nextEle && isAbove(nextEle, this.attrs.draggingEle)) {
+            // The current order    -> The new order
+            // draggingEle          -> nextEle
+            // placeholder          -> placeholder
+            // nextEle              -> draggingEle
+            swap(nextEle, this.attrs.placeholder);
+            swap(nextEle, this.attrs.draggingEle);
+        }
+    }
+
+    handleChildDragEnd(child, event) {
+        if (this.attrs.draggingEle!==child.getDomNode()) {
+            return;
+        }
+        // Remove the placeholder
+        this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
+
+        this.attrs.draggingEle.style.removeProperty('top');
+        this.attrs.draggingEle.style.removeProperty('left');
+        this.attrs.draggingEle.style.removeProperty('position');
+
+        // todo: update the model
+        // the children will need to be updated to reflect reality
+        const indexEnd = childIndex(this.attrs.draggingEle)
+
+        this.updateModel(this.attrs.indexStart, indexEnd)
+
+        this.attrs.x = null;
+        this.attrs.y = null;
+        this.attrs.draggingEle = null;
+        this.attrs.isDraggingStarted = false;
+    }
+
+    updateModel(indexStart, indexEnd) {
+        // no reason to call update() since the DOM is already correct
+        // it is the virtual DOM that is out of date
+        this.children.splice(indexEnd, 0, this.children.splice(indexStart, 1)[0]);
+        //console.log(this.children.map(child => child.children[1].getText()))
+    }
+}

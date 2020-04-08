@@ -12,9 +12,10 @@ function array_move(arr, p1, p2) {
         return
     }
 
-    let item = arr[p1]
+    //let item = arr[p1]
     //console.log(s1, s2, "|", p1, "+>", p2, "+>", arr.indexOf(item))
     arr.splice(p2, 0, arr.splice(p1, 1)[0]);
+    return;
 }
 
 function randomFloat(min, max) {
