@@ -492,6 +492,13 @@ export class DraggableList extends DomElement {
 
         event.preventDefault()
 
+        if (!!this.attrs.draggingEle) {
+            // previous drag did not complete. cancel that drag and ignore
+            // this event
+            this.handleChildDragCancel();
+            return;
+        }
+
         let evt = (event?.touches || event?.originalEvent?.touches)
         if (evt) {
             event = evt[0]
@@ -589,6 +596,10 @@ export class DraggableList extends DomElement {
         if (this.attrs.draggingEle!==child.getDomNode()) {
             return;
         }
+        this.handleChildDragCancel();
+    }
+
+    handleChildDragCancel() {
         // Remove the placeholder
         this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
 
@@ -607,6 +618,7 @@ export class DraggableList extends DomElement {
         this.attrs.draggingEle = null;
         this.attrs.isDraggingStarted = false;
     }
+
 
     updateModel(indexStart, indexEnd) {
         // no reason to call update() since the DOM is already correct
