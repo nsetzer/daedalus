@@ -137,6 +137,13 @@ class FormatterTestCase(unittest.TestCase):
            }
         """, "f=function(){return 1}")
 
+    def test_001_named_function_def(self):
+        self._chkeq("""
+            void function iife() {
+                console.log("test")
+            }();
+        """, "void function iife(){console.log(\"test\")}()")
+
     def test_001_number_int(self):
         self._chkeq("""
             x = 1234
