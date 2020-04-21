@@ -688,7 +688,7 @@ class ParserFunctionTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_ANONYMOUS_FUNCTION', '',
+            TOKEN('T_ANONYMOUS_FUNCTION', 'function',
                 TOKEN('T_TEXT', 'Anonymous'),
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_TEXT', 'x')),
@@ -758,6 +758,32 @@ class ParserFunctionTestCase(unittest.TestCase):
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_TEXT', 'b'))
         )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_void_iife(self):
+
+        text = """
+            void function iife() {
+                console.log("test")
+            }();
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_PREFIX', 'void',
+                TOKEN('T_FUNCTIONCALL', '',
+                    TOKEN('T_FUNCTION', 'function',
+                        TOKEN('T_TEXT', 'iife'),
+                        TOKEN('T_ARGLIST', '()'),
+                        TOKEN('T_BLOCK', '{}',
+                            TOKEN('T_FUNCTIONCALL', '',
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_TEXT', 'console'),
+                                    TOKEN('T_ATTR', 'log')),
+                                TOKEN('T_ARGLIST', '()',
+                                    TOKEN('T_STRING', '"test"'))))),
+                    TOKEN('T_ARGLIST', '()'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 

@@ -150,18 +150,12 @@ class Parser(object):
             (R2L, self.visit_assign_v2, ['=>', '=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
-            #(R2L, self.visit_lambda, ['=>']),
-            #(L2R, self.visit_assign, ['=', '+=', '-=', '**=', '*=', '/=',
-            #                          '&=', '<<=', '>>=', '&=', '^=',
-            #                          '|=']),
-            #(L2R, self.visit_lambda, ['=>']),
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_binary, [':']),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_keyword, []),
-            (L2R, self.visit_async, ['async']),
             (L2R, self.visit_keyword_import_export, []),
             (L2R, self.visit_cleanup, []),
         ]
@@ -461,62 +455,27 @@ class Parser(object):
 
             return self._offset
 
+        elif token.type == token.T_KEYWORD and token.value in ("function", "function*"):
+            self.collect_keyword_function(tokens, index)
+
+        # class cannot be collected here yet because the `extends X` clause
+        # can be an arbitrary expression.
+
+        #elif token.type == token.T_KEYWORD and token.value == "class":
+        #    self.collect_keyword_class(tokens, index)
+
         elif token.type == Token.T_GROUPING and token.value == '()':
             i1 = self.peek_token(tokens, token, index, -1)
-            # or (tokens[i1].type == Token.T_BINARY and tokens[i1].value in (".", "?."))
             if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
                 lhs = self.consume(tokens, token, index, -1)
-                i2 = self.peek_keyword(tokens, token, index-1, -1)
-                getblock = False
                 n = 0
-                # fixes for the forms :
-                #       f = function(){}
-                #       f = function*(){}
-                #       f = async function(){}
-                #       f = async function*(){}
-                if i2 and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'async':
 
-                    tok_async = self.consume_keyword(tokens, token, index-1, -1)
-                    self._offset -= 1
-                    n = 1
-                    if lhs.type == Token.T_KEYWORD and lhs.value == "function":
-                        tok1 = Token(Token.T_ASYNC_ANONYMOUS_FUNCTION, token.line, token.index, "")
-                        getblock = True
-                    elif lhs.type == Token.T_KEYWORD and lhs.value == "function*":
-                        tok1 = Token(Token.T_ASYNC_ANONYMOUS_GENERATOR, token.line, token.index, "")
-                        getblock = True
-                    else:
-                        raise ParseError(tok_async, "unexpected keyword")
-
-                elif lhs.type == Token.T_KEYWORD and lhs.value == "function":
-                    tok1 = Token(Token.T_ANONYMOUS_FUNCTION, token.line, token.index, "")
-                    getblock = True
-                elif lhs.type == Token.T_KEYWORD and lhs.value == "function*":
-                    tok1 = Token(Token.T_ANONYMOUS_GENERATOR, token.line, token.index, "")
-                    getblock = True
-                else:
-                    tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
+                tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
 
                 tok1.children = [lhs, token]
 
-                if getblock:
-                    tok1.children[0] = Token(Token.T_TEXT, token.line, token.index, "Anonymous")
-                    tokb = self.consume(tokens, token, index + self._offset - 1, 1)
-
-                    if tokb.type != Token.T_GROUPING:
-                        if self.python:
-                            tmp = Token(Token.T_BLOCK, tokb.line, tokb.index, '{}')
-                            tmp.children= [tokb]
-                            tokb = tmp
-                        else:
-                            self.warn(tokb, Parser.W_BLOCK_UNSAFE)
-                    else:
-                        tokb.type = Token.T_BLOCK
-
-                    tok1.children.append(tokb)
-
                 token.type = Token.T_ARGLIST
-                tokens[index - n - 1] = tok1
+                tokens[index - 1] = tok1
                 return self._offset
 
         elif token.type == Token.T_GROUPING and token.value == '[]':
@@ -971,35 +930,6 @@ class Parser(object):
 
         return 1
 
-    def visit_async(self, parent, tokens, index, operators):
-
-        token = tokens[index]
-        if token.type != Token.T_KEYWORD or token.value not in operators:
-            return 1
-
-        # --
-
-        rhs = self.consume(tokens, token, index, 1)
-
-        if rhs.type == Token.T_FUNCTION:
-            rhs.type = Token.T_ASYNC_FUNCTION
-
-        elif rhs.type == Token.T_ANONYMOUS_FUNCTION:
-            rhs.type = Token.T_ASYNC_ANONYMOUS_FUNCTION
-
-        elif rhs.type == Token.T_GENERATOR:
-            rhs.type = Token.T_ASYNC_GENERATOR
-
-        elif rhs.type == Token.T_ANONYMOUS_GENERATOR:
-            rhs.type = Token.T_ASYNC_ANONYMOUS_GENERATOR
-
-        else:
-            raise ParseError(rhs, "unexpected token on rhs of 'async'")
-
-        tokens[index] = rhs
-
-        return 1
-
     def visit_keyword(self, parent, tokens, index, operators):
 
         token = tokens[index]
@@ -1031,12 +961,6 @@ class Parser(object):
 
         elif token.value == 'for':
             self.collect_keyword_for(tokens, index)
-
-        elif token.value == 'function':
-            self.collect_keyword_function(tokens, index)
-
-        elif token.value == 'function*':
-            self.collect_keyword_function(tokens, index)
 
         elif token.value == 'if':
             self.collect_keyword_if(tokens, index)
@@ -1229,6 +1153,7 @@ class Parser(object):
 
 
             index += offset
+
     def collect_keyword_switch_case(self, tokens, index):
         token = tokens[index]
 
@@ -1566,12 +1491,14 @@ class Parser(object):
 
         # function () {}
         # function name() {}
+        anonymous = False
 
         if rhs1.type == Token.T_FUNCTIONCALL:
             token.children = rhs1.children
         elif rhs1.type == Token.T_GROUPING:
             # anonymous function
-            token.children = [Token(Token.T_TEXT, token.line, token.index, ""), rhs1]
+            anonymous = True
+            token.children = [Token(Token.T_TEXT, token.line, token.index, "Anonymous"), rhs1]
         else:
             # name, arglist
             token.children = [rhs1, self.consume(tokens, token, index, 1)]
@@ -1595,9 +1522,31 @@ class Parser(object):
             body.type = Token.T_BLOCK
 
         if token.value == 'function*':
-            token.type = Token.T_GENERATOR
+            if anonymous:
+                token.type = Token.T_ANONYMOUS_GENERATOR
+            else:
+                token.type = Token.T_GENERATOR
         else:
-            token.type = Token.T_FUNCTION
+            if anonymous:
+                token.type = Token.T_ANONYMOUS_FUNCTION
+            else:
+                token.type = Token.T_FUNCTION
+
+        ia = self.peek_keyword(tokens, token, index, -1)
+        if ia and tokens[ia].type == Token.T_KEYWORD and tokens[ia].value == 'async':
+            _ = self.consume_keyword(tokens, token, index, -1)
+
+            if token.type == Token.T_FUNCTION:
+                token.type = Token.T_ASYNC_FUNCTION
+
+            elif token.type == Token.T_ANONYMOUS_FUNCTION:
+                token.type = Token.T_ASYNC_ANONYMOUS_FUNCTION
+
+            elif token.type == Token.T_GENERATOR:
+                token.type = Token.T_ASYNC_GENERATOR
+
+            elif token.type == Token.T_ANONYMOUS_GENERATOR:
+                token.type = Token.T_ASYNC_ANONYMOUS_GENERATOR
 
         token.children.append(body)
 
@@ -1857,10 +1806,13 @@ def main():  # pragma: no cover
     """
 
     text1 = """
+    void function iife() {
+        console.log("test"r)
+    }();
 
-    class C extends D {
-        static method() {}
-    }
+    f = async function () {
+            return 1
+           }
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)

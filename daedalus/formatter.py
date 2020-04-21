@@ -447,22 +447,9 @@ class Formatter(object):
 def main():  # pragma: no cover
 
     text1 = """
-    x = {
-        a: b,
-        1: 2,
-    }
-    if (a == b) {
-        console.log("hello world")
-        console.log("hello world")
-        console.log("hello world")
-        console.log("hello world")
-    }
-
-    class A extends B {
-        constructor () {
-            super();
-        }
-    }
+    f = async function () {
+            return 1
+           }
     """
 
     #text1 = open("./res/daedalus/index.js").read()
