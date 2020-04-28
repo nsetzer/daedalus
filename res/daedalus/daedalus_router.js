@@ -137,6 +137,8 @@ function patternMatch(pattern, location) {
  *
  * This class is designed to be embeddable. The method handleLocationChanged
  * should be called by the user whenever the location has been changed.
+ * This class can be used independently of the window location, provided
+ * the user can provide an alternative location.
  */
 export class Router {
 

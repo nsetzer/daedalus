@@ -48,53 +48,73 @@ export function render_update(element) {
 DomElement.prototype._update = render_update
 
 function workLoop(deadline) {
-    //let t0 = performance.now();
-    let debug = workstack.length > 1 || updatequeue.length > 1
 
     let shouldYield = false;
 
     const initialWorkLength = workstack.length;
     const initialUpdateLength = updatequeue.length;
 
-    workCounter = 0
-    while (!shouldYield) {
-        while (workstack.length > 0 && !shouldYield) {
-            let unit = workstack.pop();
-            performUnitOfWork(unit);
+    let initial_delay = deadline.timeRemaining()
+
+    /*
+    friendly: when set to true, obey the deadline timer
+    battery powered devices are frequently given < 1 second to
+    perform all updates, which are measured to take < 50 ms
+    in the worst case.
+    */
+    let friendly = 0;
+
+    if (friendly) {
+        while (!shouldYield) {
+            while (workstack.length > 0 && !shouldYield) {
+                let unit = workstack.pop();
+                performUnitOfWork(unit);
+                shouldYield = deadline.timeRemaining() < 1;
+            }
+
+            if (workstack.length == 0 && wipRoot) {
+                commitRoot();
+            }
+
+
+            if (workstack.length == 0 && updatequeue.length > 0 && !wipRoot) {
+
+                wipRoot = updatequeue[0];
+                workstack.push(wipRoot);
+                updatequeue.shift();
+            }
+
             shouldYield = deadline.timeRemaining() < 1;
         }
+    } else {
+        while (workstack.length > 0) {
+            let unit = workstack.pop();
+            performUnitOfWork(unit);
+        }
 
-        if (workstack.length == 0 && wipRoot) {
+        if (wipRoot) {
             commitRoot();
         }
 
-
-        if (workstack.length == 0 && updatequeue.length > 0 && !wipRoot) {
+        if (updatequeue.length > 0 && !wipRoot) {
 
             wipRoot = updatequeue[0];
             workstack.push(wipRoot);
             updatequeue.shift();
         }
-        shouldYield = deadline.timeRemaining() < 1;
     }
 
-    debug = workstack.length > 1 || updatequeue.length > 1
+    //-------------
+
+    let debug = workstack.length > 1 || updatequeue.length > 1
     if (!!debug) {
-        console.warn("workloop failed to finish",
+        console.warn("workloop failed to finish", initial_delay, ":"
             initialWorkLength, '->', workstack.length,
             initialUpdateLength, '->', updatequeue.length)
     }
 
-    //if (workCounter > 0) {
-    //    console.log(`updated ${workCounter} nodes`)
-    //}
+    requestIdleCallback(workLoop, {timeout: 250});
 
-    requestIdleCallback(workLoop);
-    //let t1 = performance.now();
-    //let elapsed = t1 - t0
-    //if (elapsed > 0) {
-    //    console.log("timeit", deadline, t1 - t0)
-    //}
 }
 requestIdleCallback(workLoop);
 
