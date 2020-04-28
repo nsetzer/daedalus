@@ -119,10 +119,20 @@ function joinpath(...parts) {
 
 function splitpath(path) {
     const parts = path.split('/');
-    if (parts[parts.length-1] === '') {
+    if (parts.length > 0 && parts[parts.length-1].length === 0) {
         parts.pop()
     }
     return parts;
+}
+
+// return the directory name containing the given path
+// assumes unix style paths
+function dirname(path) {
+    const parts = path.split('/');
+    while (parts.length > 0 && parts[parts.length-1].length === 0) {
+        parts.pop()
+    }
+    return joinpath(...parts.slice(0, -1))
 }
 
 // foo.txt -> ['foo', '.txt']
@@ -244,6 +254,7 @@ export const util = {
     isFunction,
     joinpath,
     splitpath,
+    dirname,
     splitext,
     shuffle,
 }
