@@ -129,6 +129,18 @@ export class DomElement {
             throw "invalid child";
         }
 
+
+        if (index < 0) {
+            // -1 is append at end
+            // -2 is append just before last
+            index += this.children.length + 1;
+        }
+
+        if (index < 0 || index > this.children.length) {
+            console.error("invalid index: " + index);
+            return
+        }
+
         if (typeof this.children === "string") {
             this.children = [this.children, ]
         } else if (typeof this.children === "undefined") {
@@ -518,7 +530,7 @@ export class DraggableList extends DomElement {
     }
 
     handleChildDragMove(child, event) {
-        if (this.attrs.draggingEle!==child.getDomNode()) {
+        if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
             return;
         }
 
@@ -593,9 +605,10 @@ export class DraggableList extends DomElement {
     }
 
     handleChildDragEnd(child, event) {
-        if (this.attrs.draggingEle!==child.getDomNode()) {
+        if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
             return;
         }
+
         this.handleChildDragCancel();
     }
 

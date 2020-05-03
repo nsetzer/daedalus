@@ -13,6 +13,8 @@ let updatequeue = [];
 let wipRoot = null;
 let currentRoot = null;
 
+let workLoopActive = false;
+
 let workCounter = 0;
 
 export function render(container, element) {
@@ -25,6 +27,11 @@ export function render(container, element) {
         alternate: currentRoot
     }
     workstack.push(wipRoot)
+
+    if (!workLoopActive) {
+        workLoopActive = true
+        setTimeout(workLoop, 0)
+    }
 }
 
 export function render_update(element) {
@@ -43,18 +50,23 @@ export function render_update(element) {
         }
         updatequeue.push(fiber)
     }
+
+    if (!workLoopActive) {
+        workLoopActive = true
+        setTimeout(workLoop, 0)
+    }
 }
 
 DomElement.prototype._update = render_update
 
-function workLoop(deadline) {
+function workLoop(deadline=null) {
+
+    //let tstart = new Date().getTime();
 
     let shouldYield = false;
 
     const initialWorkLength = workstack.length;
     const initialUpdateLength = updatequeue.length;
-
-    let initial_delay = deadline.timeRemaining()
 
     /*
     friendly: when set to true, obey the deadline timer
@@ -62,61 +74,87 @@ function workLoop(deadline) {
     perform all updates, which are measured to take < 50 ms
     in the worst case.
     */
-    let friendly = 0;
 
-    if (friendly) {
-        while (!shouldYield) {
-            while (workstack.length > 0 && !shouldYield) {
-                let unit = workstack.pop();
-                performUnitOfWork(unit);
+    let friendly = deadline != null;
+    let initial_delay = 0
+
+    try {
+        if (!!friendly) {
+
+            initial_delay = deadline.timeRemaining()
+
+            while (!shouldYield) {
+                while (workstack.length > 0 && !shouldYield) {
+                    let unit = workstack.pop();
+                    performUnitOfWork(unit);
+                    shouldYield = deadline.timeRemaining() < 1;
+                }
+
+                if (workstack.length == 0 && wipRoot) {
+                    commitRoot();
+                }
+
+
+                if (workstack.length == 0 && updatequeue.length > 0 && !wipRoot) {
+
+                    wipRoot = updatequeue[0];
+                    workstack.push(wipRoot);
+                    updatequeue.shift();
+                }
+
                 shouldYield = deadline.timeRemaining() < 1;
             }
+        } else {
+            while (1) {
+                while (workstack.length > 0) {
+                    let unit = workstack.pop();
+                    performUnitOfWork(unit);
+                }
 
-            if (workstack.length == 0 && wipRoot) {
-                commitRoot();
+                if (wipRoot) {
+                    commitRoot();
+                }
+
+                if (updatequeue.length > 0 && !wipRoot) {
+
+
+                    wipRoot = updatequeue[0];
+                    workstack.push(wipRoot);
+                    updatequeue.shift();
+                } else {
+                    break;
+                }
             }
-
-
-            if (workstack.length == 0 && updatequeue.length > 0 && !wipRoot) {
-
-                wipRoot = updatequeue[0];
-                workstack.push(wipRoot);
-                updatequeue.shift();
-            }
-
-            shouldYield = deadline.timeRemaining() < 1;
         }
-    } else {
-        while (workstack.length > 0) {
-            let unit = workstack.pop();
-            performUnitOfWork(unit);
-        }
-
-        if (wipRoot) {
-            commitRoot();
-        }
-
-        if (updatequeue.length > 0 && !wipRoot) {
-
-            wipRoot = updatequeue[0];
-            workstack.push(wipRoot);
-            updatequeue.shift();
-        }
+    } catch (e) {
+        console.error("unhandled workloop exception: " + e.message)
     }
 
     //-------------
+
+
 
     let debug = workstack.length > 1 || updatequeue.length > 1
     if (!!debug) {
         console.warn("workloop failed to finish", initial_delay, ":"
             initialWorkLength, '->', workstack.length,
             initialUpdateLength, '->', updatequeue.length)
+
+        if (!friendly) {
+            setTimeout(workLoop, 50);
+        } else {
+            requestIdleCallback(workLoop);
+        }
+    } else {
+        workLoopActive = false
     }
 
-    requestIdleCallback(workLoop, {timeout: 250});
-
+    //let tend = new Date().getTime();
+    //console.error("workLoop: " + Math.floor(tend - tstart));
 }
-requestIdleCallback(workLoop);
+
+//requestIdleCallback(workLoop);
+//setTimeout(workLoop, 50)
 
 // TODO: performUnitOfWork and reconcileChildren should be merged and renamed
 function performUnitOfWork(fiber) {
