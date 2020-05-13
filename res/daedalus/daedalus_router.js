@@ -1,9 +1,10 @@
 
 include './daedalus_element.js'
+include './daedalus_util.js'
 include './daedalus_location.js'
 
 // pattern: a location string used to match URLs
-// returns a function (map) => string
+// returns a function (map, map) => string
 // which constructs a valid URL
 // matching the given pattern using a dictionary argument to
 // fill in named groups
@@ -12,6 +13,10 @@ export function patternCompile(pattern) {
 
     let tokens=[]
 
+    // split the pattern on forward slashes
+    // create an object out of each component
+    // and indicate if the component should be substituted (param: true)
+    // or taken literally (param: false)
     for (let i=1; i < arr.length; i++) {
 
         let part = arr[i]
@@ -32,7 +37,9 @@ export function patternCompile(pattern) {
 
     }
 
-    return items => {
+    // return a function which takes a mapping of items to use
+    // as substitutions in the url, and an optional mapping of query parameters
+    return (items, query_items) => {
         let location = '';
         for (let i=0; i < tokens.length; i++) {
             location += '/'
@@ -41,6 +48,9 @@ export function patternCompile(pattern) {
             } else {
                 location += tokens[i].value
             }
+        }
+        if (!!query_items) {
+            location += util.serializeParameters(query_items)
         }
         return location;
     }
