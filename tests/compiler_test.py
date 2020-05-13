@@ -7,6 +7,9 @@ from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.compiler import Compiler
 from daedalus.builtins import JsObject, JsArray, JsUndefined
+from daedalus.transform import VariableScope
+
+VariableScope.disable_warnings = True
 
 class CompilerTestCase(unittest.TestCase):
 
@@ -15,6 +18,7 @@ class CompilerTestCase(unittest.TestCase):
 
         cls.lexer = Lexer()
         cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
 
     @classmethod
     def tearDownClass(cls):

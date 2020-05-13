@@ -171,10 +171,14 @@ class Parser(object):
         }
 
         self.disabled_warnings = set()
+        self.disable_all_warnings = False
 
         self._offset = 0  # used by consume in the negative direction
 
     def warn(self, token, type, message=None):
+
+        if self.disable_all_warnings:
+            return
 
         if type in self.disabled_warnings:
             return
