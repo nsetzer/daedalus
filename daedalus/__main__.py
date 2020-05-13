@@ -124,7 +124,8 @@ class ServeCLI(CLI):
             help="serve a page")
         subparser.set_defaults(func=self.execute, cli=self)
 
-        #subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--onefile', action='store_true')
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--host', default='0.0.0.0', type=str)
         subparser.add_argument('--port', default=4100, type=int)
@@ -148,7 +149,7 @@ class ServeCLI(CLI):
 
         server = SampleServer(args.host, args.port,
             args.index_js, paths,
-            static_data, args.static, platform=args.platform)
+            static_data, args.static, platform=args.platform, onefile=args.onefile, minify=args.minify)
         server.setCert(args.cert, args.keyfile)
         server.run()
 

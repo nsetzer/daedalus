@@ -23,6 +23,7 @@ class FormatterTestCase(unittest.TestCase):
 
         cls.lexer = Lexer()
         cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
 
     @classmethod
     def tearDownClass(cls):
@@ -648,11 +649,11 @@ class FormatterTestCase(unittest.TestCase):
         #self._chkeq("a ?. b", "a?.b")
         self._chkeq("a ?. b", "((a)||{}).b")
 
-    #def test_001_optional_chaining_call(self):
-    #    self._chkeq("a?.()", "a?.()")
+    def test_001_optional_chaining_call(self):
+        self._chkeq("a?.()", "((a)||(()=>null))()")
 
-    #def test_001_optional_chaining_subscr(self):
-    #    self._chkeq("a?.[]", "a?.[]")
+    def test_001_optional_chaining_subscr(self):
+        self._chkeq("a?.[0]", "((a)||{})[0]")
 
     def test_001_spread_call(self):
         self._chkeq("f(...x, 1, 2, 3, ...y)", "f(...x,1,2,3,...y)")

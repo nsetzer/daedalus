@@ -218,6 +218,7 @@ class TransformOptionalChaining(TransformBase):
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_GROUPING, ln, idx, "()", [
                                 Token(Token.T_LAMBDA, ln, idx, "=>", [
+                                    Token(Token.T_TEXT, ln, idx, "Optional"),
                                     Token(Token.T_ARGLIST, ln, idx, "()"),
                                     Token(Token.T_KEYWORD, ln, idx, "null")
                                 ])
@@ -232,6 +233,9 @@ class TransformOptionalChaining(TransformBase):
         if len(token.children) == 1 and token.children[0].type == Token.T_SUBSCR:
             token.type = Token.T_SUBSCR
             token.value = "[]"
+            if len(token.children[0].children) != 2:
+                raise TransformError(token, "requires 2 children")
+                return
             lhs, rhs = token.children[0].children
             ln = token.line
             idx = token.index
@@ -463,7 +467,7 @@ class TransformExtractStyleSheet(TransformBase):
                     if lhs_value is not None:
                         obj.update(self._object2style_helper(prefix + lhs_value + "-", rhs))
                     else:
-                        raise TransformError(lhs.type)
+                        raise TransformError(lhs.type, "invalid lhs")
                     continue
                 else:
                     raise TransformError(rhs, "invalid token1")
@@ -579,6 +583,8 @@ DF_CLASS      = 3
 
 class VariableScope(object):
     # require three scope instances, for global, function and block scope
+    disable_warnings = False
+
     def __init__(self, name, parent=None):
         super(VariableScope, self).__init__()
         self.name = name
@@ -799,10 +805,11 @@ class VariableScope(object):
 
         for key, ref in mapping.items():
             if ref.load_count == 0:
-                if ref.token:
-                    print("variable defined but never used: %s %s %s" % (key, ref.token.line, ref.token.index))
-                else:
-                    print("variable defined but never used: %s" % (key,))
+                if not VariableScope.disable_warnings:
+                    if ref.token:
+                        sys.stderr.write("variable defined but never used: %s %s %s\n" % (key, ref.token.line, ref.token.index))
+                    else:
+                        sys.stderr.write("variable defined but never used: %s\n" % (key,))
 
         self.blscope_stale.update(mapping)
         return mapping
@@ -813,10 +820,11 @@ class VariableScope(object):
         for scope in [self.blscope[0], self.fnscope]:
             for key, ref in scope.items():
                 if ref.load_count == 0:
-                    if ref.token:
-                        print("variable defined but never used: %s %s %s" % (key, ref.token.line, ref.token.index))
-                    else:
-                        print("variable defined but never used: %s" % (key,))
+                    if not VariableScope.disable_warnings:
+                        if ref.token:
+                            sys.stderr.write("variable defined but never used: %s %s %s\n" % (key, ref.token.line, ref.token.index))
+                        else:
+                            sys.stderr.write("variable defined but never used: %s\n" % (key,))
 
     def flattenBlockScope(self):
         out = {}
@@ -843,7 +851,7 @@ class VariableScope(object):
                     defered.blrefs[key] = ref
 
     def _diag(self, token):
-        print("%10s" % token.type, list(self.vars), list(self.freevars), list(self.cellvars))
+        sys.stderr.write("%10s %s %s %s\n" % (token.type, list(self.vars), list(self.freevars), list(self.cellvars)))
 
 class VariableScopeReference(object):
     def __init__(self, scope, refs):

@@ -800,7 +800,7 @@ class Builder(object):
         if not css:
             return ""
         elif onefile:
-            return '<style>\n%s\n</style>' % css
+            return '<style type="text/css">\n%s\n</style>' % css
         else:
             return f'<link rel="stylesheet" type="text/css" href="{prefix}static/index.css">'
 

@@ -447,9 +447,7 @@ class Formatter(object):
 def main():  # pragma: no cover
 
     text1 = """
-    f = async function () {
-            return 1
-           }
+    a?.()
     """
 
     #text1 = open("./res/daedalus/index.js").read()

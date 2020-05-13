@@ -292,11 +292,12 @@ class Server(object):
 
 class SampleResource(Resource):
 
-    def __init__(self, index_js, search_path, static_data, static_path, platform):
+    def __init__(self, index_js, search_path, static_data, static_path, platform=None, **opts):
         super(SampleResource, self).__init__()
         self.builder = Builder(search_path, static_data, platform=platform)
         self.index_js = index_js
-        self.style, self.source, self.html = self.builder.build(self.index_js)
+        self.opts = opts
+        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
         self.static_path = static_path
 
     def endpoints(self):
@@ -343,7 +344,7 @@ class SampleResource(Resource):
         """
         rebuild the javascript and html, return the html
         """
-        self.style, self.source, self.html = self.builder.build(self.index_js)
+        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
         return Response(payload=self.html)
 
     def get_favicon(self, request, location, matches):
@@ -362,17 +363,18 @@ class SampleResource(Resource):
 
 class SampleServer(Server):
 
-    def __init__(self, host, port, index_js, search_path, static_data=None, static_path="./static", platform=None):
+    def __init__(self, host, port, index_js, search_path, static_data=None, static_path="./static", platform=None, **opts):
         super(SampleServer, self).__init__(host, port)
         self.index_js = index_js
         self.search_path = search_path
         self.static_data = static_data
         self.static_path = static_path
         self.platform = platform
+        self.opts = opts
 
     def buildRouter(self):
         router = Router()
-        res = SampleResource(self.index_js, self.search_path, self.static_data, self.static_path, self.platform)
+        res = SampleResource(self.index_js, self.search_path, self.static_data, self.static_path, platform=self.platform, **self.opts)
         router.registerEndpoints(res.endpoints())
         return router
 
