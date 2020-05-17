@@ -1054,6 +1054,9 @@ class Parser(object):
             else:
                 current.children.append(tokens.pop(index))
 
+        if counter != 0:
+            raise ParseError(current, "matching %s not found" % close)
+
     def collect_keyword_break(self, tokens, index):
         token = tokens[index]
         token.type = Token.T_BREAK
@@ -1810,13 +1813,7 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-    void function iife() {
-        console.log("test"r)
-    }();
-
-    f = async function () {
-            return 1
-           }
+    let x,y,z
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)

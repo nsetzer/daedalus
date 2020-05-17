@@ -29,6 +29,24 @@ class ParserTestCase(unittest.TestCase):
     def tearDown(self):
         super().tearDown()
 
+    def test_001_parse_brace(self):
+
+        with self.assertRaises(ParseError):
+            text = "{{{ }}"
+            Parser().parse(Lexer().lex(text))
+
+    def test_001_parse_paren(self):
+
+        with self.assertRaises(ParseError):
+            text = "("
+            Parser().parse(Lexer().lex(text))
+
+    def test_001_parse_bracket(self):
+
+        with self.assertRaises(ParseError):
+            text = "["
+            Parser().parse(Lexer().lex(text))
+
 class ParserUnaryOpTestCase(unittest.TestCase):
 
     def test_001_unary_prefix(self):
