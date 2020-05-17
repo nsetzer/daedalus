@@ -157,6 +157,9 @@ export class Router {
      * default_callback: function(setElementCallback)
      */
     constructor(container, default_callback) {
+        if (!container) {
+            throw 'invalid container';
+        }
         this.container = container
         this.default_callback = default_callback
         this.routes = [] // list of {pattern, callback, auth, noauth, fallback, re}

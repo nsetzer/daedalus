@@ -103,7 +103,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
             argument_names[i] = name.split('.')[0]
 
     if modname.endswith('.js'):
-        print("warning: module with invalid modname", modname)
+        sys.stderr.write("warning: module with invalid modname %s\n" % modname)
         modname = os.path.splitext(os.path.split(modname)[1])[0]
 
     tok_import_names = [TOKEN('T_TEXT', text) for text in import_names]
@@ -190,7 +190,7 @@ def buildPythonAst(modname, mod, imports, exports):
             argument_names[i] = name.split('.')[0]
 
     if modname.endswith('.js'):
-        print("warning: module with invalid modname", modname)
+        sys.stderr.write("warning: module with invalid modname %s\n" % modname)
         modname = os.path.splitext(os.path.split(modname)[1])[0]
 
     tok_import_names = [TOKEN('T_TEXT', text) for text in import_names]
@@ -305,7 +305,7 @@ class JsFile(object):
 
         self.mtime = os.stat(self.source_path).st_mtime
 
-        print("%10d %.2f %s" % (len(source), t2 - t1, self.source_path))
+        sys.stderr.write("%10d %.2f %s\n" % (len(source), t2 - t1, self.source_path))
 
     def _get_imports_exports(self, ast):
         self.imports = {}
@@ -391,12 +391,18 @@ class JsModule(object):
         self.python = python
 
     def _getFiles(self):
+        # sort include files
         jsf = self.index_js
         queue = [(jsf, 0)]
         depth = {jsf.path: 0}
         while queue:
             c, d = queue.pop(0)
             d = depth[c.path]
+
+            if d > len(self.files):
+                msg = "include cycle detected."
+                raise BuildError(c.path, None, [], msg)
+
             for p in self.import_paths[c.path]:
                 if p not in depth:
                     depth[p] = d + 1
@@ -481,7 +487,7 @@ class JsModule(object):
 
         self.dirty = False
         t2 = time.time()
-        print("%10s %.2f rebuild ast: %s" % ('', t2 - t1, self.name()))
+        sys.stderr.write("%10s %.2f rebuild ast: %s\n" % ('', t2 - t1, self.name()))
         return self.ast
 
     def setStaticData(self, data):
@@ -622,7 +628,16 @@ class Builder(object):
                     depth[p] = d + 1
                 else:
                     depth[p] = max(depth[p], d + 1)
-                queue.append((self.modules[p], d + 1))
+
+                jsm = self.modules[p]
+
+                # worst case depth is a simple linked list with length
+                # of N where N is the number of modules. If the computed
+                # depth is greater than that, then there is a cycle somewhere
+                if d > len(self.modules):
+                    msg = "import cycle detected. %s imports %s" % (jsm.index_js.name, m.index_js.name)
+                    raise BuildError(m.index_js.path, None, [], msg)
+                queue.append((jsm, d + 1))
 
         order = sorted(depth.keys(), key=lambda p: depth[p], reverse=True)
         return [self.modules[p] for p in order]
@@ -722,7 +737,7 @@ class Builder(object):
         final_source_size = len(js)
         p = 100 * final_source_size / source_size
         t2 = time.time()
-        print("%10d %.2f %.2f%% of %d bytes" % (final_source_size, t2 - t1, p, source_size))
+        sys.stderr.write("%10d %.2f %.2f%% of %d bytes\n" % (final_source_size, t2 - t1, p, source_size))
         return css, js, export_name
 
     def build(self, path, minify=False, onefile=False):
@@ -754,9 +769,13 @@ class Builder(object):
         return css, js, html
 
     def build_error(self, e):
-        print(e.filepath)
-        print(e)
-        print("\n".join(e.lines))
+        sys.stderr.write("\nError:\n")
+        sys.stderr.write("Filepath: %s\n" % e.filepath)
+        sys.stderr.write("message: %s\n" % e)
+        if e.lines:
+            sys.stderr.write("Lines:")
+            sys.stderr.write("\n".join(e.lines))
+            sys.stderr.write("\n")
 
         html = (
             '<!DOCTYPE html>'
