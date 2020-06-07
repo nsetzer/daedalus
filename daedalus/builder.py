@@ -534,6 +534,7 @@ class Builder(object):
         self.static_data = static_data
 
     def find(self, name):
+
         return findFile(name, self.search_paths)
 
     def _name2path(self, name):
@@ -750,7 +751,13 @@ class Builder(object):
             return self.build_error(e)
 
         script = '<script src="/static/index.js"></script>'
-        index_html = self.find("index.html")
+        try:
+            index_html = self.find("index.%s.html" % self.platform)
+        except FileNotFoundError as e:
+            index_html = None
+
+        if index_html is None:
+            index_html = self.find("index.html")
         with open(index_html, "r") as hfile:
             html = hfile.read()
 
@@ -805,6 +812,7 @@ class Builder(object):
         return "", "", html
 
     def getHtmlTitle(self):
+
         return '<title>Daedalus</title>'
 
     def getHtmlFavIcon(self):

@@ -44,7 +44,7 @@ of an element are rendered in the order of the list.
 
 > Warning: An element with multiple parents has undefined behavior
 
-> Warning: Directly modifying the children array requires calling `elem.update()`
+> Warning: Directly modifying the children array requires calling `update()` on the parent
 
 ## Element state
 
@@ -96,6 +96,9 @@ class MyElement extends daedalus.DomElement {
 }
 ```
 
+> Warning: Daedalus Elements do not yet correctly handle inheritance of `on*` class methods.
+
+
 ## Element Lifecycle
 
 Lifecycle methods are optional methods which can be defined for an element
@@ -104,12 +107,15 @@ Lifecycle methods are optional methods which can be defined for an element
 - `elementUnmounted` - element is removed from the DOM
 - `elementUpdateState(oldState, newState)` -
 Called when the state is about to be changed. the old state will be overwritten
-with the new state. This method can return false to disable updating. A return
-value of true or undefined will cause the widget to be updated.
+with the new state. This method can return false to disable updating the dom.
+A return value of true or undefined will cause the element to be updated.
+Triggered when updateState(newState, update) is used.
 - `elementUpdateProps(oldProps, newProps)` -
-Called when the state is about to be changed. the old state will be overwritten
-with the new state. This method can return false to disable updating. A return
-value of true or undefined will cause the widget to be updated.
+Called when the object properties are about to be changed. the old props will
+be overwritten with the new props. This method can return false to disable
+updating the dom. A return value of true or undefined will cause the
+element to be updated.
+Triggered when updateProps(newProps, update) is used.
 
 ## Styles
 
@@ -139,9 +145,15 @@ The method *removeClassName* will remove a named class if it exists.
 elem.removeClassName(name)
 ```
 
+The method *hasClassName* returns true if the element has a given class name
+
+```javascript
+elem.hasClassName(name)
+```
+
 ## Inline Styles
 
-> inline styles are a security risk and should not be used
+> Warning: inline styles are a security risk and should not be used
 
 the style prop for an element can either be a string or object. These are equivalent:
 

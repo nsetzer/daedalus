@@ -228,6 +228,128 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+
+    def test_001_sub_assign(self):
+
+        text = "a -= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '-=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
+
+    def test_001_add_assign(self):
+
+        text = "a += b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '+=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_multiply_assign(self):
+
+        text = "a *= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '*=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
+    def test_001_div_assign(self):
+
+        text = "a /= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '/=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_exp_assign(self):
+
+        text = "a **= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '**=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_logical_or_assign(self):
+
+        text = "a |= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '|=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_logical_and_assign(self):
+
+        text = "a &= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '&=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_lshift_assign(self):
+
+        text = "a <<= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '<<=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
+    def test_001_rshift_assign(self):
+
+        text = "a >>= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '>>=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
     @unittest.skip("optional chaining")
     def test_001_maybe_attribute(self):
 
