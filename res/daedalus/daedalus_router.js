@@ -163,7 +163,9 @@ export class Router {
         this.container = container
         this.default_callback = default_callback
         this.routes = [] // list of {pattern, callback, auth, noauth, fallback, re}
-        this.current_index = -1
+        // -1 is used for default route,
+        // -2 is used to  differentiate default and never set
+        this.current_index = -2
         this.current_location = null
     }
 
@@ -212,13 +214,13 @@ export class Router {
 
     setElement(index, location, match, element) {
         if (!!element) {
-            console.log(element)
             if (index != this.current_index) {
                 this.container.children = [element]
                 this.container.update()
             }
 
             if (this.current_location !== location) {
+                this.setMatch(match)
                 element.updateState({match: match})
             }
 
@@ -248,6 +250,10 @@ export class Router {
      */
     setDefaultRoute(callback) {
         this.default_callback = callback
+    }
+
+    setMatch(match) {
+
     }
 }
 

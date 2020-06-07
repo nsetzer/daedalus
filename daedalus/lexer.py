@@ -54,21 +54,24 @@ operators1 = set("+-~*/%@&^|!:.,;=(){}[]#")
 # which do not form a prefix of some other operator
 # used to break longers strings of special characters into valid operators
 operators2 = {
-    "+=", "-=", "*=", "**=", "/=", "//=", "%=", "@=", "|=", "&=", "^=", ">>=", "<<=",
+    "+=", "-=", "*=", "**=", "/=", "%=", "@=", "|=", "&=", "^=", ">>=", "<<=",
     "<", "<=", ">", ">=", "===", "!==",
     "??",
     "&&",
     "||",
     "=>",
     "|>",
-    "<<", ">>",
     "++", "--",
     "->", "=>", "?.", "..."
 }
 
+# operators composed of 2 or more characters that are also a prefix
+# of an operator found in the previous list.
+operators2_extra = set(["?", "==", "!=", "**", ">>", "<<"])
+
 # the set of all valid operators for this language
 # if an operator is not in this list, then it is a syntax error
-operators3 = operators1 | operators2 | set(["?", "==", "!=", "**"])
+operators3 = operators1 | operators2 | operators2_extra
 
 def char_reader(f):
     # convert a file like object into a character generator
@@ -457,6 +460,9 @@ class Lexer(LexerBase):
 
         if c == '/':
             self._lex_single_comment()
+        elif c == '=':
+            self._tok += '/'
+            self._lex_special2()
         elif c == '*':
             s = self._peekstr(2)
             if s == '**' and self.preserve_documentation:
@@ -581,7 +587,8 @@ def main():  # pragma: no cover
     # r.match(2/3)
 
     text1 = """
-    let $ = 0
+    $ /= 0
+    $ |= 0
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":

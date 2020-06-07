@@ -243,6 +243,9 @@ export function getStyleSheet(name) {
     return selector_names[name]
 }
 
+function perf_timer() {
+    return performance.now();
+}
 
 export const util = {
     array_move,
@@ -257,4 +260,5 @@ export const util = {
     dirname,
     splitext,
     shuffle,
+    perf_timer,
 }

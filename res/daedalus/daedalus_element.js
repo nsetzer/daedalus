@@ -300,7 +300,6 @@ export class HeaderElement extends DomElement {
 export class ButtonElement extends DomElement {
     constructor(text, onClick) {
         super("button", {'onClick': onClick}, [new TextElement(text)])
-        console.log(this.type)
     }
 
     setText(text) {
