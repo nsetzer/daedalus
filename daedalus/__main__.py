@@ -6,8 +6,15 @@ import logging
 
 from .builder import Builder
 from .server import SampleServer
-from .repl import Repl
-from .jseval import compile_file, JsContext
+
+enable_compiler = True
+try:
+    import bytecode
+    import requests
+    from .repl import Repl
+    from .jseval import compile_file, JsContext
+except ImportError as e:
+    enable_compiler = False
 
 def makedirs(path):
     if not os.path.exists(path):
@@ -114,8 +121,6 @@ class BuildCLI(CLI):
 
         copy_staticdir(staticdir, outdir)
         copy_favicon(builder, outdir)
-
-
 
 class ServeCLI(CLI):
 
@@ -232,6 +237,15 @@ class RunCLI(CLI):
         finally:
             print(v)
 
+def register_parsers(parser):
+
+    BuildCLI().register(parser)
+    ServeCLI().register(parser)
+    if enable_compiler:
+        AstCLI().register(parser)
+        DisCLI().register(parser)
+        RunCLI().register(parser)
+
 def getArgs():
     parser = argparse.ArgumentParser(
         description='unopinionated javascript framework')
@@ -240,22 +254,14 @@ def getArgs():
     register_parsers(subparsers)
     args = parser.parse_args()
 
-    return args
-
-def register_parsers(parser):
-
-    BuildCLI().register(parser)
-    ServeCLI().register(parser)
-    AstCLI().register(parser)
-    DisCLI().register(parser)
-    RunCLI().register(parser)
+    return parser, args
 
 def main():
 
-    if len(sys.argv) == 1:
+    if enable_compiler and len(sys.argv) == 1:
         Repl().main()
     else:
-        args = getArgs()
+        parser, args = getArgs()
 
         FORMAT = '%(levelname)-8s - %(message)s'
         logging.basicConfig(level=logging.INFO, format=FORMAT)

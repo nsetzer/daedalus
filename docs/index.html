@@ -1,15 +1,21 @@
 <!--daedalus build --onefile ./examples/minesweeper.js ./docs-->
 <!DOCTYPE html>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,shrink-to-fit=no,user-scalable=no">
 <html lang="en">
 <head>
 <link rel="icon" type="image/x-icon" href="/favicon.ico" />
 <title>Daedalus</title>
-<style>
+<style type="text/css">
 .dcs-14b6e0af-0 {
   cursor: pointer;
   color: blue;
+}
+.dcs-14b6e0af-1 {
+  background-color: #edf2f7;
+  border: 2px dashed #cbd5e0;
+  width: 100%;
+  height: 100%;
 }
 .dcs-dbe5cb86-0 {
   text-align: center;
@@ -121,6 +127,20 @@
 }
 </style>
 <script type="text/javascript">
+AndroidEvents = {}
+function registerAndroidEvent(name, callback) {
+    AndroidEvents[name] = callback;
+}
+function invokeAndroidEvent(name, payload) {
+    //console.log(`invoke event '${name}': ${payload}`)
+    if (!!AndroidEvents[name]) {
+        AndroidEvents[name](JSON.parse(payload));
+    } else {
+        console.error("unregistered event: " + name);
+    }
+}
+</script>
+<script type="text/javascript">
 daedalus=(function(){
     "use strict";
     const env={};
@@ -144,8 +164,8 @@ daedalus=(function(){
           if(p1==p2){
             return;
           };
-          let item=arr[p1];
           arr.splice(p2,0,arr.splice(p1,1)[0]);
+          return;
         };
         function randomFloat(min,max){
           return Math.random()*(max-min)+min;
@@ -220,10 +240,17 @@ daedalus=(function(){
         };
         function splitpath(path){
           const parts=path.split('/');
-          if(parts[parts.length-1]===''){
+          if(parts.length>0&&parts[parts.length-1].length===0){
             parts.pop();
           };
           return parts;
+        };
+        function dirname(path){
+          const parts=path.split('/');
+          while(parts.length>0&&parts[parts.length-1].length===0){
+            parts.pop();
+          };
+          return joinpath(...parts.slice(0,-1));
         };
         function splitext(name){
           const index=name.lastIndexOf('.');
@@ -289,12 +316,17 @@ daedalus=(function(){
         function getStyleSheet(name){
           return selector_names[name];
         };
+        function perf_timer(){
+          return performance.now();
+        };
         const util={array_move,randomInt,randomFloat,object2style,serializeParameters,
-                  parseParameters,isFunction,joinpath,splitpath,splitext,shuffle};
+                  parseParameters,isFunction,joinpath,splitpath,dirname,splitext,shuffle,
+                  perf_timer};
         return[StyleSheet,getStyleSheet,parseParameters,util];
       })();
-    const[ButtonElement,DomElement,HeaderElement,LinkElement,ListElement,ListItemElement,
-          NumberInputElement,Signal,TextElement,TextInputElement]=(function(){
+    const[ButtonElement,DomElement,DraggableList,HeaderElement,LinkElement,ListElement,
+          ListItemElement,NumberInputElement,Signal,TextElement,TextInputElement]=(function(
+            ){
         let sigal_counter=0;
         function Signal(element,name){
           const event_name="onSignal_"+(sigal_counter++)+"_"+name;
@@ -327,6 +359,10 @@ daedalus=(function(){
         };
         class DomElement{
           constructor(type,props,children){
+            if(type===undefined){
+              throw`DomElement type is undefined. super called with ${arguments.length} arguments`;
+              
+            };
             this.type=type;
             if(props===undefined){
               this.props={};
@@ -394,6 +430,13 @@ daedalus=(function(){
           insertChild(index,childElement){
             if(!childElement||!childElement.type){
               throw"invalid child";
+            };
+            if(index<0){
+              index+=this.children.length+1;
+            };
+            if(index<0||index>this.children.length){
+              console.error("invalid index: "+index);
+              return;
             };
             if(typeof this.children==="string"){
               this.children=[this.children];
@@ -523,7 +566,6 @@ daedalus=(function(){
         class ButtonElement extends DomElement {
           constructor(text,onClick){
             super("button",{'onClick':onClick},[new TextElement(text)]);
-            console.log(this.type);
           };
           setText(text){
             this.children[0].setText(text);
@@ -582,8 +624,156 @@ daedalus=(function(){
             this.valueChanged.emit(this.props);
           };
         };
-        return[ButtonElement,DomElement,HeaderElement,LinkElement,ListElement,ListItemElement,
-                  NumberInputElement,Signal,TextElement,TextInputElement];
+        function swap(nodeA,nodeB){
+          if(!nodeA||!nodeB){
+            return;
+          };
+          const parentA=nodeA.parentNode;
+          const siblingA=nodeA.nextSibling===nodeB?nodeA:nodeA.nextSibling;
+          nodeB.parentNode.insertBefore(nodeA,nodeB);
+          parentA.insertBefore(nodeB,siblingA);
+        };
+        function isAbove(nodeA,nodeB){
+          if(!nodeA||!nodeB){
+            return false;
+          };
+          const rectA=nodeA.getBoundingClientRect();
+          const rectB=nodeB.getBoundingClientRect();
+          return(rectA.top+rectA.height/2<rectB.top+rectB.height/2);
+        };
+        function childIndex(node){
+          let count=0;
+          while((node=node.previousSibling)!=null){
+            count++;
+          };
+          return count;
+        };
+        const placeholder='dcs-14b6e0af-1';
+        class DraggableListItem extends DomElement {
+          constructor(){
+            super("div",{},[]);
+          };
+          onTouchStart(event){
+            this.attrs.parent.handleChildDragBegin(this,event);
+          };
+          onTouchMove(event){
+            this.attrs.parent.handleChildDragMove(this,event);
+          };
+          onTouchEnd(event){
+            this.attrs.parent.handleChildDragEnd(this,{target:this.getDomNode()});
+            
+          };
+          onTouchCancel(event){
+            this.attrs.parent.handleChildDragEnd(this,{target:this.getDomNode()});
+            
+          };
+          onMouseDown(event){
+            this.attrs.parent.handleChildDragBegin(this,event);
+          };
+          onMouseMove(event){
+            this.attrs.parent.handleChildDragMove(this,event);
+          };
+          onMouseLeave(event){
+            this.attrs.parent.handleChildDragEnd(this,event);
+          };
+          onMouseUp(event){
+            this.attrs.parent.handleChildDragEnd(this,event);
+          };
+        };
+        class DraggableList extends DomElement {
+          constructor(){
+            super("div",{},[]);
+            this.attrs={x:null,y:null,placeholder:null,placeholderClassName:placeholder,
+                          draggingEle:null,isDraggingStarted:false,indexStart:-1,lockX:true};
+            
+          };
+          setPlaceholderClassName(className){
+            this.attrs.placeholderClassName=className;
+          };
+          handleChildDragBegin(child,event){
+            event.preventDefault();
+            if(!!this.attrs.draggingEle){
+              this.handleChildDragCancel();
+              return;
+            };
+            let evt=(((event)||{}).touches||((((event)||{}).originalEvent)||{}).touches);
+            
+            if(evt){
+              event=evt[0];
+            };
+            this.attrs.draggingEle=child.getDomNode();
+            this.attrs.indexStart=childIndex(this.attrs.draggingEle);
+            const rect=this.attrs.draggingEle.getBoundingClientRect();
+            this.attrs.x=event.clientX-rect.left;
+            this.attrs.y=event.pageY-rect.top;
+          };
+          handleChildDragMove(child,event){
+            if(!this.attrs.draggingEle||this.attrs.draggingEle!==child.getDomNode(
+                            )){
+              return;
+            };
+            event.preventDefault();
+            let evt=(((event)||{}).touches||((((event)||{}).originalEvent)||{}).touches);
+            
+            if(evt){
+              event=evt[0];
+            };
+            const draggingRect=this.attrs.draggingEle.getBoundingClientRect();
+            if(!this.attrs.isDraggingStarted){
+              this.attrs.isDraggingStarted=true;
+              this.attrs.placeholder=document.createElement('div');
+              this.attrs.placeholder.classList.add(this.attrs.placeholderClassName);
+              
+              this.attrs.draggingEle.parentNode.insertBefore(this.attrs.placeholder,
+                              this.attrs.draggingEle.nextSibling);
+              this.attrs.placeholder.style.height=`${draggingRect.height}px`;
+            };
+            this.attrs.draggingEle.style.position='absolute';
+            let ypos=event.pageY-this.attrs.y+window.scrollY;
+            this.attrs.draggingEle.style.top=`${ypos}px`;
+            if(!this.attrs.lockX){
+              this.attrs.draggingEle.style.left=`${event.pageX-this.attrs.x}px`;
+            };
+            const prevEle=this.attrs.draggingEle.previousElementSibling;
+            const nextEle=this.attrs.placeholder.nextElementSibling;
+            if(prevEle&&isAbove(this.attrs.draggingEle,prevEle)){
+              swap(this.attrs.placeholder,this.attrs.draggingEle);
+              swap(this.attrs.placeholder,prevEle);
+              return;
+            };
+            if(nextEle&&isAbove(nextEle,this.attrs.draggingEle)){
+              swap(nextEle,this.attrs.placeholder);
+              swap(nextEle,this.attrs.draggingEle);
+            };
+          };
+          handleChildDragEnd(child,event){
+            if(!this.attrs.draggingEle||this.attrs.draggingEle!==child.getDomNode(
+                            )){
+              return;
+            };
+            this.handleChildDragCancel();
+          };
+          handleChildDragCancel(){
+            this.attrs.placeholder&&this.attrs.placeholder.parentNode.removeChild(
+                          this.attrs.placeholder);
+            this.attrs.draggingEle.style.removeProperty('top');
+            this.attrs.draggingEle.style.removeProperty('left');
+            this.attrs.draggingEle.style.removeProperty('position');
+            const indexEnd=childIndex(this.attrs.draggingEle);
+            this.updateModel(this.attrs.indexStart,indexEnd);
+            this.attrs.x=null;
+            this.attrs.y=null;
+            this.attrs.draggingEle=null;
+            this.attrs.isDraggingStarted=false;
+          };
+          updateModel(indexStart,indexEnd){
+            this.children.splice(indexEnd,0,this.children.splice(indexStart,1)[0]);
+            
+          };
+        };
+        return[ButtonElement,DomElement,DraggableList,HeaderElement,LinkElement,ListElement,
+                  ListItemElement,NumberInputElement,Signal,TextElement,TextInputElement];
+        
       })();
     const[]=(function(){
         history.locationChanged=Signal(null,"locationChanged");
@@ -597,7 +787,8 @@ daedalus=(function(){
           });
         return[];
       })();
-    const[Router,locationMatch,patternCompile,patternToRegexp]=(function(){
+    const[AuthenticatedRouter,Router,locationMatch,patternCompile,patternToRegexp]=(
+          function(){
         function patternCompile(pattern){
           const arr=pattern.split('/');
           let tokens=[];
@@ -617,7 +808,7 @@ daedalus=(function(){
               tokens.push({param:false,value:part});
             };
           };
-          return items=>{
+          return(items,query_items)=>{
             let location='';
             for(let i=0;i<tokens.length;i++){
               location+='/';
@@ -626,6 +817,9 @@ daedalus=(function(){
               }else{
                 location+=tokens[i].value;
               };
+            };
+            if(!!query_items){
+              location+=util.serializeParameters(query_items);
             };
             return location;
           };
@@ -680,106 +874,116 @@ daedalus=(function(){
         function patternMatch(pattern,location){
           return locationMatch(patternToRegexp(pattern),location);
         };
-        class Router extends DomElement {
-          constructor(route_list,default_element){
-            super("div",{},[]);
-            this.default_element=default_element;
-            this.routes=route_list.map(item=>{
-                const re=patternToRegexp(item.pattern);
-                return{re,pattern:item.pattern,element:item.element};
-              });
-            this.current_index=-1;
+        class Router{
+          constructor(container,default_callback){
+            if(!container){
+              throw'invalid container';
+            };
+            this.container=container;
+            this.default_callback=default_callback;
+            this.routes=[];
+            this.current_index=-2;
             this.current_location=null;
-            this.connect(history.locationChanged,this.doRoute.bind(this));
           };
-          elementMounted(){
-            this.doRoute();
-          };
-          doRoute(){
-            let i=0;
-            while(i<this.routes.length){
-              const item=this.routes[i];
-              const match=locationMatch(item.re,window.location.pathname);
+          handleLocationChanged(location){
+            let index=0;
+            while(index<this.routes.length){
+              const item=this.routes[index];
+              const match=locationMatch(item.re,location);
               if(match!==null){
-                if(this.current_index!==i){
-                  if(util.isFunction(item.element)){
-                    item.element=item.element();
-                  };
-                  this.children=[item.element];
-                  this.update();
+                let fn=(element)=>this.setElement(index,location,match,element);
+                if(this.doRoute(item,fn,match)){
+                  return;
                 };
-                if(this.current_location!==window.location.pathname){
-                  item.element.updateState({match:match});
-                };
-                this.current_index=i;
-                this.current_location=window.location.pathname;
-                return;
               };
-              i+=1;
+              index+=1;
             };
-            if(util.isFunction(this.default_element)){
-              this.default_element=this.default_element();
-            };
-            this.current_index=-1;
-            if(this.default_element){
-              this.children=[this.default_element];
-              this.update();
+            let fn=(element)=>this.setElement(-1,location,null,element);
+            this.default_callback(fn);
+            return;
+          };
+          doRoute(item,fn,match){
+            item.callback(fn,match);
+            return true;
+          };
+          setElement(index,location,match,element){
+            if(!!element){
+              if(index!=this.current_index){
+                this.container.children=[element];
+                this.container.update();
+              };
+              if(this.current_location!==location){
+                this.setMatch(match);
+                element.updateState({match:match});
+              };
+              this.current_index=index;
             }else{
-              this.children=[];
-              this.update();
+              this.container.children=[];
+              this.current_index=-1;
+              this.container.update();
             };
+            this.current_location=location;
+          };
+          addRoute(pattern,callback){
+            const re=patternToRegexp(pattern);
+            this.routes.push({pattern,callback,re});
+          };
+          setDefaultRoute(callback){
+            this.default_callback=callback;
+          };
+          setMatch(match){
+
           };
         };
-        return[Router,locationMatch,patternCompile,patternToRegexp];
-      })();
-    const[AuthenticateElement]=(function(){
-        class AuthenticateElement extends DomElement {
-          constructor(element,auth_callback,success,failure){
-            super("div",{},[]);
-            this.attrs={element,auth_callback,success,failure};
+        class AuthenticatedRouter extends Router {
+          constructor(container,route_list,default_callback){
+            super(container,route_list,default_callback);
+            this.authenticated=false;
           };
-          handleAuth(status){
-            if(!!status){
-              if(util.isFunction(this.element)){
-                this.attrs.element=this.attrs.element();
-              };
-              if(this.children.length==0){
-                this.appendChild(this.attrs.element);
-              };
-              if(this.attrs.success){
-                this.attrs.success();
-              };
-            }else{
-              if(this.children.length>0){
-                this.removeChildren();
-              };
-              if(this.attrs.failure){
-                this.attrs.failure();
+          doRoute(item,fn,match){
+            let has_auth=this.isAuthenticated();
+            if(item.auth===true&&item.noauth===undefined){
+              if(!!has_auth){
+                item.callback(fn,match);
+                return true;
+              }else if(item.fallback!==undefined){
+                history.pushState({},"",item.fallback);
+                return true;
               };
             };
-          };
-          elementMounted(){
-            if(this.children.length===0){
-              this.attrs.auth_callback().then((status)=>{
-                  this.handleAuth(status);
-                }).catch((error)=>{
-                  console.error(error);
-                  this.handleAuth(false);
-                });
+            if(item.auth===undefined&&item.noauth===true){
+              console.log(item,has_auth);
+              if(!has_auth){
+                item.callback(fn,match);
+                return true;
+              }else if(item.fallback!==undefined){
+                history.pushState({},"",item.fallback);
+                return true;
+              };
             };
-          };
-          elementUpdateProps(oldProps,newProps){
+            if(item.auth===undefined&&item.noauth===undefined){
+              item.callback(fn,match);
+              return true;
+            };
             return false;
           };
-          elementUpdateState(oldState,newState){
-            if(this.attrs.element.props.id===this.props.id){
-              throw"error";
-            };
-            this.attrs.element.updateState(newState);
-            return false;
+          isAuthenticated(){
+            return this.authenticated;
+          };
+          setAuthenticated(value){
+            this.authenticated=!!value;
+          };
+          addAuthRoute(pattern,callback,fallback){
+            const re=patternToRegexp(pattern);
+            this.routes.push({pattern,callback,auth:true,fallback,re});
+          };
+          addNoAuthRoute(pattern,callback,fallback){
+            const re=patternToRegexp(pattern);
+            this.routes.push({pattern,callback,noauth:true,fallback,re});
           };
         };
-        return[AuthenticateElement];
+        return[AuthenticatedRouter,Router,locationMatch,patternCompile,patternToRegexp];
+        
       })();
     const[downloadFile,uploadFile]=(function(){
         function saveBlob(blob,fileName){
@@ -971,9 +1175,25 @@ daedalus=(function(){
           parentElement.removeChild(div);
           return pixels;
         };
+        const isMobile={Android:function(){
+            return navigator.userAgent.match(/Android/i);
+          },BlackBerry:function(){
+            return navigator.userAgent.match(/BlackBerry/i);
+          },iOS:function(){
+            return navigator.userAgent.match(/iPhone|iPad|iPod/i);
+          },Opera:function(){
+            return navigator.userAgent.match(/Opera Mini/i);
+          },Windows:function(){
+            return navigator.userAgent.match(/IEMobile/i)||navigator.userAgent.match(
+                          /WPDesktop/i);
+          },any:function(){
+            return(isMobile.Android()||isMobile.BlackBerry()||isMobile.iOS()||isMobile.Opera(
+                            )||isMobile.Windows());
+          }};
         const platform={OSName,browser:browserName,fullVersion,majorVersion,appName:navigator.appName,
-                  userAgent:navigator.userAgent,platform:build_platform||'web',isAndroid:build_platform==='android'};
-        
+                  userAgent:navigator.userAgent,platform:build_platform||'web',isAndroid:build_platform==='android',
+                  isMobile:(!!isMobile.any())};
+        console.log(platform);
         return[OSName,platform];
       })();
     const[render,render_update]=(function(){
@@ -983,11 +1203,16 @@ daedalus=(function(){
         let updatequeue=[];
         let wipRoot=null;
         let currentRoot=null;
+        let workLoopActive=false;
         let workCounter=0;
         function render(container,element){
           wipRoot={type:"ROOT",dom:container,props:{},children:[element],_fibers:[
                         ],alternate:currentRoot};
           workstack.push(wipRoot);
+          if(!workLoopActive){
+            workLoopActive=true;
+            setTimeout(workLoop,0);
+          };
         };
         function render_update(element){
           if(!element.dirty&&element._fiber!==null){
@@ -996,38 +1221,72 @@ daedalus=(function(){
                           partial:true};
             updatequeue.push(fiber);
           };
+          if(!workLoopActive){
+            workLoopActive=true;
+            setTimeout(workLoop,0);
+          };
         };
         DomElement.prototype._update=render_update;
-        function workLoop(deadline){
-          let debug=workstack.length>1||updatequeue.length>1;
+        function workLoop(deadline=null){
           let shouldYield=false;
           const initialWorkLength=workstack.length;
           const initialUpdateLength=updatequeue.length;
-          workCounter=0;
-          while(!shouldYield){
-            while(workstack.length>0&&!shouldYield){
-              let unit=workstack.pop();
-              performUnitOfWork(unit);
-              shouldYield=deadline.timeRemaining()<1;
+          let friendly=deadline!=null;
+          let initial_delay=0;
+          try{
+            if(!!friendly){
+              initial_delay=deadline.timeRemaining();
+              while(!shouldYield){
+                while(workstack.length>0&&!shouldYield){
+                  let unit=workstack.pop();
+                  performUnitOfWork(unit);
+                  shouldYield=deadline.timeRemaining()<1;
+                };
+                if(workstack.length==0&&wipRoot){
+                  commitRoot();
+                };
+                if(workstack.length==0&&updatequeue.length>0&&!wipRoot){
+                  wipRoot=updatequeue[0];
+                  workstack.push(wipRoot);
+                  updatequeue.shift();
+                };
+                shouldYield=deadline.timeRemaining()<1;
+              };
+            }else{
+              while(1){
+                while(workstack.length>0){
+                  let unit=workstack.pop();
+                  performUnitOfWork(unit);
+                };
+                if(wipRoot){
+                  commitRoot();
+                };
+                if(updatequeue.length>0&&!wipRoot){
+                  wipRoot=updatequeue[0];
+                  workstack.push(wipRoot);
+                  updatequeue.shift();
+                }else{
+                  break;
+                };
+              };
             };
-            if(workstack.length==0&&wipRoot){
-              commitRoot();
-            };
-            if(workstack.length==0&&updatequeue.length>0&&!wipRoot){
-              wipRoot=updatequeue[0];
-              workstack.push(wipRoot);
-              updatequeue.shift();
-            };
-            shouldYield=deadline.timeRemaining()<1;
+          }catch(e){
+            console.error("unhandled workloop exception: "+e.message);
           };
-          debug=workstack.length>1||updatequeue.length>1;
+          let debug=workstack.length>1||updatequeue.length>1;
           if(!!debug){
-            console.warn("workloop failed to finish",initialWorkLength,'->',workstack.length,
-                          initialUpdateLength,'->',updatequeue.length);
+            console.warn("workloop failed to finish",initial_delay,":",initialWorkLength,
+                          '->',workstack.length,initialUpdateLength,'->',updatequeue.length);
+            
+            if(!friendly){
+              setTimeout(workLoop,50);
+            }else{
+              requestIdleCallback(workLoop);
+            };
+          }else{
+            workLoopActive=false;
           };
-          requestIdleCallback(workLoop);
         };
-        requestIdleCallback(workLoop);
         function performUnitOfWork(fiber){
           if(!fiber.dom&&fiber.effect=='CREATE'){
             fiber.dom=createDomNode(fiber);
@@ -1224,9 +1483,9 @@ daedalus=(function(){
         };
         return[render,render_update];
       })();
-    return{AuthenticateElement,ButtonElement,DomElement,HeaderElement,LinkElement,
-          ListElement,ListItemElement,NumberInputElement,OSName,Router,Signal,StyleSheet,
-          TextElement,TextInputElement,build_platform,downloadFile,env,getStyleSheet,
+    return{AuthenticatedRouter,ButtonElement,DomElement,DraggableList,HeaderElement,
+          LinkElement,ListElement,ListItemElement,NumberInputElement,OSName,Router,Signal,
+          StyleSheet,TextElement,TextInputElement,build_platform,downloadFile,env,getStyleSheet,
           locationMatch,parseParameters,patternCompile,patternToRegexp,platform,render,
           render_update,uploadFile,util};
   })();
