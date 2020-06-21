@@ -46,6 +46,7 @@ class Token(object):
     T_CASE = "T_CASE"
     T_CATCH = "T_CATCH"
     T_CLASS = "T_CLASS"
+    T_CLASS_BLOCK = "T_CLASS_BLOCK"
     T_CONTINUE = "T_CONTINUE"
     T_DEFAULT = "T_DEFAULT"
     T_DOWHILE = "T_DOWHILE"

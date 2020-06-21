@@ -34,6 +34,40 @@ def isalphanum(a, b):
                (c2.isalnum() or c2 == '_' or ord(c2) > 127)
     return False
 
+def isfunction(child):
+
+    return child.type in (
+        Token.T_FUNCTION,
+        Token.T_ASYNC_FUNCTION,
+        Token.T_GENERATOR,
+        Token.T_ASYNC_GENERATOR,
+        Token.T_ANONYMOUS_FUNCTION,
+        Token.T_ASYNC_ANONYMOUS_FUNCTION,
+        Token.T_ANONYMOUS_GENERATOR,
+        Token.T_ASYNC_ANONYMOUS_GENERATOR,
+        Token.T_METHOD,
+        Token.T_LAMBDA,
+    );
+
+def isctrlflow(child):
+    """
+    returns true when there is no reason to place a semicolon
+    after the production of the given token
+    """
+    if child.type in (Token.T_BRANCH, Token.T_FOR_IN, Token.T_FOR_OF, Token.T_FOR, Token.T_SWITCH, Token.T_WHILE):
+        if (child.children[-1].type == Token.T_BLOCK):
+            return True
+    elif child.type == Token.T_CLASS:
+        if (child.children[-1].type == Token.T_CLASS_BLOCK):
+            return True
+    elif isfunction(child):
+        if (child.children[-1].type == Token.T_BLOCK):
+            return True
+    elif child.type == Token.T_DOWHILE:
+        if (child.children[-1].type == Token.T_ARGLIST):
+            return True
+    return False
+
 class Formatter(object):
     def __init__(self, opts=None):
         super(Formatter, self).__init__()
@@ -132,10 +166,13 @@ class Formatter(object):
                 out.append((depth, state, token))
             elif token.type == Token.T_MODULE:
                 insert = False
-                if self.pretty_print and len(token.children) > 0:
+                if self.pretty_print and len(token.children) > 0 and not isctrlflow(token.children[-1]):
                     seq.append((depth + 1, Token.T_SPECIAL, ";"))
                 for child in reversed(token.children):
-                    if insert:
+
+                    if insert and isctrlflow(child):
+                        seq.append((depth + 1, Token.T_NEWLINE, "\n"))
+                    elif insert:
                         seq.append((depth + 1, Token.T_NEWLINE, "\n"))
                         seq.append((depth + 1, Token.T_SPECIAL, ";"))
                     seq.append((depth + 1, None, child))
@@ -144,7 +181,7 @@ class Formatter(object):
                 seq.append((depth, Token.T_SPECIAL, token.value[1]))
                 seq.append((depth, Token.T_NEWLINE, "\n"))
                 first = True
-                if self.pretty_print and len(token.children) > 0:
+                if self.pretty_print and len(token.children) > 0 and not isctrlflow(token.children[-1]):
                     seq.append((depth + 1, Token.T_SPECIAL, ";"))
                 for child in reversed(token.children):
                     if child.type in (Token.T_CASE, Token.T_DEFAULT) or first:
@@ -152,7 +189,9 @@ class Formatter(object):
                     else:
                         insert = True
 
-                    if insert:
+                    if insert and isctrlflow(child):
+                        seq.append((depth + 1, Token.T_NEWLINE, "\n"))
+                    elif insert:
                         seq.append((depth + 1, Token.T_NEWLINE, "\n"))
                         seq.append((depth + 1, Token.T_SPECIAL, ";"))
 
@@ -162,7 +201,27 @@ class Formatter(object):
 
                 seq.append((depth, Token.T_NEWLINE, "\n"))
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
+            elif token.type == 'T_CLASS_BLOCK':
+                # assumes all children are function definitions
+                # which do not need a semicolon
+                seq.append((depth, Token.T_SPECIAL, token.value[1]))
+                seq.append((depth, Token.T_NEWLINE, "\n"))
+                first = True
+                for child in reversed(token.children):
+                    if child.type in (Token.T_CASE, Token.T_DEFAULT) or first:
+                        insert = False
+                    else:
+                        insert = True
 
+                    if insert:
+                        seq.append((depth + 1, Token.T_NEWLINE, "\n"))
+
+                    seq.append((depth + 1, None, child))
+
+                    first = False
+
+                seq.append((depth, Token.T_NEWLINE, "\n"))
+                seq.append((depth, Token.T_SPECIAL, token.value[0]))
             elif token.type == Token.T_OBJECT:
                 seq.append((depth, Token.T_OBJECT, token.value[1]))
                 insert = False
@@ -285,7 +344,6 @@ class Formatter(object):
                 seq.append((depth, None, token.children[0]))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_CLASS:
-
                 seq.append((depth, None, token.children[2]))
                 if len(token.children[1].children) > 0:
                     if self.pretty_print:
@@ -395,8 +453,14 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_DOWHILE:
                 seq.append((depth, None, token.children[1]))
+                if self.pretty_print:
+                    seq.append((depth, Token.T_TEXT, " "))
                 seq.append((depth, Token.T_KEYWORD, "while"))
+                if self.pretty_print:
+                    seq.append((depth, Token.T_TEXT, " "))
                 seq.append((depth, None, token.children[0]))
+                if self.pretty_print:
+                    seq.append((depth, Token.T_TEXT, " "))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_WHILE:
                 seq.append((depth, None, token.children[1]))
@@ -446,8 +510,17 @@ class Formatter(object):
 
 def main():  # pragma: no cover
 
+    text0 = """
+
+    for (;a,b;c,d) {
+
+    }
+    """
+
     text1 = """
-    a?.()
+    switch() {}
+    do {} while ()
+    x = 0
     """
 
     #text1 = open("./res/daedalus/index.js").read()
@@ -457,8 +530,7 @@ def main():  # pragma: no cover
 
     print(mod.toString())
 
-    cc = Formatter()
-    text2 = Formatter().format(mod)
+    text2 = Formatter({'minify': False}).format(mod)
 
     print("-" * 79)
 

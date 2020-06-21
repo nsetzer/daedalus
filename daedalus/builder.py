@@ -778,9 +778,10 @@ class Builder(object):
     def build_error(self, e):
         sys.stderr.write("\nError:\n")
         sys.stderr.write("Filepath: %s\n" % e.filepath)
+        sys.stderr.write("Line: %s\n" % e.line)
         sys.stderr.write("message: %s\n" % e)
         if e.lines:
-            sys.stderr.write("Lines:")
+            sys.stderr.write("Source:\n")
             sys.stderr.write("\n".join(e.lines))
             sys.stderr.write("\n")
 

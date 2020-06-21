@@ -6,6 +6,10 @@ import logging
 
 from .builder import Builder
 from .server import SampleServer
+from .lexer import Lexer
+from .parser import Parser
+from .formatter import Formatter
+from .transform import TransformMinifyScope
 
 enable_compiler = True
 try:
@@ -158,6 +162,44 @@ class ServeCLI(CLI):
         server.setCert(args.cert, args.keyfile)
         server.run()
 
+class FormatCLI(CLI):
+
+    def register(self, parser):
+        subparser = parser.add_parser('format',
+            help="reformat javascript file", aliases=['fmt'])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('in_js')
+        subparser.add_argument('out_js')
+
+    def execute(self, args):
+
+
+        if args.in_js == "-":
+            text = sys.stdin.read()
+        else:
+            path_in = os.path.abspath(args.in_js)
+            with open(path_in, "r") as rf:
+                text = rf.read()
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        if args.minify:
+            TransformMinifyScope().transform(ast)
+
+        out_text = Formatter({'minify': args.minify}).format(ast)
+
+        if args.out_js == "-":
+            sys.stdout.write(out_text)
+            sys.stdout.write("\n")
+
+        else:
+            path_out = os.path.abspath(args.out_js)
+            with open(path_out, "w") as wf:
+                wf.write(out_text)
+                wf.write("\n")
+
 class AstCLI(CLI):
 
     def register(self, parser):
@@ -241,6 +283,7 @@ def register_parsers(parser):
 
     BuildCLI().register(parser)
     ServeCLI().register(parser)
+    FormatCLI().register(parser)
     if enable_compiler:
         AstCLI().register(parser)
         DisCLI().register(parser)
