@@ -40,7 +40,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_comment(self):
         self._chkeq("""
@@ -69,7 +69,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_regex(self):
         self._chkeq("""
@@ -195,7 +195,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_expr_2(self):
 
@@ -208,7 +208,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_expr_3(self):
 
@@ -223,7 +223,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_expr_4(self):
 
@@ -235,7 +235,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_branch_1(self):
 
@@ -250,7 +250,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_branch_2(self):
 
@@ -267,7 +267,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_branch_3(self):
 
@@ -285,7 +285,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_prefix_1(self):
 
@@ -297,7 +297,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_prefix_2(self):
 
@@ -309,7 +309,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_postfix_1(self):
 
@@ -321,7 +321,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_binary_1(self):
 
@@ -333,7 +333,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_binary_2(self):
 
@@ -345,7 +345,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_get_attr(self):
 
@@ -357,7 +357,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_ternary_1(self):
 
@@ -369,7 +369,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_function_1(self):
 
@@ -381,7 +381,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_function_2(self):
 
@@ -393,7 +393,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_subscr_1(self):
 
@@ -405,7 +405,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_for_111(self):
         self._chkeq("for (let x=1; x < 10; x++) {}",
@@ -449,7 +449,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_for_in_2(self):
 
@@ -461,7 +461,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_for_of_1(self):
 
@@ -473,7 +473,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_for_of_2(self):
 
@@ -485,7 +485,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_while_1(self):
 
@@ -497,7 +497,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_dowhile_1(self):
 
@@ -509,7 +509,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_switch_1(self):
 
@@ -528,7 +528,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_switch_2(self):
 
@@ -540,7 +540,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_class_1(self):
 
@@ -556,7 +556,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_class_2(self):
 
@@ -572,7 +572,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_class_2(self):
 
@@ -588,7 +588,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_comma_1(self):
 
@@ -601,7 +601,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_trycatch_1(self):
 
@@ -619,7 +619,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_new_1(self):
 
@@ -631,7 +631,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_new_2(self):
 
@@ -643,7 +643,7 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(output, expected)
+        self.assertEqual(expected, output)
 
     def test_001_optional_chaining_attr(self):
         #self._chkeq("a ?. b", "a?.b")
@@ -721,7 +721,7 @@ class FormatterTestCase(unittest.TestCase):
     def test_001_static_method(self):
         self._chkeq("""
             class C {static f() {} f2(){}}
-        """, 'class C{static f(){};f2(){}}')
+        """, 'class C{static f(){}f2(){}}')
 
     def test_001_unpack_sequence(self):
 

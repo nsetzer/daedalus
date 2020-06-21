@@ -258,8 +258,10 @@ class Lexer(LexerBase):
 
             elif c == '\\':
                 c = self._peekch()
+
                 if c != '\n':
-                    raise self._error("expected newline")
+                    raise self._error("expected newline after '\\'. found '%s'" % c)
+
                 self._getch()  # consume the newline
 
             elif c == '\'' or c == '\"' or c == '`':
@@ -368,11 +370,15 @@ class Lexer(LexerBase):
                 nc = None
 
             if nc and nc in chset_special2:
-                if self._tok + nc not in operators3:
-                    self._push()
-                    self._type = Token.T_SPECIAL
-                self._putch(self._getch())
-                self._maybe_push_op()
+                if nc == "/":
+                    # next time around the loop lex as a comment/regex/etc
+                    break
+                else:
+                    if self._tok + nc not in operators3:
+                        self._push()
+                        self._type = Token.T_SPECIAL
+                    self._putch(self._getch())
+                    self._maybe_push_op()
             else:
                 self._maybe_push()
                 self._type = Token.T_TEXT
@@ -587,8 +593,8 @@ def main():  # pragma: no cover
     # r.match(2/3)
 
     text1 = """
-    $ /= 0
-    $ |= 0
+    //var f=/\\{ *([\\w_-]+) *\\}/g
+
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":

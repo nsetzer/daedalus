@@ -4,7 +4,8 @@ import sys
 import io
 import ast
 import hashlib
-from .lexer import Lexer, Token, TokenError
+from .lexer import Lexer
+from .token import Token, TokenError
 
 class TransformError(TokenError):
     pass
@@ -578,7 +579,7 @@ class UndefinedRef(Ref):
         return self.label
 
 DF_IDENTIFIER = 1
-DF_FUNCTION   = 2
+DF_FUNCTION   = 2  # unused
 DF_CLASS      = 3
 
 class VariableScope(object):
@@ -801,6 +802,7 @@ class VariableScope(object):
         self.blscope.append({})
 
     def popBlockScope(self):
+
         mapping = self.blscope.pop()
 
         for key, ref in mapping.items():
@@ -915,13 +917,12 @@ class MinifyVariableScope(VariableScope):
 
     def nextLabel(self, type_):
         c = ""
-
         if type_ == DF_CLASS:
             # closure compiler can detect duplicate class names even
             # in different scopes. use the parent scope to keep track
             # of unique names
             # class names always start with a capital letter
-            scope = self.parent
+            scope = self
             while scope.parent is not None:
                 scope = scope.parent
 
@@ -930,6 +931,8 @@ class MinifyVariableScope(VariableScope):
             c = encode_identifier(alphabet64i, n)
             return c
         else:
+            #identifiers for functions and variables are always lowercase
+            # TODO: consider making functions always at least 2 characters
             while True:
                 n = self.label_index
                 self.label_index += 1
@@ -1216,6 +1219,8 @@ class TransformAssignScope(object):
             Token.T_ANONYMOUS_GENERATOR: self.finalize_function,
             Token.T_ASYNC_ANONYMOUS_GENERATOR: self.finalize_function,
 
+            Token.T_FOR: self.finalize_block,
+
             Token.T_LAMBDA: self.finalize_function,
 
             Token.T_BLOCK: self.finalize_block,
@@ -1319,7 +1324,7 @@ class TransformAssignScope(object):
                 if not (token.type == Token.T_METHOD and not self.python):
                     scope.define(0, child.children[0])
             elif child.type == Token.T_CLASS:
-                scope.define(0, child.children[0])
+                scope.define(0, child.children[0], DF_CLASS)
 
     def visit_block(self, flags, scope, token, parent):
 
@@ -1337,7 +1342,7 @@ class TransformAssignScope(object):
     def visit_function(self, flags, scope, token, parent):
 
         if isNamedFunction(token):
-            if parent.type not in (Token.T_BLOCK, Token.T_MODULE):
+            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE):
                 # this should never happen
                 raise TransformError(parent, "visit function, parent node is not a block scope: %s>%s" % (parent.type, token.type))
 
@@ -1507,7 +1512,10 @@ class TransformAssignScope(object):
             # the parser should be run in python mode
             raise TransformError(body, "expected block in for loop body")
 
+        # the extra block scope, and finalize, allows for declaring
+        # variables inside of a for arg list
         scope.pushBlockScope()
+        self._push_finalize(scope, token, parent)
 
         self._push_children(scope, body, flags)
         self._push_children(scope, arglist, flags)
@@ -1640,8 +1648,6 @@ class TransformAssignScope(object):
 
         self._push_finalize(next_scope, token, None)
         self._push_defered(next_scope, token, None)
-
-
 
         # load the classes that this new class inherits from using the current scope
         self._push_children(scope, token.children[1])
@@ -1973,6 +1979,28 @@ def main_var2():
 
     print(ast.toString(3))
 
+def main_for():
+    from .parser import Parser
+    from .formatter import Formatter
+    text = """
+
+        class A {}
+        class X {}
+
+    """
+
+    tokens = Lexer().lex(text)
+    parser =  Parser()
+    parser.python = False
+    ast = parser.parse(tokens)
+
+    tr = TransformMinifyScope()
+    #tr = TransformAssignScope()
+    tr.transform(ast)
+
+    print(ast.toString(3))
+    print(Formatter().format(ast))
+
 def main_cls():
     from .parser import Parser
     text = """
@@ -1992,4 +2020,4 @@ def main_cls():
     print(ast.toString(3))
 
 if __name__ == '__main__':
-    main_var2()
+    main_for()

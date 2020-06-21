@@ -17,6 +17,8 @@ Supports:
 
 Installing the package will add the Daedalus CLI to the path
 
+Note: Minimum python version is Python 3.6
+
 ```bash
 python setup.py install
 ```

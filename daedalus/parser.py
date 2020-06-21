@@ -115,6 +115,7 @@ class Parser(object):
     W_EXPORT_DEFAULT = 5
     W_VAR_USED = 6
     W_UNSAFE_BOOLEAN_TEST = 7  # Note: could be expanded to testing between operator &&, ||
+    W_USELESS_KEYWORD = 8
 
     def __init__(self):
         super(Parser, self).__init__()
@@ -144,13 +145,13 @@ class Parser(object):
             (L2R, self.visit_binary, ['??']),
             (L2R, self.visit_binary, ['&&']),
             (L2R, self.visit_binary, ['||']),
-            (L2R, self.visit_ternary, ['?']),
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
             (R2L, self.visit_assign_v2, ['=>', '=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
             (R2L, self.visit_unary, ['yield', 'yield*']),
+            (R2L, self.visit_ternary, ['?']), # moved down to last possible position
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_binary, [':']),
             (L2R, self.visit_comma, [',']),
@@ -168,7 +169,9 @@ class Parser(object):
             Parser.W_EXPORT_DEFAULT: "meaningless export default",
             Parser.W_VAR_USED: "unsafe use of keyword var",
             Parser.W_UNSAFE_BOOLEAN_TEST: "unsafe boolean test. use (!!{token}) or (({token} !== undefined) && ({token} !== null))",
+            Parser.W_USELESS_KEYWORD: "useless use of keyword",
         }
+        self.warnings_count = {}
 
         self.disabled_warnings = set()
         self.disable_all_warnings = False
@@ -176,6 +179,18 @@ class Parser(object):
         self._offset = 0  # used by consume in the negative direction
 
     def warn(self, token, type, message=None):
+        """
+        print a warning message, up to N of each type, as long as
+        warnings are not disabled and
+        """
+
+        if type not in self.warnings_count:
+            self.warnings_count[type] = 0
+        else:
+            self.warnings_count[type] += 1
+
+        if self.warnings_count[type] > 5:
+            return
 
         if self.disable_all_warnings:
             return
@@ -191,6 +206,8 @@ class Parser(object):
             token.line, token.index, token.type, token.value, text)
 
         sys.stdout.write(text)
+
+
 
     def parse(self, tokens):
 
@@ -782,6 +799,8 @@ class Parser(object):
         lhs = self.consume(tokens, token, index, -1)
 
         #if lhs.type == Token.T_GROUPING and token.value == "[]" or lhs.type == Token.:
+
+        # check if the LHS is assigning to a list, or a list declaration
         if lhs.type == Token.T_LIST:
             lhs.type = Token.T_UNPACK_SEQUENCE
         if lhs.type == Token.T_VAR:
@@ -792,7 +811,7 @@ class Parser(object):
         token.children.append(rhs)
         token.type = Token.T_ASSIGN
 
-        return self._offset
+        return self._offset - 1
 
     def visit_lambda(self, parent, tokens, index, operators):
         """
@@ -935,6 +954,7 @@ class Parser(object):
         return 1
 
     def visit_keyword(self, parent, tokens, index, operators):
+        # assumes: parent could be null
 
         token = tokens[index]
         if token.type != Token.T_KEYWORD:
@@ -1103,14 +1123,15 @@ class Parser(object):
             raise ParseError(rhs1, "remove () from class def")
 
         if rhs1.type != Token.T_GROUPING:
+            self._remove_special(tokens, index + 1)
             if self.python:
-                tmp = Token(Token.T_BLOCK, rhs1.line, rhs1.index, '{}')
+                tmp = Token(Token.T_CLASS_BLOCK, rhs1.line, rhs1.index, '{}')
                 tmp.children= [rhs1]
                 rhs1 = tmp
             else:
                 self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
         else:
-            rhs1.type = Token.T_BLOCK
+            rhs1.type = Token.T_CLASS_BLOCK
 
         token.children.append(rhs1)
 
@@ -1155,9 +1176,6 @@ class Parser(object):
 
                 else:
                     raise ParseError(child, "expected function body")
-
-
-
 
             index += offset
 
@@ -1361,14 +1379,30 @@ class Parser(object):
     def collect_keyword_import_from(self, tokens, index):
         token = tokens[index]
 
-        next_tok = self.consume(tokens, token, index, 1)
+        j = self.peek_token(tokens, token, index, 1)
+
+        if j is None:
+            # token 'from' likely used as a variable instead
+            return
+
+        next_tok = tokens[j]
+
+        """
+        from module modname import {name, }
+        from modname import {name, }
+        """
 
         if next_tok.type == Token.T_TEXT and next_tok.value == 'module':
+            self.consume(tokens, token, index, 1)
             token.type = Token.T_IMPORT_MODULE
             module = self.consume(tokens, token, index, 1)
-        else:
+        elif next_tok.type == Token.T_TEXT:
+            self.consume(tokens, token, index, 1)
             token.type = Token.T_IMPORT
             module = next_tok
+        else:
+            # token 'from' likely used as a variable instead
+            return
 
         token.value = self._collect_keyword_import_get_name(module)
 
@@ -1435,7 +1469,27 @@ class Parser(object):
         token = tokens[index]
 
         rhs1 = self.consume(tokens, token, index, 1)
-        rhs2 = self.consume(tokens, token, index, 1)
+
+        # TODO: this is an experimental block support
+        # most keywords must be followed by a block, when
+        # the next instruction is a keyword instruction,
+        # collect that keyword first.
+        #rhs2 = self.consume(tokens, token, index, 1)
+        j = self.peek_keyword(tokens, token, index, 1)
+        if j is not None and tokens[j].type == Token.T_KEYWORD:
+            self.visit_keyword(None, tokens, j, [])
+            rhs2 = tokens.pop(j)
+        else:
+            try:
+                rhs2 = self.consume(tokens, token, index, 1)
+            except ParseError as e:
+                if index + 1 < len(tokens) \
+                  and tokens[index + 1].type == Token.T_SPECIAL \
+                  and tokens[index + 1].value == ';':
+                    self.warn(token, Parser.W_USELESS_KEYWORD)
+                    rhs2 = Token(Token.T_GROUPING, token.line, token.index, "{}")
+                else:
+                    raise e;
 
         if rhs1.type != Token.T_GROUPING:
             raise ParseError(token, "expected grouping")
@@ -1480,6 +1534,8 @@ class Parser(object):
             token.children = [rhs1]
 
         if rhs2.type != Token.T_GROUPING:
+            self._remove_special(tokens, index + 1)
+
             if self.python:
                 tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
                 tmp.children= [rhs2]
@@ -1519,6 +1575,7 @@ class Parser(object):
         token.children[1].type = Token.T_ARGLIST
 
         if body.type != Token.T_GROUPING:
+            self._remove_special(tokens, index + 1)
             if self.python:
                 tmp = Token(Token.T_BLOCK, body.line, body.index, '{}')
                 tmp.children= [body]
@@ -1540,7 +1597,7 @@ class Parser(object):
                 token.type = Token.T_FUNCTION
 
         ia = self.peek_keyword(tokens, token, index, -1)
-        if ia and tokens[ia].type == Token.T_KEYWORD and tokens[ia].value == 'async':
+        if ia is not None and tokens[ia].type == Token.T_KEYWORD and tokens[ia].value == 'async':
             _ = self.consume_keyword(tokens, token, index, -1)
 
             if token.type == Token.T_FUNCTION:
@@ -1576,8 +1633,20 @@ class Parser(object):
         token = tokens[index]
 
         rhs1 = self.consume(tokens, token, index, 1)
-        rhs2 = self.consume_keyword(tokens, token, index, 1)
-        i3 = self.peek_keyword(tokens, token, index, 1)
+
+        # TODO: this is an experimental block support
+        # most keywords must be followed by a block, when
+        # the next instruction is a keyword instruction,
+        # collect that keyword first.
+        #rhs2 = self.consume(tokens, token, index, 1)
+        j = self.peek_keyword(tokens, token, index, 1)
+        if j is not None and tokens[j].type == Token.T_KEYWORD:
+            self.visit_keyword(None, tokens, j, [])
+            rhs2 = tokens.pop(j)
+        else:
+            rhs2 = self.consume(tokens, token, index, 1)
+
+        self._remove_special(tokens, index + 1)
 
         if rhs2.type != Token.T_GROUPING:
             self.warn(rhs2, Parser.W_BRANCH_TRUE)
@@ -1597,6 +1666,7 @@ class Parser(object):
         token.type = Token.T_BRANCH
 
         # check for else
+        i3 = self.peek_keyword(tokens, token, index, 1)
         if i3 is not None:
             tok3 = tokens[i3]
             if tok3.type != Token.T_KEYWORD or tok3.value != 'else':
@@ -1606,10 +1676,17 @@ class Parser(object):
             tokens.pop(i3)
 
             # check for else if
+
             i4 = self.peek_keyword(tokens, token, index, 1)
+            # TODO: unsure why i need to retain the special case on If
+            # the new handler for any keyword should also handle if correctly
+            # an if-else-if test will fail if it is removed
             if i4 is not None and \
                tokens[i4].type == Token.T_KEYWORD and tokens[i4].value == 'if':
                 self.collect_keyword_if(tokens, i4)
+
+            elif i4 is not None and tokens[j].type == Token.T_KEYWORD:
+                self.visit_keyword(None, tokens, i4, [])
 
             elif i4 is not None and tokens[i4].type != Token.T_GROUPING:
                 self.warn(tokens[i4], Parser.W_BRANCH_FALSE)
@@ -1694,6 +1771,7 @@ class Parser(object):
 
         rhs = self.consume(tokens, token, index, 1)
         if rhs.type != Token.T_GROUPING:
+            self._remove_special(tokens, index + 1)
             if self.python:
                 tmp = Token(Token.T_BLOCK, rhs.line, rhs.index, '{}')
                 tmp.children= [rhs]
@@ -1717,6 +1795,7 @@ class Parser(object):
             #rhs2 = self.consume(tokens, token, index, 1)
             rhs3 = self.consume(tokens, token, index, 1)
             if rhs3.type != Token.T_GROUPING:
+                self._remove_special(tokens, index + 1)
                 if self.python:
                     tmp = Token(Token.T_BLOCK, rhs3.line, rhs3.index, '{}')
                     tmp.children= [rhs3]
@@ -1735,6 +1814,7 @@ class Parser(object):
             rhs1 = self.consume_keyword(tokens, token, index, 1)
             rhs2 = self.consume(tokens, token, index, 1)
             if rhs2.type != Token.T_GROUPING:
+                self._remove_special(tokens, index + 1)
                 if self.python:
                     tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
                     tmp.children= [rhs2]
@@ -1769,6 +1849,7 @@ class Parser(object):
             rhs1.type = Token.T_ARGLIST
 
         if rhs2.type != Token.T_GROUPING:
+            self._remove_special(tokens, index + 1)
             if self.python:
                 tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
                 tmp.children= [rhs2]
@@ -1780,6 +1861,11 @@ class Parser(object):
 
         token.children = [rhs1, rhs2]
         token.type = Token.T_WHILE
+
+    def _remove_special(self, tokens, index):
+
+        while index < len(tokens) and tokens[index].type == Token.T_SPECIAL and tokens[index].value == ';':
+            tokens.pop(index)
 
 def main():  # pragma: no cover
 
@@ -1812,8 +1898,37 @@ def main():  # pragma: no cover
     export default class a {}
     """
 
+    # container = this._controlContainer = create$1('div', l + 'control-container', this._container);
+    text0 = """
+    //function h(t){var i,e,n,o;for(e=1,n=arguments.length;e<n;e++)for(i in o=arguments[e])t[i]=o[i];return t}
+    for(i in b)
+        for(j in c)
+            d = i * j
+    """
+
+    text0 = """
+        s=function(){n?o=arguments:(t.apply(e,arguments),setTimeout(r,i),n=!0)}
+    """
+
+    text0 = """
+        if(true)
+            for(var x in y)
+                console.log(x); // <- semicolon
+        else
+            for(var y in x)
+                console.log(x); // <- semicolon
+    """
+
+    text0 = """
+    a?b?c:d:e
+    """
+
     text1 = """
-    let x,y,z
+    if (true) a=b=c; else d=f;
+    """
+
+    text1 = """
+    for(;!((t=o1).y1&&t.y2||t===o2););
     """
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)

@@ -416,6 +416,23 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_assign_newline(self):
+
+        text = """a = b =
+            f()"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_TEXT', 'b'),
+                            TOKEN('T_FUNCTIONCALL', '',
+                                TOKEN('T_TEXT', 'f'),
+                                TOKEN('T_ARGLIST', '()')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
 class ParserBinOpErrorTestCase(unittest.TestCase):
 
     def test_001_assign(self):
@@ -720,7 +737,7 @@ class ParserKeywordTestCase(unittest.TestCase):
                 TOKEN('T_CLASS', 'class',
                     TOKEN('T_TEXT', 'A'),
                     TOKEN('T_KEYWORD', 'extends'),
-                    TOKEN('T_BLOCK', '{}')))
+                    TOKEN('T_CLASS_BLOCK', '{}')))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -944,7 +961,7 @@ class ParserClassTestCase(unittest.TestCase):
             TOKEN('T_CLASS', 'class',
                 TOKEN('T_TEXT', ''),
                 TOKEN('T_KEYWORD', 'extends'),
-                TOKEN('T_BLOCK', '{}'))
+                TOKEN('T_CLASS_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -958,7 +975,7 @@ class ParserClassTestCase(unittest.TestCase):
             TOKEN('T_CLASS', 'class',
                 TOKEN('T_TEXT', 'A'),
                 TOKEN('T_KEYWORD', 'extends'),
-                TOKEN('T_BLOCK', '{}'))
+                TOKEN('T_CLASS_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -973,7 +990,7 @@ class ParserClassTestCase(unittest.TestCase):
                 TOKEN('T_TEXT', 'A'),
                 TOKEN('T_KEYWORD', 'extends',
                     TOKEN('T_TEXT', 'B')),
-                TOKEN('T_BLOCK', '{}'))
+                TOKEN('T_CLASS_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -994,7 +1011,7 @@ class ParserClassTestCase(unittest.TestCase):
                 TOKEN('T_TEXT', 'A'),
                 TOKEN('T_KEYWORD', 'extends',
                     TOKEN('T_TEXT', 'B')),
-                TOKEN('T_BLOCK', '{}',
+                TOKEN('T_CLASS_BLOCK', '{}',
                     TOKEN('T_METHOD', '',
                         TOKEN('T_TEXT', 'onClick'),
                         TOKEN('T_ARGLIST', '()',
@@ -1016,7 +1033,7 @@ class ParserClassTestCase(unittest.TestCase):
                     TOKEN('T_GET_ATTR', '.',
                         TOKEN('T_TEXT', 'X'),
                         TOKEN('T_ATTR', 'Y'))),
-                TOKEN('T_BLOCK', '{}'))
+                TOKEN('T_CLASS_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))

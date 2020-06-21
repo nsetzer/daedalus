@@ -1,3 +1,4 @@
+#! cd .. && python3 -m tests.lexer_test
 
 import io
 import unittest
@@ -198,6 +199,19 @@ class LexerBasicTestCase(unittest.TestCase):
 
     def test_006_expr_regex(self):
         text = "x = /a+/"
+        expected = [
+            Token(Token.T_TEXT, 1, 0, 'x'),
+            Token(Token.T_SPECIAL, 1, 2, '='),
+            Token(Token.T_REGEX, 1, 5, '/a+/')
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
+
+    def test_006_expr_regex_2(self):
+        # while lexing the special tokens, recognise the start
+        # of a regular expression and back out of the current token
+        text = "x=/a+/"
         expected = [
             Token(Token.T_TEXT, 1, 0, 'x'),
             Token(Token.T_SPECIAL, 1, 2, '='),
