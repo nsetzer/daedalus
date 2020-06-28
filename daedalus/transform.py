@@ -135,6 +135,9 @@ class TransformFlatten(TransformBase):
            token.type == Token.T_UNPACK_SEQUENCE or \
            token.type == Token.T_GROUPING:
 
+            if (parent and parent.type == Token.T_FOR):
+                return
+
             chlst = token.children
             index = 0
             while index < len(chlst):

@@ -950,6 +950,40 @@ class ParserFunctionTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+class ParserModuleTestCase(unittest.TestCase):
+
+    def test_001_import_export(self):
+
+        # test that all import/export combinations can
+        # be parsed without any issues
+
+        text = """
+            from module foo import {bar}
+            from module foo.bar import {baz}
+            import module foo.bar
+            from foo import {bar}
+            from foo.bar import {baz}
+            import foo
+            import foo.bar
+            include 'foo.js'
+            export a
+            export a = 1
+            export const a = 1
+            export let a = 1
+            export var a = 1
+            export function a () {}
+            export class a {}
+            export default a
+            export default a = 1
+            export default const a = 1
+            export default let a = 1
+            export default var a = 1
+            export default function a () {}
+            export default class a {}
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+
 class ParserClassTestCase(unittest.TestCase):
 
     def test_001_class_1(self):
@@ -1037,6 +1071,293 @@ class ParserClassTestCase(unittest.TestCase):
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
+
+class ParserChallengeTestCase(unittest.TestCase):
+
+    def _assert(self, expected, text, debug=False):
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        self.assertFalse(parsecmp(expected, ast, debug))
+
+    def test_001_challenge_1(self):
+        # a complicated unsafe true/false branch
+
+        text = "if (true) a=b=c; else d=f;"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_BRANCH', 'if',
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_KEYWORD', 'true')),
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'a'),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_TEXT', 'b'),
+                        TOKEN('T_TEXT', 'c'))),
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'd'),
+                    TOKEN('T_TEXT', 'f'))))
+        self._assert(expected, text)
+
+    def test_001_challenge_2(self):
+        # a useless for loop
+
+        text = "for(;!((t=o1).y1&&t.y2||t===o2););"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FOR', 'for',
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_EMPTY_TOKEN', ''),
+                    TOKEN('T_PREFIX', '!',
+                        TOKEN('T_GROUPING', '()',
+                            TOKEN('T_LOGICAL_OR', '||',
+                                TOKEN('T_LOGICAL_AND', '&&',
+                                    TOKEN('T_GET_ATTR', '.',
+                                        TOKEN('T_GROUPING', '()',
+                                            TOKEN('T_ASSIGN', '=',
+                                                TOKEN('T_TEXT', 't'),
+                                                TOKEN('T_TEXT', 'o1'))),
+                                        TOKEN('T_ATTR', 'y1')),
+                                    TOKEN('T_GET_ATTR', '.',
+                                        TOKEN('T_TEXT', 't'),
+                                        TOKEN('T_ATTR', 'y2'))),
+                                TOKEN('T_BINARY', '===',
+                                    TOKEN('T_TEXT', 't'),
+                                    TOKEN('T_TEXT', 'o2'))))),
+                    TOKEN('T_EMPTY_TOKEN', '')),
+                TOKEN('T_BLOCK', '{}')))
+        self._assert(expected, text)
+
+    def test_001_challenge_3(self):
+        text = "a?b?c:d:e"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TERNARY', '?',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TERNARY', '?',
+                    TOKEN('T_TEXT', 'b'),
+                    TOKEN('T_TEXT', 'c'),
+                    TOKEN('T_TEXT', 'd')),
+                TOKEN('T_TEXT', 'e')))
+        self._assert(expected, text)
+
+    def test_001_challenge_4(self):
+        text = "a?b?c?c:c:b:a"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TERNARY', '?',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TERNARY', '?',
+                    TOKEN('T_TEXT', 'b'),
+                    TOKEN('T_TERNARY', '?',
+                        TOKEN('T_TEXT', 'c'),
+                        TOKEN('T_TEXT', 'c'),
+                        TOKEN('T_TEXT', 'c')),
+                    TOKEN('T_TEXT', 'b')),
+                TOKEN('T_TEXT', 'a')))
+        self._assert(expected, text)
+
+    def test_001_challenge_5(self):
+        text = "a?b:a?a?b:a?b:c:c"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TERNARY', '?',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'),
+                TOKEN('T_TERNARY', '?',
+                    TOKEN('T_TEXT', 'a'),
+                    TOKEN('T_TERNARY', '?',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_TEXT', 'b'),
+                        TOKEN('T_TERNARY', '?',
+                            TOKEN('T_TEXT', 'a'),
+                            TOKEN('T_TEXT', 'b'),
+                            TOKEN('T_TEXT', 'c'))),
+                    TOKEN('T_TEXT', 'c'))))
+        self._assert(expected, text)
+
+    def test_001_challenge_6(self):
+        text = "a2?b2:c2?d2?e2:f2?g2:h2:i2;"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TERNARY', '?',
+                TOKEN('T_TEXT', 'a2'),
+                TOKEN('T_TEXT', 'b2'),
+                TOKEN('T_TERNARY', '?',
+                    TOKEN('T_TEXT', 'c2'),
+                    TOKEN('T_TERNARY', '?',
+                        TOKEN('T_TEXT', 'd2'),
+                        TOKEN('T_TEXT', 'e2'),
+                        TOKEN('T_TERNARY', '?',
+                            TOKEN('T_TEXT', 'f2'),
+                            TOKEN('T_TEXT', 'g2'),
+                            TOKEN('T_TEXT', 'h2'))),
+                    TOKEN('T_TEXT', 'i2'))))
+        self._assert(expected, text)
+
+
+    def test_001_challenge_7(self):
+        # a for loop with unsafe block
+        # confuses what is a arglist or function call
+        text = "for(x in y)(a)[i]&&e[i].apply(x,f)"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FOR_IN', 'for',
+                TOKEN('T_TEXT', 'x'),
+                TOKEN('T_TEXT', 'y'),
+                TOKEN('T_LOGICAL_AND', '&&',
+                    TOKEN('T_SUBSCR', '',
+                        TOKEN('T_GROUPING', '()',
+                            TOKEN('T_TEXT', 'a')),
+                        TOKEN('T_TEXT', 'i')),
+                    TOKEN('T_FUNCTIONCALL', '',
+                        TOKEN('T_GET_ATTR', '.',
+                            TOKEN('T_SUBSCR', '',
+                                TOKEN('T_TEXT', 'e'),
+                                TOKEN('T_TEXT', 'i')),
+                            TOKEN('T_ATTR', 'apply')),
+                        TOKEN('T_ARGLIST', '()',
+                            TOKEN('T_TEXT', 'x'),
+                            TOKEN('T_TEXT', 'f'))))))
+        self._assert(expected, text)
+
+    def test_001_challenge_8(self):
+        # inner for loop order of operations
+        text = "for(a in b=c)d;"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FOR_IN', 'for',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'b'),
+                    TOKEN('T_TEXT', 'c')),
+                TOKEN('T_TEXT', 'd')))
+        self._assert(expected, text)
+
+    def test_001_challenge_9(self):
+        # inner for loop order of operations
+        text = "for(a=b,c=d;e<f;g++) h;"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FOR', 'for',
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_COMMA', ',',
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_TEXT', 'a'),
+                            TOKEN('T_TEXT', 'b')),
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_TEXT', 'c'),
+                            TOKEN('T_TEXT', 'd'))),
+                    TOKEN('T_BINARY', '<',
+                        TOKEN('T_TEXT', 'e'),
+                        TOKEN('T_TEXT', 'f')),
+                    TOKEN('T_POSTFIX', '++',
+                        TOKEN('T_TEXT', 'g'))),
+                TOKEN('T_TEXT', 'h')))
+        self._assert(expected, text)
+
+    def test_001_challenge_10(self):
+        # inner for loop order of operations
+        text = "var a;for(b=c;d<e;f++)for(g in h=i)j;"
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'var',
+                TOKEN('T_TEXT', 'a')),
+            TOKEN('T_FOR', 'for',
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_TEXT', 'b'),
+                        TOKEN('T_TEXT', 'c')),
+                    TOKEN('T_BINARY', '<',
+                        TOKEN('T_TEXT', 'd'),
+                        TOKEN('T_TEXT', 'e')),
+                    TOKEN('T_POSTFIX', '++',
+                        TOKEN('T_TEXT', 'f'))),
+                TOKEN('T_FOR_IN', 'for',
+                    TOKEN('T_TEXT', 'g'),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_TEXT', 'h'),
+                        TOKEN('T_TEXT', 'i')),
+                    TOKEN('T_TEXT', 'j'))))
+        self._assert(expected, text)
+
+    def test_001_challenge_11(self):
+        # inner for loop order of operations
+        text = """
+            if("object"==typeof t)for(var n in t)this._on(n,t[n],i)else for(var o=0,s=(
+                          t=d(t)).length;o<s;o++)this._on(t[o],i,e);
+            """
+        expected = TOKEN('T_MODULE', '',
+    TOKEN('T_BRANCH', 'if',
+        TOKEN('T_ARGLIST', '()',
+            TOKEN('T_BINARY', '==',
+                TOKEN('T_STRING', '"object"'),
+                TOKEN('T_PREFIX', 'typeof',
+                    TOKEN('T_TEXT', 't')))),
+        TOKEN('T_FOR_IN', 'for',
+            TOKEN('T_VAR', 'var',
+                TOKEN('T_TEXT', 'n')),
+            TOKEN('T_TEXT', 't'),
+            TOKEN('T_FUNCTIONCALL', '',
+                TOKEN('T_GET_ATTR', '.',
+                    TOKEN('T_KEYWORD', 'this'),
+                    TOKEN('T_ATTR', '_on')),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_TEXT', 'n'),
+                    TOKEN('T_SUBSCR', '',
+                        TOKEN('T_TEXT', 't'),
+                        TOKEN('T_TEXT', 'n')),
+                    TOKEN('T_TEXT', 'i')))),
+        TOKEN('T_FOR', 'for',
+            TOKEN('T_ARGLIST', '()',
+                TOKEN('T_VAR', 'var',
+                    TOKEN('T_COMMA', ',',
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_TEXT', 'o'),
+                            TOKEN('T_NUMBER', '0')),
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_TEXT', 's'),
+                            TOKEN('T_GET_ATTR', '.',
+                                TOKEN('T_GROUPING', '()',
+                                    TOKEN('T_ASSIGN', '=',
+                                        TOKEN('T_TEXT', 't'),
+                                        TOKEN('T_FUNCTIONCALL', '',
+                                            TOKEN('T_TEXT', 'd'),
+                                            TOKEN('T_ARGLIST', '()',
+                                                TOKEN('T_TEXT', 't'))))),
+                                TOKEN('T_ATTR', 'length'))))),
+                TOKEN('T_BINARY', '<',
+                    TOKEN('T_TEXT', 'o'),
+                    TOKEN('T_TEXT', 's')),
+                TOKEN('T_POSTFIX', '++',
+                    TOKEN('T_TEXT', 'o'))),
+            TOKEN('T_FUNCTIONCALL', '',
+                TOKEN('T_GET_ATTR', '.',
+                    TOKEN('T_KEYWORD', 'this'),
+                    TOKEN('T_ATTR', '_on')),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_SUBSCR', '',
+                        TOKEN('T_TEXT', 't'),
+                        TOKEN('T_TEXT', 'o')),
+                    TOKEN('T_TEXT', 'i'),
+                    TOKEN('T_TEXT', 'e'))))))
+        self._assert(expected, text)
+
+    def test_001_challenge_11(self):
+        text = """ a?"str"in b:c """
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TERNARY', '?',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_BINARY', 'in',
+                    TOKEN('T_STRING', '"str"'),
+                    TOKEN('T_TEXT', 'b')),
+                TOKEN('T_TEXT', 'c')))
+        self._assert(expected, text)
+
+    def test_001_challenge_11(self):
+        text = """ a=x?b=y:c=z """
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TERNARY', '?',
+                    TOKEN('T_TEXT', 'x'),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_TEXT', 'b'),
+                        TOKEN('T_TEXT', 'y')),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_TEXT', 'c'),
+                        TOKEN('T_TEXT', 'z')))))
+        self._assert(expected, text)
+
 
 def main():
     unittest.main()
