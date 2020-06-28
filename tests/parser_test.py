@@ -451,12 +451,10 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'let',
-                TOKEN('T_COMMA', ',',
-                    TOKEN('T_TEXT', 'x'),
-                    TOKEN('T_ASSIGN', '=',
-                        TOKEN('T_TEXT', 'y'),
-                        TOKEN('T_NUMBER', '1'))))
-        )
+                TOKEN('T_TEXT', 'x'),
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'y'),
+                    TOKEN('T_NUMBER', '1'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 

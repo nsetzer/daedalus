@@ -345,7 +345,13 @@ class Formatter(object):
 
                 raise FormatError(token, "unexpected")
             elif token.type == Token.T_VAR:
-                seq.append((depth, None, token.children[0]))
+                first = True
+                for child in reversed(token.children):
+                    if not first:
+                        seq.append((depth + 1, Token.T_SPECIAL, ","))
+                    seq.append((depth, None, child))
+
+                    first = False
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_CLASS:
                 seq.append((depth, None, token.children[2]))
@@ -550,7 +556,6 @@ def main():  # pragma: no cover
     do {} while ()
     x = 0
     """
-
 
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)

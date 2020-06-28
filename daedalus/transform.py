@@ -133,7 +133,8 @@ class TransformFlatten(TransformBase):
            token.type == Token.T_ARGLIST or \
            token.type == Token.T_LIST or \
            token.type == Token.T_UNPACK_SEQUENCE or \
-           token.type == Token.T_GROUPING:
+           token.type == Token.T_GROUPING or \
+           token.type == Token.T_VAR:
 
             if (parent and parent.type == Token.T_FOR):
                 return
