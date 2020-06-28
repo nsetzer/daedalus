@@ -137,7 +137,8 @@ class Parser(object):
             (L2R, self.visit_binary, ['*', '/', '%']),
             (L2R, self.visit_binary, ['+', '-']),
             (L2R, self.visit_binary, ['<<', '>>', ">>>"]),
-            (L2R, self.visit_binary, ['<', '<=', ">", ">=", "in", "of", "instanceof"]),
+            #(L2R, self.visit_binary, ['<', '<=', ">", ">=", "in", "of", "instanceof"]),
+            (L2R, self.visit_binary, ['<', '<=', ">", ">=", "instanceof"]),
             (L2R, self.visit_binary, ['==', '!=', '===', '!==']),
             (L2R, self.visit_binary, ['&']),
             (L2R, self.visit_binary, ['^']),
@@ -147,11 +148,12 @@ class Parser(object):
             (L2R, self.visit_binary, ['||']),
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
+            #(R2L, self.visit_ternary, ['?']), # merged with visit_assign_v2
             (R2L, self.visit_assign_v2, ['=>', '=', '+=', '-=', '**=', '*=', '/=',
                                       '&=', '<<=', '>>=', '&=', '^=',
                                       '|=']),
+            #(L2R, self.visit_binary, ["in", "of"]),
             (R2L, self.visit_unary, ['yield', 'yield*']),
-            (R2L, self.visit_ternary, ['?']), # moved down to last possible position
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_binary, [':']),
             (L2R, self.visit_comma, [',']),
@@ -206,8 +208,6 @@ class Parser(object):
             token.line, token.index, token.type, token.value, text)
 
         sys.stdout.write(text)
-
-
 
     def parse(self, tokens):
 
@@ -325,6 +325,46 @@ class Parser(object):
             raise ParseError(tokens[index_tok1], "invalid token on %s of %s" % (side, token.value))
         raise ParseError(token, "missing token on %s" % side)
 
+    def consume_block(self, tokens, index):
+        """
+        like consume_keyword, but consume a single executable line
+        direction is always to the rhs of the given index (+1)
+
+        This also 'fixes' the code to ensure the return value is a node
+        that represents a block, a sequence of statements
+        """
+
+        j = self.peek_keyword(tokens, tokens[index], index, 1)
+
+        tok = None
+        if j is not None and tokens[j].type == Token.T_KEYWORD:
+            self.visit_keyword(None, tokens, j, [])
+            tok = tokens.pop(j)
+            self._remove_special(tokens, j)
+            #tok = Token(Token.T_BLOCK, tok.line, tok.index, '{}', [tok])
+        else:
+            try:
+                tok = self.consume(tokens, tokens[index], index, 1)
+                if tok.type != Token.T_GROUPING:
+                    self._remove_special(tokens, index+1)
+                    self.warn(tok, Parser.W_BLOCK_UNSAFE)
+                    #tok = Token(Token.T_BLOCK, tok.line, tok.index, '{}', [tok])
+                else:
+                    tok.type = Token.T_BLOCK
+            except ParseError as e:
+                if index + 1 < len(tokens) \
+                  and tokens[index + 1].type == Token.T_SPECIAL \
+                  and tokens[index + 1].value == ';':
+                    self.warn(tokens[index], Parser.W_USELESS_KEYWORD)
+                    tok = Token(Token.T_BLOCK, tokens[index].line, tokens[index].index, "{}")
+                else:
+                    raise e;
+
+        if self.python and tok.type != Token.T_GROUPING:
+            tok = Token(Token.T_BLOCK, tok.line, tok.index, '{}', [tok])
+
+        return tok
+
     def group(self, initial_tokens):
         """
 
@@ -373,14 +413,20 @@ class Parser(object):
         """
 
         for direction, callback, operators in self.precedence:
+
             i = 0
             while i < len(tokens):
+
 
                 if direction < 0:
                     j = len(tokens) - i - 1
                 else:
                     j = i
 
+                # TODO: when scanning,
+                #       R2L : return negative consume(...,  1)
+                #       L2R : return negative consume(..., -1)
+                #
                 i += callback(parent, tokens, j, operators)
 
     def visit_attr(self, parent, tokens, index, operators):
@@ -487,7 +533,14 @@ class Parser(object):
 
         elif token.type == Token.T_GROUPING and token.value == '()':
             i1 = self.peek_token(tokens, token, index, -1)
+
             if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
+                i2 = self.peek_keyword(tokens, token, i1, -1)
+                # TODO: for (x in y) (expr)()
+                # only 1 of these is a valid function call,
+                # this attempts to handle the keyword case, but not all
+                if i2 is not None and tokens[i2].value == "for":
+                    return 1
                 lhs = self.consume(tokens, token, index, -1)
                 n = 0
 
@@ -763,7 +816,11 @@ class Parser(object):
 
         collect binary operators Right-To-Left
         """
-        if tokens[index].value == '=>':
+        if tokens[index].type == 'T_KEYWORD' and (tokens[index].value == 'in' or tokens[index].value == 'of'):
+            return self.visit_binary(parent, tokens, index, ['in', 'of'])
+        elif tokens[index].type == 'T_SPECIAL' and tokens[index].value == '?':
+            return self.visit_ternary(parent, tokens, index, ['?'])
+        elif tokens[index].type == 'T_SPECIAL' and tokens[index].value == '=>':
             return self.visit_lambda(parent, tokens, index, operators)
         else:
             return self.visit_assign(parent, tokens, index, operators)
@@ -878,6 +935,12 @@ class Parser(object):
                 break
 
         if lhs:
+            if lhs.type == Token.T_BINARY and lhs.value in ('in', 'of'):
+                tokens[index] = lhs
+                tmp = lhs.children[1]
+                lhs.children[1] = token
+                lhs = tmp
+
             token.children.append(lhs)
 
         if rhs:
@@ -896,18 +959,24 @@ class Parser(object):
            token.value not in operators:
             return 1
 
-        rhs1 = self.consume(tokens, token, index, 1)
-        rhs2 = self.consume(tokens, token, index, 1)
-        rhs3 = self.consume(tokens, token, index, 1)
-        lhs0 = self.consume(tokens, token, index, -1)
-
+        try:
+            rhs1 = self.consume(tokens, token, index, 1)
+            rhs2 = self.consume(tokens, token, index, 1)
+            rhs3 = self.consume(tokens, token, index, 1)
+            lhs0 = self.consume(tokens, token, index, -1)
+        except ParseError as e:
+            print([t.value for t in tokens], index)
+            print(tokens[index].toString())
+            print(tokens[index+1].toString())
+            print(tokens[index+2].toString())
+            print(tokens[index+3].toString())
+            raise
         if rhs2.type != Token.T_SPECIAL or rhs2.value != ':':
             raise ParseError(rhs2, "invalid ternary expression")
 
         token.type = Token.T_TERNARY
         token.children = [lhs0, rhs1, rhs3]
-
-        return self._offset
+        return -3 # consumed 3 on RHS
 
     def visit_keyword_case(self, parent, tokens, index, operators):
         """
@@ -961,7 +1030,6 @@ class Parser(object):
             return 1
 
         # --
-
         if token.value == 'break':
             self.collect_keyword_break(tokens, index)
 
@@ -1396,7 +1464,7 @@ class Parser(object):
             self.consume(tokens, token, index, 1)
             token.type = Token.T_IMPORT_MODULE
             module = self.consume(tokens, token, index, 1)
-        elif next_tok.type == Token.T_TEXT:
+        elif next_tok.type == Token.T_TEXT or next_tok.type == Token.T_GET_ATTR:
             self.consume(tokens, token, index, 1)
             token.type = Token.T_IMPORT
             module = next_tok
@@ -1470,27 +1538,6 @@ class Parser(object):
 
         rhs1 = self.consume(tokens, token, index, 1)
 
-        # TODO: this is an experimental block support
-        # most keywords must be followed by a block, when
-        # the next instruction is a keyword instruction,
-        # collect that keyword first.
-        #rhs2 = self.consume(tokens, token, index, 1)
-        j = self.peek_keyword(tokens, token, index, 1)
-        if j is not None and tokens[j].type == Token.T_KEYWORD:
-            self.visit_keyword(None, tokens, j, [])
-            rhs2 = tokens.pop(j)
-        else:
-            try:
-                rhs2 = self.consume(tokens, token, index, 1)
-            except ParseError as e:
-                if index + 1 < len(tokens) \
-                  and tokens[index + 1].type == Token.T_SPECIAL \
-                  and tokens[index + 1].value == ';':
-                    self.warn(token, Parser.W_USELESS_KEYWORD)
-                    rhs2 = Token(Token.T_GROUPING, token.line, token.index, "{}")
-                else:
-                    raise e;
-
         if rhs1.type != Token.T_GROUPING:
             raise ParseError(token, "expected grouping")
         else:
@@ -1498,6 +1545,28 @@ class Parser(object):
 
         if len(rhs1.children) == 0:
             raise ParseError(rhs1, "empty argument list")
+
+        # TODO: this is an experimental block support
+        # most keywords must be followed by a block, when
+        # the next instruction is a keyword instruction,
+        # collect that keyword first.
+        rhs2 = self.consume_block(tokens, index)
+        #rhs2 = self.consume(tokens, token, index, 1)
+        #j = self.peek_keyword(tokens, token, index, 1)
+        #if j is not None and tokens[j].type == Token.T_KEYWORD:
+        #    self.visit_keyword(None, tokens, j, [])
+        #    rhs2 = tokens.pop(j)
+        #else:
+        #    try:
+        #        rhs2 = self.consume(tokens, token, index, 1)
+        #    except ParseError as e:
+        #        if index + 1 < len(tokens) \
+        #          and tokens[index + 1].type == Token.T_SPECIAL \
+        #          and tokens[index + 1].value == ';':
+        #            self.warn(token, Parser.W_USELESS_KEYWORD)
+        #            rhs2 = Token(Token.T_GROUPING, token.line, token.index, "{}")
+        #        else:
+        #            raise e;
 
         token.children = []
         if len(rhs1.children) == 1 and rhs1.children[0].value == "in" and rhs1.children[0].type == Token.T_BINARY:
@@ -1532,18 +1601,6 @@ class Parser(object):
             rhs1.children = exprs
             token.type = Token.T_FOR
             token.children = [rhs1]
-
-        if rhs2.type != Token.T_GROUPING:
-            self._remove_special(tokens, index + 1)
-
-            if self.python:
-                tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
-                tmp.children= [rhs2]
-                rhs2 = tmp
-            else:
-                self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
-        else:
-            rhs2.type = Token.T_BLOCK
 
         token.children.append(rhs2)
 
@@ -1633,25 +1690,7 @@ class Parser(object):
         token = tokens[index]
 
         rhs1 = self.consume(tokens, token, index, 1)
-
-        # TODO: this is an experimental block support
-        # most keywords must be followed by a block, when
-        # the next instruction is a keyword instruction,
-        # collect that keyword first.
-        #rhs2 = self.consume(tokens, token, index, 1)
-        j = self.peek_keyword(tokens, token, index, 1)
-        if j is not None and tokens[j].type == Token.T_KEYWORD:
-            self.visit_keyword(None, tokens, j, [])
-            rhs2 = tokens.pop(j)
-        else:
-            rhs2 = self.consume(tokens, token, index, 1)
-
-        self._remove_special(tokens, index + 1)
-
-        if rhs2.type != Token.T_GROUPING:
-            self.warn(rhs2, Parser.W_BRANCH_TRUE)
-        else:
-            rhs2.type = Token.T_BLOCK
+        rhs2 = self.consume_block(tokens, index)
 
         if (rhs1.type != Token.T_GROUPING):
             raise ParseError(token, "expected grouping")
@@ -1675,31 +1714,11 @@ class Parser(object):
             # drop the else
             tokens.pop(i3)
 
-            # check for else if
-
-            i4 = self.peek_keyword(tokens, token, index, 1)
-            # TODO: unsure why i need to retain the special case on If
-            # the new handler for any keyword should also handle if correctly
-            # an if-else-if test will fail if it is removed
-            if i4 is not None and \
-               tokens[i4].type == Token.T_KEYWORD and tokens[i4].value == 'if':
-                self.collect_keyword_if(tokens, i4)
-
-            elif i4 is not None and tokens[j].type == Token.T_KEYWORD:
-                self.visit_keyword(None, tokens, i4, [])
-
-            elif i4 is not None and tokens[i4].type != Token.T_GROUPING:
-                self.warn(tokens[i4], Parser.W_BRANCH_FALSE)
-
-            # consume the subsequent token as the else branch of this token
-            tok4 = self.consume_keyword(tokens, token, index, 1)
+            # consume else block
+            # this could be another if, or other control flow
+            # or a block or single statement
+            tok4 = self.consume_block(tokens, index)
             token.children.append(tok4)
-
-            if tok4.type != Token.T_GROUPING:
-                if token.children[-1].type != Token.T_BRANCH:
-                    self.warn(token.children[-1], Parser.W_BRANCH_FALSE)
-            else:
-                token.children[-1].type = Token.T_BLOCK
 
     def collect_keyword_return(self, tokens, index):
         """
@@ -1873,68 +1892,16 @@ def main():  # pragma: no cover
     # TODO: if (true) {x=1;} + 1
     #       this gives an odd error message
     #       expected object but the error is because of the parent node
-    # TODO: if x {} throws a weird error
 
-    text1 = """
-
-    from module foo.bar import {}
-    from foo.bar import {}
-    import module foo.bar
-    import foo.bar
-    include 'foo.js'
-    export a
-    export a = 1
-    export const a = 1
-    export let a = 1
-    export var a = 1
-    export function a () {}
-    export class a {}
-    export default a
-    export default a = 1
-    export default const a = 1
-    export default let a = 1
-    export default var a = 1
-    export default function a () {}
-    export default class a {}
-    """
-
-    # container = this._controlContainer = create$1('div', l + 'control-container', this._container);
-    text0 = """
-    //function h(t){var i,e,n,o;for(e=1,n=arguments.length;e<n;e++)for(i in o=arguments[e])t[i]=o[i];return t}
-    for(i in b)
-        for(j in c)
-            d = i * j
-    """
-
-    text0 = """
-        s=function(){n?o=arguments:(t.apply(e,arguments),setTimeout(r,i),n=!0)}
-    """
-
-    text0 = """
-        if(true)
-            for(var x in y)
-                console.log(x); // <- semicolon
-        else
-            for(var y in x)
-                console.log(x); // <- semicolon
-    """
-
-    text0 = """
-    a?b?c:d:e
-    """
-
-    text1 = """
-    if (true) a=b=c; else d=f;
-    """
-
-    text1 = """
-    for(;!((t=o1).y1&&t.y2||t===o2););
-    """
+    text1 = "let x,y,z"
+    print("="* 79)
+    print(text1)
+    print("="* 79)
 
     tokens = Lexer({'preserve_documentation': True}).lex(text1)
     mod = Parser().parse(tokens)
 
-    print(mod.toString(3))
+    print(mod.toString(3, pad=". "))
 
 
 if __name__ == '__main__':  # pragma: no cover

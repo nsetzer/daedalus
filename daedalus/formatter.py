@@ -30,8 +30,8 @@ def isalphanum(a, b):
         c1 = a[-1]
         c2 = b[0]
 
-        return (c1.isalnum() or c1 == '_' or ord(c1) > 127) and \
-               (c2.isalnum() or c2 == '_' or ord(c2) > 127)
+        return (c1.isalnum() or c1 in '_$' or ord(c1) > 127) and \
+               (c2.isalnum() or c2 in '_$' or ord(c2) > 127)
     return False
 
 def isfunction(child):
@@ -54,7 +54,11 @@ def isctrlflow(child):
     returns true when there is no reason to place a semicolon
     after the production of the given token
     """
-    if child.type in (Token.T_BRANCH, Token.T_FOR_IN, Token.T_FOR_OF, Token.T_FOR, Token.T_SWITCH, Token.T_WHILE):
+    if child.type == Token.T_BLOCK:
+        return True
+    elif child.type in (Token.T_BRANCH, Token.T_FOR_IN, Token.T_FOR_OF, Token.T_FOR):
+        return True
+    elif child.type in (Token.T_SWITCH, Token.T_WHILE, Token.T_FINALLY):
         if (child.children[-1].type == Token.T_BLOCK):
             return True
     elif child.type == Token.T_CLASS:
@@ -201,7 +205,7 @@ class Formatter(object):
 
                 seq.append((depth, Token.T_NEWLINE, "\n"))
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
-            elif token.type == 'T_CLASS_BLOCK':
+            elif token.type == Token.T_CLASS_BLOCK:
                 # assumes all children are function definitions
                 # which do not need a semicolon
                 seq.append((depth, Token.T_SPECIAL, token.value[1]))
@@ -402,7 +406,16 @@ class Formatter(object):
             elif token.type == Token.T_IMPORT:
                 sys.stdout.write("import not implemented\n")
                 pass
+            elif token.type == Token.T_IMPORT_MODULE:
+                sys.stdout.write("import module not implemented\n")
+                pass
+            elif token.type == Token.T_INCLUDE:
+                sys.stdout.write("include not implemented\n")
+                pass
             elif token.type == Token.T_EXPORT:
+                sys.stdout.write("export not implemented\n")
+                pass
+            elif token.type == Token.T_EXPORT_DEFAULT:
                 sys.stdout.write("export not implemented\n")
                 pass
             elif token.type == Token.T_SUBSCR:
@@ -413,17 +426,31 @@ class Formatter(object):
                 seq.append((depth, None, token.children[0]))
             elif token.type == Token.T_BRANCH:
                 if len(token.children) == 3:
+                    if not isctrlflow(token.children[2]):
+                        seq.append((depth, Token.T_SPECIAL, ";"))
                     seq.append((depth, None, token.children[2]))
                     seq.append((depth, Token.T_KEYWORD, "else"))
+                if not isctrlflow(token.children[1]):
+                    seq.append((depth, Token.T_SPECIAL, ";"))
                 seq.append((depth, None, token.children[1]))
                 seq.append((depth, None, token.children[0]))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_FOR:
-                args, block = token.children
-
+                if len(token.children) == 1:
+                    print(token.toString(2))
+                    sys.stderr.write("error: line: %d col: %d" % (token.line, token.index));
+                    args = token.children[0]
+                else:
+                    args, block = token.children
+                    if not isctrlflow(block):
+                        seq.append((depth, Token.T_SPECIAL, ";"))
+                    seq.append((depth+1, None, block))
                 # this arglist is special, if there are multiple clauses
                 # separate them by semicolons instead of commas
-                seq.append((depth, None, block))
+
+                if self.pretty_print:
+                    seq.append((depth, Token.T_NEWLINE, "\n"))
+
                 seq.append((depth, Token.T_SPECIAL, ')'))
                 insert = False
                 for child in reversed(args.children):
@@ -435,6 +462,8 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_FOR_IN:
                 varexpr, iterable, block = token.children
+                if not isctrlflow(block):
+                    seq.append((depth, Token.T_SPECIAL, ";"))
                 seq.append((depth, None, block))
                 seq.append((depth, Token.T_SPECIAL, ')'))
                 seq.append((depth, None, iterable))
@@ -444,6 +473,8 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_FOR_OF:
                 varexpr, iterable, block = token.children
+                if not isctrlflow(block):
+                    seq.append((depth, Token.T_SPECIAL, ";"))
                 seq.append((depth, None, block))
                 seq.append((depth, Token.T_SPECIAL, ')'))
                 seq.append((depth, None, iterable))
@@ -510,12 +541,9 @@ class Formatter(object):
 
 def main():  # pragma: no cover
 
-    text0 = """
+    #text1 = open("./res/daedalus/index.js").read()
 
-    for (;a,b;c,d) {
-
-    }
-    """
+    text1 = """for (;a,b;c,d) {}"""
 
     text1 = """
     switch() {}
@@ -523,7 +551,6 @@ def main():  # pragma: no cover
     x = 0
     """
 
-    #text1 = open("./res/daedalus/index.js").read()
 
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
