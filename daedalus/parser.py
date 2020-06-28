@@ -1285,22 +1285,12 @@ class Parser(object):
         """
         token = tokens[index]
 
-        rhs1 = self.consume(tokens, token, index, 1)
+        rhs1 = self.consume_block(tokens, index)
         rhs2 = self.consume_keyword(tokens, token, index, 1)
         rhs3 = self.consume(tokens, token, index, 1)
 
         if rhs2.type != Token.T_KEYWORD or rhs2.value != "while":
             raise ParseError(rhs2, "expected while")
-
-        if rhs1.type != Token.T_GROUPING:
-            if self.python:
-                tmp = Token(Token.T_BLOCK, rhs1.line, rhs1.index, '{}')
-                tmp.children= [rhs1]
-                rhs1 = tmp
-            else:
-                self.warn(rhs1, Parser.W_BLOCK_UNSAFE)
-        else:
-            rhs1.type = Token.T_BLOCK
 
         if rhs3.type != Token.T_GROUPING:
             raise ParseError(rh3, "expected parenthetical grouping")
@@ -1546,27 +1536,7 @@ class Parser(object):
         if len(rhs1.children) == 0:
             raise ParseError(rhs1, "empty argument list")
 
-        # TODO: this is an experimental block support
-        # most keywords must be followed by a block, when
-        # the next instruction is a keyword instruction,
-        # collect that keyword first.
         rhs2 = self.consume_block(tokens, index)
-        #rhs2 = self.consume(tokens, token, index, 1)
-        #j = self.peek_keyword(tokens, token, index, 1)
-        #if j is not None and tokens[j].type == Token.T_KEYWORD:
-        #    self.visit_keyword(None, tokens, j, [])
-        #    rhs2 = tokens.pop(j)
-        #else:
-        #    try:
-        #        rhs2 = self.consume(tokens, token, index, 1)
-        #    except ParseError as e:
-        #        if index + 1 < len(tokens) \
-        #          and tokens[index + 1].type == Token.T_SPECIAL \
-        #          and tokens[index + 1].value == ';':
-        #            self.warn(token, Parser.W_USELESS_KEYWORD)
-        #            rhs2 = Token(Token.T_GROUPING, token.line, token.index, "{}")
-        #        else:
-        #            raise e;
 
         token.children = []
         if len(rhs1.children) == 1 and rhs1.children[0].value == "in" and rhs1.children[0].type == Token.T_BINARY:
@@ -1788,17 +1758,7 @@ class Parser(object):
 
         token = tokens[index]
 
-        rhs = self.consume(tokens, token, index, 1)
-        if rhs.type != Token.T_GROUPING:
-            self._remove_special(tokens, index + 1)
-            if self.python:
-                tmp = Token(Token.T_BLOCK, rhs.line, rhs.index, '{}')
-                tmp.children= [rhs]
-                rhs = tmp
-            else:
-                self.warn(rhs, Parser.W_BLOCK_UNSAFE)
-        else:
-            rhs.type = Token.T_BLOCK
+        rhs = self.consume_block(tokens, index)
 
         token.children = [rhs]
         token.type = Token.T_TRY
@@ -1808,21 +1768,15 @@ class Parser(object):
         # it gets processed as a function call
         #while (i2 is not None and tokens[i2].type == Token.T_TEXT and tokens[i2].value == 'catch'):
         while (i2 is not None and tokens[i2].type == Token.T_FUNCTIONCALL and tokens[i2].children[0].value == 'catch'):
+            # an unfortunate result is this is a function call catch(arglist)
+            # expectation is the arglist is an identifier
             rhs1 = self.consume(tokens, token, index, 1)
+            # rhs1: the token 'catch'
+            # rhs2: the argument list
             rhs1, rhs2 = rhs1.children
-            #rhs1 = self.consume_keyword(tokens, token, index, 1)
-            #rhs2 = self.consume(tokens, token, index, 1)
-            rhs3 = self.consume(tokens, token, index, 1)
-            if rhs3.type != Token.T_GROUPING:
-                self._remove_special(tokens, index + 1)
-                if self.python:
-                    tmp = Token(Token.T_BLOCK, rhs3.line, rhs3.index, '{}')
-                    tmp.children= [rhs3]
-                    rhs3 = tmp
-                else:
-                    self.warn(rhs3, Parser.W_BLOCK_UNSAFE)
-            else:
-                rhs3.type = Token.T_BLOCK
+            # rhs3: the catch block
+            rhs3 = self.consume_block(tokens, index)
+
             rhs1.children.append(rhs2)
             rhs1.children.append(rhs3)
             token.children.append(rhs1)
@@ -1831,17 +1785,7 @@ class Parser(object):
 
         if (i2 is not None and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'finally'):
             rhs1 = self.consume_keyword(tokens, token, index, 1)
-            rhs2 = self.consume(tokens, token, index, 1)
-            if rhs2.type != Token.T_GROUPING:
-                self._remove_special(tokens, index + 1)
-                if self.python:
-                    tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
-                    tmp.children= [rhs2]
-                    rhs2 = tmp
-                else:
-                    self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
-            else:
-                rhs3.type = Token.T_BLOCK
+            rhs2 = self.consume_block(tokens, index)
             rhs1.children.append(rhs2)
             rhs1.type = Token.T_FINALLY
             token.children.append(rhs1)
@@ -1860,23 +1804,12 @@ class Parser(object):
 
         token = tokens[index]
         rhs1 = self.consume(tokens, token, index, 1)
-        rhs2 = self.consume(tokens, token, index, 1)
+        rhs2 = self.consume_block(tokens, index)
 
         if (rhs1.type != Token.T_GROUPING):
             raise ParseError(token, "expected grouping")
         else:
             rhs1.type = Token.T_ARGLIST
-
-        if rhs2.type != Token.T_GROUPING:
-            self._remove_special(tokens, index + 1)
-            if self.python:
-                tmp = Token(Token.T_BLOCK, rhs2.line, rhs2.index, '{}')
-                tmp.children= [rhs2]
-                rhs2 = tmp
-            else:
-                self.warn(rhs2, Parser.W_BLOCK_UNSAFE)
-        else:
-            rhs2.type = Token.T_BLOCK
 
         token.children = [rhs1, rhs2]
         token.type = Token.T_WHILE
@@ -1892,7 +1825,7 @@ def main():  # pragma: no cover
     #       this gives an odd error message
     #       expected object but the error is because of the parent node
 
-    text1 = "let x,y,z"
+    text1 = "try {x} catch (e) {e} finally {z}"
     print("="* 79)
     print(text1)
     print("="* 79)
@@ -1905,3 +1838,5 @@ def main():  # pragma: no cover
 
 if __name__ == '__main__':  # pragma: no cover
     main()
+
+

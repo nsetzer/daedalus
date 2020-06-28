@@ -801,7 +801,7 @@ class ParserKeywordTestCase(unittest.TestCase):
                         TOKEN('T_TEXT', 'ex')),
                     TOKEN('T_BLOCK', '{}')),
                 TOKEN('T_FINALLY', 'finally',
-                    TOKEN('T_OBJECT', '{}')))
+                    TOKEN('T_BLOCK', '{}')))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
