@@ -741,6 +741,11 @@ class FormatterTestCase(unittest.TestCase):
             myTag`width: ${width}px`
         """, 'myTag`width: ${width}px`')
 
+    def test_001_for_var_comma(self):
+        self._chkeq("""
+            for (let x=1,y=2,z=3; x<y,y<z; --x,z++) {}
+        """, 'for(let x=1,y=2,z=3;x<y,y<z;--x,z++){}')
+
     @unittest.skip("not implemented")
     def test_evaljs_scope_hoist_function_def(self):
         """

@@ -1888,7 +1888,6 @@ class Parser(object):
 
 def main():  # pragma: no cover
 
-    # TODO: let x,y,z
     # TODO: if (true) {x=1;} + 1
     #       this gives an odd error message
     #       expected object but the error is because of the parent node
