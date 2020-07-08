@@ -84,6 +84,13 @@ def char_reader(f):
 class LexerBase(object):
     """
     base class for a generic look-ahead-by-N lexer
+
+    Note: using an array and ''.join() cut the time spent in _putch
+    down from 30 seconds to 1 second for inputs as long as 1024 * 1024 bytes.
+    previous it was well over a minute when running under cProfile.
+
+    using the char_reader for files is slower than loading the whole file
+    into memory first
     """
 
     def __init__(self):
@@ -100,7 +107,8 @@ class LexerBase(object):
         # the type of the current token
         self._type = default_type
         # the value of the current token
-        self._tok = ""
+        self._tok = []
+        self._len = 0
         # the line where the current token began
         self._initial_line = -1
         # the column of the current line where the token began
@@ -115,14 +123,24 @@ class LexerBase(object):
         # either an open file or an existing iterable
         if hasattr(seq, 'read'):
             self.g = char_reader(seq)
+            self.g_iter = True
         else:
-            self.g = seq.__iter__()
+            self.g = list(seq)
+            self.g_iter = False
+            self.g_idx = 0
+            self.g_len = len(self.g)
 
         self.tokens = []
 
     def _getch_impl(self):
         """ read one character from the input stream"""
-        c = next(self.g)
+        if self.g_iter:
+            c = next(self.g)
+        else:
+            if self.g_idx >= self.g_len:
+                raise StopIteration()
+            c = self.g[self.g_idx]
+            self.g_idx += 1
 
         if c == '\n':
             self._line += 1
@@ -169,7 +187,14 @@ class LexerBase(object):
         if self._initial_line < 0:
             self._initial_line = self._line
             self._initial_index = self._index
-        self._tok += c
+
+        self._tok.append(c)
+
+    def _gettok(self):
+        return ''.join(self._tok)
+
+    def _restok(self):
+        self._tok = []
 
     def _push_endl(self):
         """ push an end of line token """
@@ -185,7 +210,7 @@ class LexerBase(object):
         self._type = self._default_type
         self._initial_line = -1
         self._initial_index = -1
-        self._tok = ""
+        self._restok()
 
     def _push(self):
         """ push a new token """
@@ -194,13 +219,13 @@ class LexerBase(object):
             self._type,
             self._initial_line,
             self._initial_index,
-            self._tok
+            self._gettok()
         )
         self.tokens.append(self._prev_token)
         self._type = self._default_type
         self._initial_line = -1
         self._initial_index = -1
-        self._tok = ""
+        self._restok()
 
     def _maybe_push(self):
         """ push a new token if there is a token to push """
@@ -374,7 +399,7 @@ class Lexer(LexerBase):
                     # next time around the loop lex as a comment/regex/etc
                     break
                 else:
-                    if self._tok + nc not in operators3:
+                    if self._gettok() + nc not in operators3:
                         self._push()
                         self._type = Token.T_SPECIAL
                     self._putch(self._getch())
@@ -467,7 +492,7 @@ class Lexer(LexerBase):
         if c == '/':
             self._lex_single_comment()
         elif c == '=':
-            self._tok += '/'
+            self._putch('/')
             self._lex_special2()
         elif c == '*':
             s = self._peekstr(2)
@@ -574,20 +599,40 @@ class Lexer(LexerBase):
         return None
 
     def _maybe_push_op(self):
-        if self._tok and self._tok in operators2:
+        if self._tok and self._gettok() in operators2:
             self._push()
             self._type = Token.T_SPECIAL
 
     def _push(self):
-        if self._type == Token.T_TEXT and self._tok in reserved_words:
+        t = self._gettok()
+        if self._type == Token.T_TEXT and t in reserved_words:
             self._type = Token.T_KEYWORD
-        if self._type == Token.T_SPECIAL and self._tok not in operators3:
+        if self._type == Token.T_SPECIAL and t not in operators3:
             self._error("unknown operator")
         super()._push()
 
 Lexer.reserved_words = {*reserved_words, *reserved_words_extra}
 
-def main():  # pragma: no cover
+import timeit
+import cProfile
+import re
+
+def perf():
+
+    text = "const x = '%s';" % ("a" * (1024 * 1024))
+
+    lexer = Lexer()
+    lexer.lex(text)
+    return 0
+
+
+def main():
+
+    cProfile.run("perf()")
+
+    print("done")
+
+def mainx():  # pragma: no cover
 
     # r.match(/filename[^;=\\n]*=((['"]).*?\\2|[^;\\n]*)/)
     # r.match(2/3)
