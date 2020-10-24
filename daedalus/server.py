@@ -115,9 +115,14 @@ class Router(object):
         return (re.compile(re_str), tokens)
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
+
+    BUFFER_RX_SIZE = 16384
+    BUFFER_TX_SIZE = 16384
+
     def __init__(self, router, *args):
         self.router = router
         super(RequestHandler, self).__init__(*args)
+        self.protocol_version = 'HTTP/1.1'
 
     def _handleMethod(self, method):
         url = urlparse(unquote(self.path))
@@ -143,10 +148,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header(k, v)
             self.end_headers()
             if hasattr(response.payload, "read"):
-                buf = response.payload.read(1024)
+                buf = response.payload.read(RequestHandler.BUFFER_TX_SIZE)
                 while buf:
                     self.wfile.write(buf)
-                    buf = response.payload.read(1024)
+                    buf = response.payload.read(RequestHandler.BUFFER_TX_SIZE)
             else:
                 self.wfile.write(response.payload)
         except ConnectionAbortedError as e:
@@ -189,7 +194,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
                 # attempting to read more than the length
                 # will cause the stream to block.
-                to_read = min(2048, length)
+                to_read = min(RequestHandler.BUFFER_RX_SIZE, length)
                 buf = self.rfile.read(to_read)
                 length -= len(buf)
 
@@ -201,7 +206,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     line = buf[:index + 2]
                     buf = buf[index + 2:]
                     index = buf.find(b"\x0D\x0A")
-                    if line == '\r\n':
+                    if line == b"\x0D\x0A":
                         # an empty line indicates start of the content
                         break
                     if first:
@@ -213,12 +218,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                         first = False
                 wb.write(buf)
 
-                to_read = min(2048, length)
+                to_read = min(RequestHandler.BUFFER_RX_SIZE, length)
                 buf = self.rfile.read(to_read)
                 while buf:
                     length -= len(buf)
                     wb.write(buf)
-                    to_read = min(2048, length)
+                    to_read = min(RequestHandler.BUFFER_RX_SIZE, length)
                     buf = self.rfile.read(to_read)
 
         except Exception as e:
