@@ -524,7 +524,6 @@ class Builder(object):
         if 'daedalus' not in static_data:
             static_data['daedalus'] = {}
 
-
         if platform is not None:
             static_data['daedalus']['build_platform'] = platform
         else:
@@ -532,6 +531,11 @@ class Builder(object):
 
         self.platform = platform
         self.static_data = static_data
+
+        self.html_title = "Daedalus"
+
+    def setTitle(self, title):
+        self.html_title = title
 
     def find(self, name):
 
@@ -767,10 +771,12 @@ class Builder(object):
             render_function = 'daedalus.render'
 
         html = html \
-            .replace("<!--FAVICON-->", self.getHtmlFavIcon()) \
+            .replace("${PATH}", self.getPlatformPathPrefix().rstrip("/")) \
             .replace("<!--TITLE-->", self.getHtmlTitle()) \
+            .replace("<!--FAVICON-->", self.getHtmlFavIcon()) \
             .replace("<!--STYLE-->", self.getHtmlStyle(css, onefile)) \
             .replace("<!--SOURCE-->", self.getHtmlSource(js, onefile)) \
+            .replace("<!--EVENT-->", self.getHtmlEvent(js, onefile)) \
             .replace("<!--RENDER-->", self.getHtmlRender(render_function, root))
 
         return css, js, html
@@ -812,18 +818,31 @@ class Builder(object):
         )
         return "", "", html
 
+    def getPlatformPathPrefix(self):
+        """ get the resource path for the platform"""
+        # TODO: hardcoding the platform prefix for now
+        # allow for a user defined value
+
+        if self.platform == "android":
+            return "file:///android_asset/site/"
+        elif self.platform == "qt":
+            return "./"
+        else:
+            return "/"
+
     def getHtmlTitle(self):
 
-        return '<title>Daedalus</title>'
+        return f'<title>{self.html_title}</title>'
 
     def getHtmlFavIcon(self):
-        url = "file:///android_asset/site/favicon.ico" if self.platform == "android" else "/favicon.ico"
-        return f'<link rel="icon" type="image/x-icon" href="{url}" />'
+
+        prefix = self.getPlatformPathPrefix()
+
+        return f'<link rel="icon" type="image/x-icon" href="{prefix}favicon.ico" />'
 
     def getHtmlStyle(self, css, onefile):
 
-        # TODO: hardcoding the platform prefix for now
-        prefix = "file:///android_asset/site/" if self.platform == "android" else "/"
+        prefix = self.getPlatformPathPrefix()
 
         if not css:
             return ""
@@ -834,13 +853,36 @@ class Builder(object):
 
     def getHtmlSource(self, js, onefile):
 
-        # TODO: hardcoding the platform prefix for now
-        prefix = "file:///android_asset/site/" if self.platform == "android" else "/"
+        prefix = self.getPlatformPathPrefix()
 
         if onefile:
             return '<script type="text/javascript">\n%s\n</script>' % js
         else:
-            return f'<script src="{prefix}static/index.js" type="text/javascript"></script>'
+            return f'<script type="text/javascript" src="{prefix}static/index.js"></script>'
+
+    def getHtmlEvent(self, js, onefile):
+        """
+        Returns platform dependent HTML/JS for handling API gateways
+        """
+        prefix = self.getPlatformPathPrefix()
+
+        if self.platform == "android":
+            return "<script type=\"text/javascript\">\n" \
+                "AndroidEvents = {}\n" \
+                "function registerAndroidEvent(name, callback) {\n" \
+                "    AndroidEvents[name] = callback;\n" \
+                "}\n" \
+                "function invokeAndroidEvent(name, payload) {\n" \
+                "    if (!!AndroidEvents[name]) {\n" \
+                "        AndroidEvents[name](JSON.parse(payload));\n" \
+                "    } else {\n" \
+                "        console.error(\"unregistered event: \" + name);\n" \
+                "    }\n" \
+                "}\n" \
+                "</script>\n";
+        if self.platform == "qt":
+            return "<script type=\"text/javascript\" src=\"./static/qwebchannel.js\"></script>"
+        return ""
 
     def getHtmlRender(self, render_function, root):
         """

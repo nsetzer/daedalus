@@ -3,6 +3,7 @@ import os
 import sys
 import argparse
 import logging
+import time
 
 from .builder import Builder
 from .server import SampleServer
@@ -60,6 +61,21 @@ def copy_favicon(builder, outdir):
     with open(inp_favicon, "rb") as rb:
         with open(out_favicon, "wb") as wb:
             wb.write(rb.read())
+
+class Clock(object):
+    def __init__(self, text):
+        super(Clock, self).__init__()
+        self.text = text
+
+    def __enter__(self):
+        self.ts = time.perf_counter()
+        return self
+
+    def __exit__(self, *args):
+        self.te = time.perf_counter()
+        print("%s: %.6f" % (self.text, self.te - self.ts))
+
+        return False
 
 class CLI(object):
     def __init__(self):
@@ -183,12 +199,18 @@ class FormatCLI(CLI):
             with open(path_in, "r") as rf:
                 text = rf.read()
 
-        tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
-        if args.minify:
-            TransformMinifyScope().transform(ast)
+        with Clock("lex"):
+            tokens = Lexer().lex(text)
 
-        out_text = Formatter({'minify': args.minify}).format(ast)
+        with Clock("parse"):
+            ast = Parser().parse(tokens)
+
+        if args.minify:
+            with Clock("minify"):
+                TransformMinifyScope().transform(ast)
+
+        with Clock("format"):
+            out_text = Formatter({'minify': args.minify}).format(ast)
 
         if args.out_js == "-":
             sys.stdout.write(out_text)
