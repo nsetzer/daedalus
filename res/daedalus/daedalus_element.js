@@ -36,7 +36,7 @@ function generateElementId() {
 }
 
 export class DomElement {
-    constructor(type, props, children) {
+    constructor(type="div", props=undefined, children=undefined) {
         if (type===undefined) {
             // this would otherwise cause a bizarre rendering error
             throw `DomElement type is undefined. super called with ${arguments.length} arguments`
@@ -316,7 +316,7 @@ export class TextInputElement extends DomElement {
     // second positional parameter reserved for future use
     // TODO: eliminate use of signal here
     constructor(text, _, submit_callback) {
-        super("input", {value: text}, []);
+        super("input", {value: text, type:"text"}, []);
 
         this.textChanged = Signal(this, 'textChanged');
 
@@ -329,6 +329,11 @@ export class TextInputElement extends DomElement {
         this.updateProps({value: text})
         this.textChanged.emit(this.props)
     }
+
+    getText() {
+        return this.props.value;
+    }
+
     onChange(event) {
         this.updateProps({value: event.target.value}, false)
         this.textChanged.emit(this.props)
