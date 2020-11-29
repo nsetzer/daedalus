@@ -255,6 +255,13 @@ export class Router {
     setMatch(match) {
 
     }
+
+    clear() {
+        this.container.children = []
+        this.current_index = -1
+        this.current_location = null
+        this.container.update()
+    }
 }
 
 export class AuthenticatedRouter extends Router {
