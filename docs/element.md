@@ -65,9 +65,13 @@ used to modify the `class` of the element, which is used for applying styles.
 
 The current properties of an element can be accessed with the `prop` attribute
 
-- `updateProps(newProps, update)`
+- `updateProps(newProps, doUpdate)`
 Mutate the props of this element and then update
 the value of `update` can be one of `true|false|undefined`
+
+  * true: force calling `update()`
+  * false: do not call `update()`
+  * undefined: (default) call update if `elementUpdateProps()` is undefined or does not return false
 
 > Warning: Directly modifying the props requires calling `elem.update()`
 

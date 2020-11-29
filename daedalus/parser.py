@@ -1669,7 +1669,8 @@ class Parser(object):
 
         if len(rhs1.children) == 1:
             if rhs1.children[0].type == Token.T_TEXT:
-                self.warn(rhs1.children[0], Parser.W_UNSAFE_BOOLEAN_TEST)
+                # self.warn(rhs1.children[0], Parser.W_UNSAFE_BOOLEAN_TEST)
+                pass
 
         token.children = [rhs1, rhs2]
         token.type = Token.T_BRANCH
