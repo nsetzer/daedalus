@@ -79,8 +79,7 @@ class Formatter(object):
         if not opts:
             opts = {}
 
-        self.minify = opts.get('minify', True)
-        self.pretty_print = not self.minify
+        self.pretty_print = not opts.get('minify', True)
         self.indent_width = int(opts.get('indent', 2))
         self.max_columns = int(opts.get('columns', 80 if self.pretty_print else 500))
 
@@ -510,6 +509,8 @@ class Formatter(object):
             elif token.type == Token.T_CASE:
                 seq.append((depth, Token.T_SPECIAL, ":"))
                 seq.append((depth, None, token.children[0]))
+                if self.pretty_print:
+                    seq.append((depth, Token.T_SPECIAL, " "))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_DEFAULT:
                 seq.append((depth, Token.T_SPECIAL, ":"))
