@@ -2,7 +2,8 @@
 import os
 import sys
 import io
-import ast
+import ast as py_ast
+import operator
 import hashlib
 from .lexer import Lexer
 from .token import Token, TokenError
@@ -351,7 +352,7 @@ class TransformExtractStyleSheet(TransformBase):
         if parent and parent.type == Token.T_BINARY and parent.value == ':':
             key = parent.children[0]
             if key.type == Token.T_STRING:
-                style_name = 'style.' + ast.literal_eval(key.value)
+                style_name = 'style.' + py_ast.literal_eval(key.value)
             elif key.type == Token.T_TEXT:
                 style_name = 'style.' + key.value
 
@@ -390,9 +391,9 @@ class TransformExtractStyleSheet(TransformBase):
 
         selector_text = None
         if selector.type == Token.T_STRING:
-            selector_text = ast.literal_eval(selector.value)
+            selector_text = py_ast.literal_eval(selector.value)
         elif selector.type == Token.T_TEMPLATE_STRING:
-            selector_text = ast.literal_eval('"' + selector.value[1:-1] + '"')
+            selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
             selector_text = shell_format(selector_text, self.named_styles)
 
         if not selector_text:
@@ -458,13 +459,13 @@ class TransformExtractStyleSheet(TransformBase):
                 if lhs.type == Token.T_TEXT:
                     lhs_value = lhs.value
                 elif lhs.type == Token.T_STRING:
-                    lhs_value = ast.literal_eval(lhs.value)
+                    lhs_value = py_ast.literal_eval(lhs.value)
 
                 rhs_value = None
                 if rhs.type == Token.T_TEXT:
                     rhs_value = rhs.value
                 elif rhs.type == Token.T_STRING:
-                    rhs_value = ast.literal_eval(rhs.value)
+                    rhs_value = py_ast.literal_eval(rhs.value)
                 elif rhs.type == Token.T_NUMBER:
                     rhs_value = rhs.value
                 elif rhs.type == Token.T_OBJECT:
@@ -504,7 +505,6 @@ class DeferedToken(object):
         self.fnrefs = {}
         self.token = token
 
-
 SC_GLOBAL   = 0x001
 SC_FUNCTION = 0x002
 SC_BLOCK    = 0x004
@@ -529,12 +529,19 @@ def scope2str(flags):
 
 class Ref(object):
 
-    def __init__(self, flags, label):
+    def __init__(self, scname, flags, label, counter):
         super(Ref, self).__init__()
         self.flags = flags
         self.label = label
         self.load_count = 0
         self.token = None
+        self.scname = scname
+        # counts which clone this ref is
+        self.counter = counter
+        # the full scope name for this ref
+        self.name = "%s.%s@%d" % (scname, label, counter)
+        print(self.name)
+
     def identity(self):
         raise NotImplementedError()
 
@@ -554,29 +561,38 @@ class Ref(object):
         return "<*%s>" % (self.identity())
 
 class PythonRef(Ref):
-    def __init__(self, scflags, label):
-        super(PythonRef, self).__init__(scflags, label)
-        self._identity = 0
+    def __init__(self, scname, scflags, label, counter):
+        super(PythonRef, self).__init__(scname, scflags, label, counter)
 
     def identity(self):
         s = 'f' if self.flags & SC_FUNCTION else 'b'
-        return "%s#%s%d" % (self.label, s, self._identity)
+        return "%s#%s%d" % (self.label, s, self.counter)
 
     def clone(self, scflags):
-        ref = PythonRef(scflags, self.label)
-        ref._identity = self._identity + 1
-        return ref
+        return PythonRef(self.scname, scflags, self.label, self.counter+1)
+
+class IdentityRef(Ref):
+
+    def __init__(self, scname, scflags, label, counter):
+        super(IdentityRef, self).__init__(scname, scflags, label, counter)
+
+    def identity(self):
+        return self.label
+
+    def clone(self, scflags):
+        return IdentityRef(self.scname, scflags, self.label, self.counter+1)
 
 class MinifyRef(Ref):
-    def __init__(self, scflags, label, outLabel):
-        super(MinifyRef, self).__init__(scflags, label)
+    def __init__(self, scname, scflags, label, outLabel, counter):
+        super(MinifyRef, self).__init__(scname, scflags, label, counter)
         self.outLabel = outLabel
+        self.name = "%s.%s@%d" % (scname, outLabel, counter)
 
     def identity(self):
         return self.outLabel
 
     def clone(self, scflags):
-        return MinifyRef(scflags, self.label, self.outLabel)
+        return MinifyRef(self.scname, scflags, self.label, self.outLabel, self.counter+1)
 
 class UndefinedRef(Ref):
     def identity(self):
@@ -644,7 +660,7 @@ class VariableScope(object):
 
     def _createRef(self, scflags, label, type_):
 
-        return PythonRef(scflags, label)
+        return PythonRef(self.name + "@%d" % len(self.blscope), scflags, label, 1)
 
     def _define_block(self, token):
         label = token.value
@@ -692,10 +708,13 @@ class VariableScope(object):
         if ref is not None:
             # define, but give a new identity
             new_ref = ref.clone(scflags)
+            new_ref.counter = ref.counter + 1
         else:
             new_ref = self._createRef(scflags, label, type_)
 
         identifier = new_ref.identity()
+
+        #new_ref.name = self.name + "." + identifier + "@%d" % (new_ref.counter)
 
         self.all_labels.add(label)
         self.all_identifiers.add(identifier)
@@ -750,7 +769,7 @@ class VariableScope(object):
                     if label in self.all_labels:
                         raise TokenError(token, "read from deleted var")
 
-                    ref = UndefinedRef(0, label)
+                    ref = UndefinedRef(self.name, 0, label, 1)
                     token.type = Token.T_GLOBAL_VAR
                     self.gscope[label] = ref
                 else:
@@ -859,6 +878,9 @@ class VariableScope(object):
     def _diag(self, token):
         sys.stderr.write("%10s %s %s %s\n" % (token.type, list(self.vars), list(self.freevars), list(self.cellvars)))
 
+    def __hash__(self):
+        return hash(self.name)
+
 class VariableScopeReference(object):
     def __init__(self, scope, refs):
         super(VariableScopeReference, self).__init__()
@@ -881,7 +903,6 @@ class VariableScopeReference(object):
 
     def containsIdentity(self, identity):
         return any(ref.identity()==identity for ref in self.refs.values())
-
 
 alphabetL = 'abcdefghijklmnopqrstuvwxyz'
 alphabetU = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -906,6 +927,14 @@ def encode_identifier(alphabet, n):
         n>>=6
     return c
 
+class IdentityScope(VariableScope):
+    """
+    A VariableScope that does not transform labels
+    """
+
+    def _createRef(self, scflags, label, type_):
+        return IdentityRef(self.name + "@%d" % len(self.blscope), scflags, label, 1)
+
 class MinifyVariableScope(VariableScope):
 
     def __init__(self, name, parent=None):
@@ -917,7 +946,7 @@ class MinifyVariableScope(VariableScope):
 
         ident =  self.nextLabel(type_) # + '_' + label
 
-        return MinifyRef(scflags, label, ident)
+        return MinifyRef(self.name + "@%d" % len(self.blscope), scflags, label, ident, 1)
 
     def nextLabel(self, type_):
         c = ""
@@ -999,6 +1028,38 @@ isAnonymousFunction = lambda token: token.type in (
             Token.T_ASYNC_ANONYMOUS_GENERATOR,
             Token.T_LAMBDA,
     )
+
+is_str = lambda tok : tok.type == Token.T_STRING
+is_num = lambda tok : tok.type == Token.T_NUMBER
+js_vars = {Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR,}
+
+js_str_ops = {
+    "+": operator.concat,
+}
+
+js_num_ops = {
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    "/": operator.truediv,
+    "%": operator.mod,
+    "**": operator.pow,
+
+    "<<": operator.lshift,
+    ">>": operator.rshift,
+
+    "&": operator.and_,
+    "|": operator.or_,
+    "^": operator.xor,
+}
+
+def js_seq_get_attr(obj, key):
+    index = py_ast.literal_eval(key.value)
+    return obj.children[index]
+
+def js_map_get_attr(obj, key):
+    index = py_ast.literal_eval(key.value)
+    return obj.children[index]
 
 class TransformAssignScope(object):
 
@@ -1120,14 +1181,25 @@ class TransformAssignScope(object):
 
             console.log(f1())
 
-
     Variable Scoping
 
         No special transformation is needed in python to support var
 
         Variables defined using var are function scoped
 
+    Visit Deferment:
+        javascript allows for functions in a document to be called
+        before they are defined. To implement this the entire document
+        is scanned using BFS to discover function definitions, but the
+        function body itself is not parsed until after the entire
+        document at that level was processed.
 
+        Example:
+            const z = 123;
+            console.log(test()); // prints 123
+            function test() {
+                return z;
+            }
 
     Misc:
 
@@ -1171,6 +1243,9 @@ class TransformAssignScope(object):
         # discover the variable scope if a mode friendly
         # to python (true) or javascript (false)
         self.python = True
+        self.constexpr_enabled = False
+        self.constexpr_seq_enabled = False
+        self.constexpr_values = {}
 
         self.global_scope = None
 
@@ -1231,6 +1306,9 @@ class TransformAssignScope(object):
             Token.T_MODULE: self.finalize_module,
 
             Token.T_CLASS: self.finalize_function,
+
+            Token.T_ASSIGN: self.finalize_assign,
+            Token.T_BINARY: self.finalize_binary,
 
         }
 
@@ -1299,12 +1377,15 @@ class TransformAssignScope(object):
                 fn(flags, scope, token, parent)
 
     def initialState(self, token):
-        self.global_scope = self.newScope('__main__')
+        self.global_scope = self.newScope('__main__', None)
         return (ST_VISIT, self.global_scope, token, None)
 
     # -------------------------------------------------------------------------
 
     def visit_default(self, flags, scope, token, parent):
+
+        if token.type == Token.T_SUBSCR:
+            self._push_finalize(scope, token, parent)
 
         self._push_children(scope, token, flags)
 
@@ -1418,6 +1499,9 @@ class TransformAssignScope(object):
 
         # TODO: LHS can be more complicated that T_TEXT
         if token.value == "=":
+
+            self._push_finalize(scope, token, parent)
+
             self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], parent)
             self._push_tokens(ST_VISIT, scope, [token.children[1]], parent)
 
@@ -1462,6 +1546,7 @@ class TransformAssignScope(object):
         The LHS of a slice operator inside an object definition
         can be a identifier. convert the value into a string
         """
+        self._push_finalize(scope, token, parent)
         self._push_children(scope, token, flags)
 
         if token.value != ":":
@@ -1534,7 +1619,24 @@ class TransformAssignScope(object):
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
-        pass
+
+        if self.constexpr_seq_enabled:
+            if token.type == Token.T_SUBSCR and len(token.children) == 2:
+                obj, key = token.children
+
+                obj = self.resolve_reference(scope, obj)
+                key = self.resolve_reference(scope, key)
+
+                if obj.type == Token.T_LIST:
+                    if key.type == Token.T_NUMBER:
+                        tok = js_seq_get_attr(obj, key)
+                        if tok is None:
+                            TransformError(token, "index out of range")
+                        else:
+
+                            token.type = tok.type
+                            token.value = tok.value
+                            token.children = []
 
     def finalize_module(self, flags, scope, token, parent):
 
@@ -1584,6 +1686,132 @@ class TransformAssignScope(object):
 
     # -------------------------------------------------------------------------
 
+    def resolve_reference(self, scope, token):
+        """ resolves a reference, or returns a constant
+
+        if token is a constant literal (str, num), return token
+        if token is a label, load the value of the label
+
+        allow chaining, such that if a=1, b=a, then for the expression
+        c=b, the value b would load the chain b=a, a=1.
+
+        """
+        visited = set()
+        while token.type in js_vars:
+            visited.add(token)
+            ref = scope.load(token)
+
+            if not ref.name:
+                print(ref, type(ref))
+                raise ValueError("name error")
+
+            if ref.name in self.constexpr_values:
+                new_token = self.constexpr_values[ref.name]
+                if new_token in visited:
+                    break;
+                token = new_token
+            else:
+                break;
+
+        return token
+
+    def finalize_assign(self, flags, scope, token, parent):
+
+        """
+        TODO: constexpr values must be cleared on any variable declaration
+        there is a use-before-defined bug in the code below
+
+        if the user declares `const x=0;`
+        but then in a similar scope also declares `let x;` without
+        assigning then future uses of x -- if x is never assigned to
+        could be used in an expression.
+        its a user bug which could have unintended and hard to debug output
+
+        evidence from this example shows the issue is likely a problem
+        with generating the reference full name for the scope
+
+        Example:
+            function x() {
+
+                {
+                    const x = 7;
+                }
+
+                {
+                    let x;
+                    let y = x + 1;
+                    console.log("x", x) // undefined
+                    console.log("y", y) // NaN, not 8
+
+                }
+            }
+
+        """
+        if not self.constexpr_enabled:
+            return
+
+        lhs, rhs = token.children
+
+        if token.value == "=":
+
+            if lhs.type in js_vars:
+
+                ref = scope.load(lhs)
+
+                if parent.type != Token.T_VAR or parent.value != "const":
+                    if ref.name in self.constexpr_values:
+                        del self.constexpr_values[ref.name]
+                else:
+                    self.constexpr_values[ref.name] = rhs
+                #print("assign", ref.name, " = ", rhs)
+        else:
+            # +=, etc not yet supported
+            if lhs.type in js_vars:
+                ref = scope.load(lhs)
+                if ref.name in self.constexpr_values:
+                    del self.constexpr_values[ref.name]
+
+    def finalize_binary(self, flags, scope, token, parent):
+
+        if not self.constexpr_enabled:
+            return
+
+        lhs, rhs = token.children
+
+        lhs = self.resolve_reference(scope, lhs)
+        rhs = self.resolve_reference(scope, rhs)
+
+        if is_str(lhs) and is_str(rhs):
+            lv = py_ast.literal_eval(lhs.value)
+            rv = py_ast.literal_eval(rhs.value)
+
+            if token.value in js_num_ops:
+                print("compute str:", token.file, token.line, lv, token.value, rv)
+                token.type = Token.T_STRING
+                token.value = repr(js_str_ops[token.value](lv, rv))
+                token.children = []
+
+        elif is_num(lhs) and is_num(rhs):
+            lv = py_ast.literal_eval(lhs.value)
+            rv = py_ast.literal_eval(rhs.value)
+
+            if token.value in js_num_ops:
+                token.type = Token.T_NUMBER
+                print("compute num:", token.file, token.line, lv, token.value, rv)
+                token.value = repr(js_num_ops[token.value](lv, rv))
+                token.children = []
+
+        elif (is_num(lhs) and is_num(rhs)) or (is_num(lhs) and is_str(rhs)):
+            lv = str(py_ast.literal_eval(lhs.value))
+            rv = str(py_ast.literal_eval(rhs.value))
+            if token.value == "+":
+                print("compute:", token.file, token.line, lv, token.value, rv)
+                token.type = Token.T_NUMBER
+                token.value = repr(lv + rv)
+                token.children = []
+
+    # -------------------------------------------------------------------------
+
     def defered_default(self, flags, scope, token, parent):
         raise TransformError(token, "unexpected defered token")
 
@@ -1607,8 +1835,6 @@ class TransformAssignScope(object):
         # finalize the function scope once all children have been processed
         self._push_finalize(next_scope, token, None)
         self._push_defered(next_scope, token, None)
-
-
 
         # define the arguments to the function in the next scope
 
@@ -1673,6 +1899,8 @@ class TransformAssignScope(object):
     # -------------------------------------------------------------------------
 
     def _push_finalize(self, scope, token, parent, flags=0):
+        if parent is not None and not isinstance(parent, Token):
+            raise TypeError(type(parent))
         self.seq.append((ST_FINALIZE | flags, scope, token, parent))
 
     def _push_defered(self, scope, token, parent, flags=0):
@@ -1697,6 +1925,13 @@ class TransformAssignScope(object):
 
     def _store(self, scope, token):
         pass
+
+class TransformIdentityScope(TransformAssignScope):
+    """
+    transform, but does not minify
+    """
+    def newScope(self, name, parentScope=None):
+        return IdentityScope(name, parentScope)
 
 class TransformMinifyScope(TransformAssignScope):
     """
