@@ -34,7 +34,6 @@ class SourceMap(object):
         }
 
         return obj
-        0x1c8
 
     def _encode(self, value):
 
