@@ -14,6 +14,7 @@ class TransformError(TokenError):
 class TransformBase(object):
     def __init__(self):
         super(TransformBase, self).__init__()
+        self.tokens = []
 
     def transform(self, ast):
 
@@ -21,16 +22,16 @@ class TransformBase(object):
 
     def scan(self, token):
 
-        tokens = [(token, token)]
+        self.tokens = [(token, token)]
 
-        while tokens:
+        while self.tokens:
             # process tokens from in the order they are discovered. (DFS)
-            token, parent = tokens.pop()
+            token, parent = self.tokens.pop()
 
             self.visit(token, parent)
 
             for child in reversed(token.children):
-                tokens.append((child, token))
+                self.tokens.append((child, token))
 
     def visit(self, token, parent):
         raise NotImplementedError()
@@ -540,7 +541,6 @@ class Ref(object):
         self.counter = counter
         # the full scope name for this ref
         self.name = "%s.%s@%d" % (scname, label, counter)
-        print(self.name)
 
     def identity(self):
         raise NotImplementedError()
@@ -575,6 +575,7 @@ class IdentityRef(Ref):
 
     def __init__(self, scname, scflags, label, counter):
         super(IdentityRef, self).__init__(scname, scflags, label, counter)
+        #print("construct ref:", self.name)
 
     def identity(self):
         return self.label
@@ -587,6 +588,7 @@ class MinifyRef(Ref):
         super(MinifyRef, self).__init__(scname, scflags, label, counter)
         self.outLabel = outLabel
         self.name = "%s.%s@%d" % (scname, outLabel, counter)
+        #print("construct ref:", self.name)
 
     def identity(self):
         return self.outLabel
@@ -631,6 +633,10 @@ class VariableScope(object):
         self.fnscope = {}
         self.blscope = [{}]
         self.blscope_stale = {}
+
+        self.blscope_ids = [0,]
+        self.blscope_next_id = 1
+
         self.all_labels = set()
         self.all_identifiers = set()
 
@@ -658,9 +664,20 @@ class VariableScope(object):
 
         return ref
 
+    def _getScopeName(self):
+        """
+        returns the current name of the scope, taking into account
+        the current block scope. Each block scope is given a unique
+        name.
+
+        This allows for tagging variables with the same identifier that
+        are redefined in parallel or nested block scopes
+        """
+        return self.name + "+%d" % self.blscope_ids[-1]
+
     def _createRef(self, scflags, label, type_):
 
-        return PythonRef(self.name + "@%d" % len(self.blscope), scflags, label, 1)
+        return PythonRef(self._getScopeName(), scflags, label, 1)
 
     def _define_block(self, token):
         label = token.value
@@ -807,25 +824,38 @@ class VariableScope(object):
         if load:
             ref.load_count += 1
 
+
         return ref
 
     def define(self, scflags, token, type_=DF_IDENTIFIER):
 
-        return self._define_impl(scflags, token, type_)
+        ref = self._define_impl(scflags, token, type_)
+        token.ref_attr = 1
+        token.ref = ref
+        return ref
 
     def load(self, token):
 
-        return self._load_store(token, True)
+        ref =  self._load_store(token, True)
+        token.ref_attr = 4
+        token.ref = ref
+        return ref
 
     def store(self, token):
 
-        return self._load_store(token, False)
+        ref =  self._load_store(token, False)
+        token.ref_attr = 2
+        token.ref = ref
+        return ref
 
     def pushBlockScope(self):
+        self.blscope_ids.append(self.blscope_next_id)
+        self.blscope_next_id += 1
         self.blscope.append({})
 
     def popBlockScope(self):
 
+        self.blscope_ids.pop()
         mapping = self.blscope.pop()
 
         for key, ref in mapping.items():
@@ -933,7 +963,7 @@ class IdentityScope(VariableScope):
     """
 
     def _createRef(self, scflags, label, type_):
-        return IdentityRef(self.name + "@%d" % len(self.blscope), scflags, label, 1)
+        return IdentityRef(self._getScopeName(), scflags, label, 1)
 
 class MinifyVariableScope(VariableScope):
 
@@ -946,7 +976,7 @@ class MinifyVariableScope(VariableScope):
 
         ident =  self.nextLabel(type_) # + '_' + label
 
-        return MinifyRef(self.name + "@%d" % len(self.blscope), scflags, label, ident, 1)
+        return MinifyRef(self._getScopeName(), scflags, label, ident, 1)
 
     def nextLabel(self, type_):
         c = ""
@@ -1028,38 +1058,6 @@ isAnonymousFunction = lambda token: token.type in (
             Token.T_ASYNC_ANONYMOUS_GENERATOR,
             Token.T_LAMBDA,
     )
-
-is_str = lambda tok : tok.type == Token.T_STRING
-is_num = lambda tok : tok.type == Token.T_NUMBER
-js_vars = {Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR,}
-
-js_str_ops = {
-    "+": operator.concat,
-}
-
-js_num_ops = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    "/": operator.truediv,
-    "%": operator.mod,
-    "**": operator.pow,
-
-    "<<": operator.lshift,
-    ">>": operator.rshift,
-
-    "&": operator.and_,
-    "|": operator.or_,
-    "^": operator.xor,
-}
-
-def js_seq_get_attr(obj, key):
-    index = py_ast.literal_eval(key.value)
-    return obj.children[index]
-
-def js_map_get_attr(obj, key):
-    index = py_ast.literal_eval(key.value)
-    return obj.children[index]
 
 class TransformAssignScope(object):
 
@@ -1493,7 +1491,15 @@ class TransformAssignScope(object):
             flags = ST_BLOCK
         if token.value == 'const':
             flags = ST_BLOCK | ST_CONST
-        self._push_children(scope, token, flags)
+
+        for child in reversed(token.children):
+
+            if child.type == Token.T_TEXT:
+                # define
+                self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [child], token)
+            else:
+                self._push_tokens(ST_VISIT | (flags & ST_SCOPE_MASK), scope, [child], token)
+
 
     def visit_assign(self, flags, scope, token, parent):
 
@@ -1502,8 +1508,8 @@ class TransformAssignScope(object):
 
             self._push_finalize(scope, token, parent)
 
-            self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], parent)
-            self._push_tokens(ST_VISIT, scope, [token.children[1]], parent)
+            self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], token)
+            self._push_tokens(ST_VISIT, scope, [token.children[1]], token)
 
         else:
             self._push_children(scope, token, 0)
@@ -1516,10 +1522,13 @@ class TransformAssignScope(object):
         scflags = (flags & ST_SCOPE_MASK) >> 12
 
         if scflags:
+            print("define", token)
             scope.define(scflags, token)
         elif flags & ST_STORE:
+            print("store", token)
             scope.store(token)
         else:
+            print("load", token)
             scope.load(token)
 
     def visit_object(self, flags, scope, token, parent):
@@ -1696,13 +1705,13 @@ class TransformAssignScope(object):
         c=b, the value b would load the chain b=a, a=1.
 
         """
+        #tok = token
         visited = set()
         while token.type in js_vars:
             visited.add(token)
             ref = scope.load(token)
 
             if not ref.name:
-                print(ref, type(ref))
                 raise ValueError("name error")
 
             if ref.name in self.constexpr_values:
@@ -1713,6 +1722,10 @@ class TransformAssignScope(object):
             else:
                 break;
 
+        #name = str(tok)
+        #if tok.type in js_vars:
+        #    name += "::" + scope.load(tok).name
+        #print("ld", name, "=", token)
         return token
 
     def finalize_assign(self, flags, scope, token, parent):
@@ -1759,11 +1772,12 @@ class TransformAssignScope(object):
                 ref = scope.load(lhs)
 
                 if parent.type != Token.T_VAR or parent.value != "const":
+                    #print("assign failed", parent.type, parent.value)
                     if ref.name in self.constexpr_values:
                         del self.constexpr_values[ref.name]
                 else:
                     self.constexpr_values[ref.name] = rhs
-                #print("assign", ref.name, " = ", rhs)
+                    #print("assign", ref.name, " = ", rhs)
         else:
             # +=, etc not yet supported
             if lhs.type in js_vars:
@@ -2112,6 +2126,183 @@ class TransformClassToFunction(TransformBaseV2):
         token.children.append(name)
         token.children.append(arglist)
         token.children.append(fnbody)
+
+class TransformBaseV3(object):
+    def __init__(self):
+        super(TransformBaseV3, self).__init__()
+        self.tokens = []
+        self.processed = 0
+
+    def transform(self, ast):
+
+        self.scan(ast)
+
+    def scan(self, token):
+
+        self.tokens = [(1, token, token)]
+
+        while self.tokens:
+            # process tokens from in the order they are discovered. (DFS)
+            mode, token, parent = self.tokens.pop()
+            self.processed += 1
+
+            if mode==1:
+                self.visit(token, parent)
+                for child in reversed(token.children):
+                    self.tokens.append((1, child, token))
+            else:
+                self.finalize(token, parent)
+
+    def defer(self, token, parent):
+        self.tokens.append((0, token, parent))
+
+    def visit(self, token, parent):
+        raise NotImplementedError()
+
+    def finalize(self, token, parent):
+        raise NotImplementedError()
+
+is_str = lambda tok : tok.type == Token.T_STRING
+is_num = lambda tok : tok.type == Token.T_NUMBER
+js_vars = {Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR,}
+
+js_str_ops = {
+    "+": operator.concat,
+}
+
+js_num_ops = {
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    "/": operator.truediv,
+    "%": operator.mod,
+    "**": operator.pow,
+
+    "<<": operator.lshift,
+    ">>": operator.rshift,
+
+    "&": operator.and_,
+    "|": operator.or_,
+    "^": operator.xor,
+}
+
+def js_seq_get_attr(obj, key):
+    index = py_ast.literal_eval(key.value)
+    return obj.children[index]
+
+def js_map_get_attr(obj, key):
+    index = py_ast.literal_eval(key.value)
+    return obj.children[index]
+
+class TransformConstEval(TransformBaseV3):
+
+    def __init__(self):
+        super().__init__()
+
+        self.constexpr_values = {}
+
+    def visit(self, token, parent):
+
+        if token.type == Token.T_ASSIGN:
+            self.defer(token, parent)
+
+        if token.type == Token.T_BINARY:
+            self.defer(token, parent)
+
+    def finalize(self, token, parent):
+
+        if token.type == Token.T_ASSIGN:
+            self.visit_assign(token, parent)
+
+        if token.type == Token.T_BINARY:
+            self.visit_binary(token, parent)
+
+    def resolve_reference(self, token):
+        visited = set()
+        while token.type in js_vars:
+            visited.add(token)
+
+            if not hasattr(token, "ref"):
+                break
+
+            ref = token.ref
+
+            if not ref.name:
+                raise ValueError("name error")
+
+            if ref.name in self.constexpr_values:
+                new_token = self.constexpr_values[ref.name]
+                if new_token in visited:
+                    break;
+                token = new_token
+            else:
+                break;
+        return token
+
+    def visit_assign(self, token, parent):
+
+        lhs, rhs = token.children
+
+        if token.value == "=":
+
+            if hasattr(lhs, "ref") and lhs.type in js_vars:
+
+                ref = lhs.ref
+
+                if parent.type != Token.T_VAR or parent.value != "const":
+                    print("assign failed", parent.type, parent.value)
+                    if ref.name in self.constexpr_values:
+                        del self.constexpr_values[ref.name]
+                else:
+                    self.constexpr_values[ref.name] = rhs
+                    print("assign", ref.name, " = ", rhs)
+            else:
+                print("no tref", lhs)
+        else:
+            # +=, etc not yet supported
+            if hasattr(lhs, "ref") and lhs.type in js_vars:
+                ref = lhs.ref
+                if ref.name in self.constexpr_values:
+                    del self.constexpr_values[ref.name]
+
+    def visit_binary(self, token, parent):
+
+        lhs, rhs = token.children
+
+        lhs = self.resolve_reference(lhs)
+        rhs = self.resolve_reference(rhs)
+
+        if is_str(lhs) and is_str(rhs):
+            lv = py_ast.literal_eval(lhs.value)
+            rv = py_ast.literal_eval(rhs.value)
+
+            if token.value in js_num_ops:
+                print("compute str:", token.file, token.line, lv, token.value, rv)
+                token.type = Token.T_STRING
+                token.value = repr(js_str_ops[token.value](lv, rv))
+                token.children = []
+
+        elif is_num(lhs) and is_num(rhs):
+            lv = py_ast.literal_eval(lhs.value)
+            rv = py_ast.literal_eval(rhs.value)
+
+            if token.value in js_num_ops:
+                token.type = Token.T_NUMBER
+                print("compute num:", token.file, token.line, lv, token.value, rv)
+                token.value = repr(js_num_ops[token.value](lv, rv))
+                token.children = []
+
+        elif (is_num(lhs) and is_num(rhs)) or (is_num(lhs) and is_str(rhs)):
+            lv = str(py_ast.literal_eval(lhs.value))
+            rv = str(py_ast.literal_eval(rhs.value))
+            if token.value == "+":
+                print("compute:", token.file, token.line, lv, token.value, rv)
+                token.type = Token.T_NUMBER
+                token.value = repr(lv + rv)
+                token.children = []
+        else:
+            print("error", token)
+
 
 def main_css():
 
