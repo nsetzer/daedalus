@@ -540,7 +540,15 @@ class Ref(object):
         # counts which clone this ref is
         self.counter = counter
         # the full scope name for this ref
-        self.name = "%s.%s@%d" % (scname, label, counter)
+        s = 'f' if self.flags & SC_FUNCTION else 'b'
+        self.name = "%s.%s@%s%d" % (scname, label, s, counter)
+
+    def short_name(self):
+        s = 'f' if self.flags & SC_FUNCTION else 'b'
+        return "%s$%s%d" % (self.identity(), s, self.counter)
+
+    def long_name(self):
+        return "%s.%s" % (self.scname, self.short_name())
 
     def identity(self):
         raise NotImplementedError()
@@ -587,7 +595,8 @@ class MinifyRef(Ref):
     def __init__(self, scname, scflags, label, outLabel, counter):
         super(MinifyRef, self).__init__(scname, scflags, label, counter)
         self.outLabel = outLabel
-        self.name = "%s.%s@%d" % (scname, outLabel, counter)
+        s = 'f' if self.flags & SC_FUNCTION else 'b'
+        self.name = "%s.%s@%s%d" % (scname, outLabel, s, counter)
         #print("construct ref:", self.name)
 
     def identity(self):
@@ -597,6 +606,11 @@ class MinifyRef(Ref):
         return MinifyRef(self.scname, scflags, self.label, self.outLabel, self.counter+1)
 
 class UndefinedRef(Ref):
+    def __init__(self, scname, scflags, label, counter):
+        super(UndefinedRef, self).__init__(scname, scflags, label, counter)
+        s = 'f' if self.flags & SC_FUNCTION else 'b'
+        self.name = "%s.undefined.%s@%s%d" % (scname, label, s, counter)
+
     def identity(self):
         return self.label
 
@@ -673,7 +687,7 @@ class VariableScope(object):
         This allows for tagging variables with the same identifier that
         are redefined in parallel or nested block scopes
         """
-        return self.name + "+%d" % self.blscope_ids[-1]
+        return self.name # + "@b%d" % self.blscope_ids[-1]
 
     def _createRef(self, scflags, label, type_):
 
@@ -853,18 +867,27 @@ class VariableScope(object):
         self.blscope_next_id += 1
         self.blscope.append({})
 
+    def _warn_def(self, key, ref):
+        if ref.load_count == 0:
+            if not self.disable_warnings:
+
+                if ref.token:
+                    file = ref.token.file
+                    line = ref.token.line
+                    index = ref.token.index
+                else:
+                    file = "???"
+                    line = 0
+                    index = 0
+                sys.stderr.write("variable defined but never used: %s\n  %s:%s col %s\n" % (key, file, line, index))
+
     def popBlockScope(self):
 
         self.blscope_ids.pop()
         mapping = self.blscope.pop()
 
         for key, ref in mapping.items():
-            if ref.load_count == 0:
-                if not VariableScope.disable_warnings:
-                    if ref.token:
-                        sys.stderr.write("variable defined but never used: %s %s %s\n" % (key, ref.token.line, ref.token.index))
-                    else:
-                        sys.stderr.write("variable defined but never used: %s\n" % (key,))
+            self._warn_def(key, ref)
 
         self.blscope_stale.update(mapping)
         return mapping
@@ -874,12 +897,7 @@ class VariableScope(object):
         # proof of concept
         for scope in [self.blscope[0], self.fnscope]:
             for key, ref in scope.items():
-                if ref.load_count == 0:
-                    if not VariableScope.disable_warnings:
-                        if ref.token:
-                            sys.stderr.write("variable defined but never used: %s %s %s\n" % (key, ref.token.line, ref.token.index))
-                        else:
-                            sys.stderr.write("variable defined but never used: %s\n" % (key,))
+                self._warn_def(key, ref)
 
     def flattenBlockScope(self):
         out = {}
@@ -1231,9 +1249,10 @@ class TransformAssignScope(object):
             x = 2
 
     TODO:
-        = and variants must have a unique token type T_VARIALE_ASSIGMENT
+        = and variants must have a unique token type T_VARIABLE_ASSIGMENT
 
     """
+    disable_warnings = False
 
     def __init__(self):
         super(TransformAssignScope, self).__init__()
@@ -1346,7 +1365,9 @@ class TransformAssignScope(object):
         self.globals = {}
 
     def newScope(self, name, parentScope=None):
-        return VariableScope(name, parentScope)
+        scope = VariableScope(name, parentScope)
+        scope.disable_warnings = self.disable_warnings
+        return scope
 
     def transform(self, ast):
 
@@ -1404,8 +1425,11 @@ class TransformAssignScope(object):
         # javascript, but does nothing to fix compiling javascript to python
         for child in token.children:
             if isNamedFunction(child):
-                if not (token.type == Token.T_METHOD and not self.python):
-                    scope.define(0, child.children[0])
+                # TODO: is this valid to remove
+                # if not (token.type == Token.T_METHOD and not self.python):
+                # alt:?
+                # if not token.type == Token.T_METHOD or self.python:
+                scope.define(0, child.children[0])
             elif child.type == Token.T_CLASS:
                 scope.define(0, child.children[0], DF_CLASS)
 
@@ -1447,26 +1471,24 @@ class TransformAssignScope(object):
         # lambdas allow for no arglist, but that makes compiling harder
 
         # fix some js-isms that are not really valid python
-        if self.python:
-            #
-            #   x => x
-            #   (x) => x
-            #
-            if token.children[1].type == Token.T_TEXT:
-                tok = token.children[1]
-                token.children[1] = Token(Token.T_ARGLIST, tok.line, tok.index, '()', [tok])
-
-            # lambdas can be a single expression if it returns a value
-            # convert that expression into a block with a return
-            #
-            #   x => x
-            #   x => { return x }
-            #
-            if token.children[2].type != Token.T_BLOCK:
-                tok = token.children[2]
-
-                token.children[2] = Token(Token.T_BLOCK, tok.line, tok.index, '{}',
-                    [Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])])
+        #if self.python:
+        #    #
+        #    #   x => x
+        #    #   (x) => x
+        #    #
+        #    if token.children[1].type == Token.T_TEXT:
+        #        tok = token.children[1]
+        #        token.children[1] = Token(Token.T_ARGLIST, tok.line, tok.index, '()', [tok])
+        #    # lambdas can be a single expression if it returns a value
+        #    # convert that expression into a block with a return
+        #    #
+        #    #   x => x
+        #    #   x => { return x }
+        #    #
+        #    if token.children[2].type != Token.T_BLOCK:
+        #        tok = token.children[2]
+        #        token.children[2] = Token(Token.T_BLOCK, tok.line, tok.index, '{}',
+        #            [Token(Token.T_RETURN, tok.line, tok.index, 'return', [tok])])
 
         #self._handle_function(scope, token, {})
         scope.defer(token)
@@ -1522,13 +1544,10 @@ class TransformAssignScope(object):
         scflags = (flags & ST_SCOPE_MASK) >> 12
 
         if scflags:
-            print("define", token)
             scope.define(scflags, token)
         elif flags & ST_STORE:
-            print("store", token)
             scope.store(token)
         else:
-            print("load", token)
             scope.load(token)
 
     def visit_object(self, flags, scope, token, parent):
@@ -1664,19 +1683,26 @@ class TransformAssignScope(object):
 
     def finalize_function(self, flags, scope, token, parent):
 
-        if self.python:
+        #if self.python:
 
-            scope.popScope()
+        # TODO: calling popScope here does discover defined but unused variables
+        #       most of them are function arguments that are unused.
+        #       disabling for now, because it has no side effect other than
+        #       printing a large number of warnings.
+        #scope.popScope()
 
-            closure = Token(Token.T_CLOSURE, 0, 0, "")
+        # append a token to represent the closure of the function block
+        # this is not used for formating, but for meta-data used
+        # by the compiler
+        closure = Token(Token.T_CLOSURE, 0, 0, "")
 
-            for name in sorted(scope.cellvars):
-                closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
+        for name in sorted(scope.cellvars):
+            closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
 
-            for name in sorted(scope.freevars):
-                closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
+        for name in sorted(scope.freevars):
+            closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
 
-            token.children.append(closure)
+        token.children.append(closure)
 
     def finalize_block(self, flags, scope, token, parent):
 
@@ -1689,9 +1715,9 @@ class TransformAssignScope(object):
 
         vars = scope.popBlockScope()
 
-        if self.python:
-            for var in vars.values():
-                token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
+        # if self.python
+        for var in vars.values():
+            token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
 
     # -------------------------------------------------------------------------
 
@@ -1944,8 +1970,16 @@ class TransformIdentityScope(TransformAssignScope):
     """
     transform, but does not minify
     """
+
+    def __init__(self):
+        super(TransformIdentityScope, self).__init__()
+
+        self.python = False
+
     def newScope(self, name, parentScope=None):
-        return IdentityScope(name, parentScope)
+        scope = IdentityScope(name, parentScope)
+        scope.disable_warnings = self.disable_warnings
+        return scope
 
 class TransformMinifyScope(TransformAssignScope):
     """
@@ -1967,8 +2001,9 @@ class TransformMinifyScope(TransformAssignScope):
         self.python = False
 
     def newScope(self, name, parentScope=None):
-        return MinifyVariableScope(name, parentScope)
-
+        scope = MinifyVariableScope(name, parentScope)
+        scope.disable_warnings = self.disable_warnings
+        return scope
 class TransformBaseV2(object):
     def __init__(self):
         super(TransformBaseV2, self).__init__()
@@ -2250,14 +2285,12 @@ class TransformConstEval(TransformBaseV3):
                 ref = lhs.ref
 
                 if parent.type != Token.T_VAR or parent.value != "const":
-                    print("assign failed", parent.type, parent.value)
+                    #print("assign failed", parent.type, parent.value)
                     if ref.name in self.constexpr_values:
                         del self.constexpr_values[ref.name]
                 else:
                     self.constexpr_values[ref.name] = rhs
-                    print("assign", ref.name, " = ", rhs)
-            else:
-                print("no tref", lhs)
+                    #print("assign", ref.name, " = ", rhs)
         else:
             # +=, etc not yet supported
             if hasattr(lhs, "ref") and lhs.type in js_vars:
@@ -2277,7 +2310,7 @@ class TransformConstEval(TransformBaseV3):
             rv = py_ast.literal_eval(rhs.value)
 
             if token.value in js_num_ops:
-                print("compute str:", token.file, token.line, lv, token.value, rv)
+                print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.type = Token.T_STRING
                 token.value = repr(js_str_ops[token.value](lv, rv))
                 token.children = []
@@ -2288,7 +2321,7 @@ class TransformConstEval(TransformBaseV3):
 
             if token.value in js_num_ops:
                 token.type = Token.T_NUMBER
-                print("compute num:", token.file, token.line, lv, token.value, rv)
+                print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.value = repr(js_num_ops[token.value](lv, rv))
                 token.children = []
 
@@ -2296,13 +2329,12 @@ class TransformConstEval(TransformBaseV3):
             lv = str(py_ast.literal_eval(lhs.value))
             rv = str(py_ast.literal_eval(rhs.value))
             if token.value == "+":
-                print("compute:", token.file, token.line, lv, token.value, rv)
+                print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.type = Token.T_NUMBER
                 token.value = repr(lv + rv)
                 token.children = []
         else:
             print("error", token)
-
 
 def main_css():
 

@@ -790,7 +790,7 @@ class Parser(object):
                 i2 = self.peek_keyword(tokens, token, i1, -1)
                 if i2 is not None:
                     tok2 = tokens[i2]
-                    if tok2.type == Token.T_KEYWORD and tok2.value in ('const', 'let', 'var'):
+                    if tok2.type == Token.T_KEYWORD and tok2.value in ('constexpr', 'const', 'let', 'var'):
                         return 1
 
         rhs = self.consume(tokens, token, index, 1)
@@ -1001,6 +1001,10 @@ class Parser(object):
         """ collect keywords which accept a single argument """
 
         token = tokens[index]
+
+        if token.type == Token.T_TEXT and token.value == "constexpr":
+            self.collect_keyword_var(tokens, index)
+
         if token.type != Token.T_KEYWORD:
             return 1
 

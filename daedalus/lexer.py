@@ -44,7 +44,9 @@ reserved_words = {
 # TODO: e.x. {public: 'abc123'} will fail since public is a keyword
 reserved_words_extra = {
     'private', 'protected', 'public', 'native',
-    'abstract', 'arguments', 'synchronized', 'from', 'module', "pyimport", "catch"
+    'abstract', 'arguments', 'synchronized', 'from',
+    'module', "pyimport", "catch",
+    "constexpr"
 }
 
 # symbols for operators that have length 1

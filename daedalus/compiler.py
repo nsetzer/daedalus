@@ -1,5 +1,20 @@
 #! cd .. && python3 -m daedalus.compiler
 
+"""
+version 2 compiler requirements:
+    AssignScope Transform should have different versions between
+        the output that is used as input into Formatter or Compiler
+    Compiler needs to use one of two identities for variables
+        short_name :: "a#f0"
+        long_name :: "__main__@b0.a@0#f0"
+    long_name is required for const_expr, while short_name is required
+    to handle the default scoping case for python
+
+    problem: short_name/long_name is an attribute on the refernce, not token
+        each token has a pointer to the reference object
+        unclear if this is a viable long term solution. (cloneing issues?)
+
+"""
 
 import ast
 import dis
@@ -8,7 +23,8 @@ import sys
 import time
 from collections import defaultdict
 
-from .lexer import Lexer, Token, TokenError
+from .token import Token, TokenError
+from .lexer import Lexer
 from .parser import Parser, ParseError
 from .builtins import defaultGlobals, \
     JsUndefined, JsStr, JsArray, JsObject, JsNew, \
@@ -53,13 +69,12 @@ ST_BRANCH_FALSE = 0x200
 
 ST_WHILE = 0x100
 
-
-
 class Compiler(object):
 
-    CF_MODULE    = 1
-    CF_REPL      = 2
-    CF_NO_FAST   = 4
+    CF_MODULE  = 1
+    CF_REPL    = 2
+    CF_NO_FAST = 4
+    CF_USE_REF = 8
 
     def __init__(self, name="__main__", filename="<string>", globals=None, flags=1):
         super(Compiler, self).__init__()
@@ -209,16 +224,7 @@ class Compiler(object):
         if self.function_body is not None:
             return self.function_body()
 
-    def compile(self, ast):
-
-        self.function_body = None
-        transform = TransformClassToFunction()
-        transform.transform(ast)
-
-        transform = TransformAssignScope()
-        transform.transform(ast)
-        if self.flags & Compiler.CF_REPL:
-            self.module_globals.update(transform.globals)
+    def _do_compile(self, ast):
 
         self._compile(ast)
         self._finalize()
@@ -226,6 +232,21 @@ class Compiler(object):
         stacksize = calcsize(self.bc)
         code = self.bc.to_code(stacksize)
         self.function_body = types.FunctionType(code, self.globals, self.bc.name)
+
+    def compile(self, ast):
+
+        self.function_body = None
+        transform = TransformClassToFunction()
+        transform.transform(ast)
+
+        transform = TransformAssignScope()
+        if self.flags & Compiler.CF_REPL:
+            transform.disable_warnings = True
+        transform.transform(ast)
+        if self.flags & Compiler.CF_REPL:
+            self.module_globals.update(transform.globals)
+
+        self._do_compile(ast)
 
     def dump(self):
         if self.function_body is not None:
@@ -256,7 +277,9 @@ class Compiler(object):
         if self.flags & Compiler.CF_REPL:
             self.bc.append(BytecodeInstr('LOAD_CONST', 0))
 
-        if ast.type == Token.T_MODULE:
+        # TODO: refactor to be independant of ast type or flags
+        if ast.type == Token.T_MODULE or self.flags & Compiler.CF_USE_REF:
+            # this is required for top level lambda functions
             kind, index = self._token2index(JsUndefined.Token, load=True)
             self.bc.append(BytecodeInstr('LOAD_' + kind, index))
             kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), load=False)
@@ -502,7 +525,16 @@ class Compiler(object):
                 token.line, token.index, depth)
 
         arglist = token.children[1]
+        # this test used to be performed in the scope transform
+        if arglist.type == Token.T_TEXT:
+            arglist = Token(Token.T_ARGLIST, arglist.line, arglist.index, '()', [arglist])
+
         block = token.children[2]
+        # this test used to be performed in the scope transform
+        if block.type != Token.T_BLOCK:
+            block = Token(Token.T_BLOCK, block.line, block.index, '{}',
+                [Token(Token.T_RETURN, block.line, block.index, 'return', [block])])
+
         closure = token.children[3]
 
         self._build_function(state, token, name, arglist, block, closure)
@@ -1378,38 +1410,63 @@ class Compiler(object):
             return 'CONST', index
 
         elif tok.type == Token.T_LOCAL_VAR:
+
+            if self.flags&Compiler.CF_USE_REF and tok.ref:
+                name = tok.ref.name
+            else:
+                name = tok.value
+
             if tok.value in self.bc.cellvars:
-                index = self.bc.cellvars.index(tok.value)
+                index = self.bc.cellvars.index(name)
+                #index = self.bc.cellvars.index(tok.value)
                 return 'DEREF', index
 
             try:
-                index = self.bc.varnames.index(tok.value)
+                index = self.bc.varnames.index(name)
+                #index = self.bc.varnames.index(tok.value)
                 return 'FAST', index
             except ValueError:
                 pass
 
             index = len(self.bc.varnames)
-            self.bc.varnames.append(tok.value)
+            self.bc.varnames.append(name)
+            #self.bc.varnames.append(tok.value)
             return 'FAST', index
 
         elif tok.type == Token.T_GLOBAL_VAR:
+            name = tok.value
+            if self.flags&Compiler.CF_USE_REF and tok.ref:
+                #print(tok.ref.__class__.__name__)
+                if tok.ref.__class__.__name__ != "UndefinedRef":
+                #if name not in self.globals:
+                    name = tok.ref.name
+
             try:
-                index = self.bc.names.index(tok.value)
+
+                index = self.bc.names.index(name)
+                #index = self.bc.names.index(tok.value)
                 return 'GLOBAL', index
             except ValueError:
                 pass
 
             index = len(self.bc.names)
-            self.bc.names.append(tok.value)
+            #self.bc.names.append(tok.value)
+            self.bc.names.append(name)
             return 'GLOBAL', index
 
         elif tok.type == Token.T_FREE_VAR:
 
+            name = tok.value
+            if self.flags&Compiler.CF_USE_REF and tok.ref:
+                name = tok.ref.name
+
             if tok.value in self.bc.freevars:
-                return "DEREF", len(self.bc.cellvars) + self.bc.freevars.index(tok.value)
+                index = len(self.bc.cellvars) + self.bc.freevars.index(name)
+                return "DEREF", index
 
             if tok.value in self.bc.cellvars:
-                return "DEREF", self.bc.cellvars.index(tok.value)
+                index = self.bc.cellvars.index(name)
+                return "DEREF", index
 
         elif tok.type == Token.T_TEXT or tok.type == Token.T_KEYWORD:
 

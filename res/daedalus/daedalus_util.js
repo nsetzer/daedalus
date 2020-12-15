@@ -2,8 +2,8 @@
 
 function array_move(arr, p1, p2) {
 
-    let s1 = p1
-    let s2 = p2
+    //let s1 = p1
+    //let s2 = p2
     if (p1 < 0) {p1 = 0}
     if (p2 < 0) {p2 = 0}
     if (p1 > arr.length) {p1 = arr.length}
