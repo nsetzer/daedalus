@@ -117,6 +117,8 @@ class Token(object):
         self.children = list(children) if children is not None else []
         self.file = None
         self.original_value = None
+        self.ref = None
+        self.ref_attr = 0 # 1: define, 2: store, 4: load
 
     def __str__(self):
 

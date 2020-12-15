@@ -351,6 +351,8 @@ class Formatter(object):
                     seq.append((depth, None, child))
 
                     first = False
+                if token.value == "constexpr":
+                    token.value = "const"
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_CLASS:
                 seq.append((depth, None, token.children[2]))
@@ -442,14 +444,14 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_FOR:
                 if len(token.children) == 1:
-                    print(token.toString(2))
                     sys.stderr.write("error: line: %d col: %d" % (token.line, token.index));
                     args = token.children[0]
                 else:
-                    args, block = token.children
+                    args = token.children[0]
+                    block = token.children[1]
                     if not isctrlflow(block):
                         seq.append((depth, Token.T_SPECIAL, ";"))
-                    seq.append((depth+1, None, block))
+                    seq.append((depth, None, block))
                 # this arglist is special, if there are multiple clauses
                 # separate them by semicolons instead of commas
 
@@ -539,9 +541,9 @@ class Formatter(object):
             elif token.type == Token.T_EMPTY_TOKEN:
                 pass
             elif token.type == Token.T_CLOSURE:
-                print("TODO warning closure")
+                pass # compiler only
             elif token.type == Token.T_DELETE_VAR:
-                print("TODO warning delete var")
+                pass # compiler only
             else:
                 raise FormatError(token, "token not supported: %s" % token.type)
         return out

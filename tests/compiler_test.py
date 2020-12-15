@@ -705,6 +705,22 @@ try:
             self.assertEqual(result[0], 1)
             self.assertEqual(result[1], 2)
 
+        def test_scope_delete(self):
+            text = """
+
+                var main = function() {
+                    let x=0
+                    {
+                        let x=2
+                    }
+                    x += 1
+                    return x
+                }
+                return main()
+            """
+            result = self.evaljs(text, True)
+            self.assertEqual(result, 1)
+
 except ImportError as e:
     pass
 

@@ -53,7 +53,9 @@ def buildFileIIFI(mod, exports):
     """
 
     def TOKEN(type, value, *children):
-        return Token(type, 1, 0, value, children)
+        tok = Token(type, 1, 0, value, children)
+        tok.file = "<file_iifi>"
+        return tok
 
     tok_export_names1 = [TOKEN('T_TEXT', text) for text in sorted(exports)]
     tok_export_names2 = [TOKEN('T_TEXT', text) for text in sorted(exports)]
@@ -90,7 +92,9 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     """
 
     def TOKEN(type, value, *children):
-        return Token(type, 1, 0, value, children)
+        tok = Token(type, 1, 0, value, children)
+        tok.file = "<module_iifi>"
+        return tok
 
     import_names = sorted(list(imports.keys()))
     argument_names = import_names[:]
@@ -147,23 +151,20 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
 
     else:
 
-
         if '.' in modname:
             parts = modname.split('.')
 
-            lhs = Token(Token.T_TEXT, 1, 0, parts[0])
-            rhs = Token(Token.T_TEXT, 1, 0, parts[1])
-            mod_tok = Token(Token.T_GET_ATTR, 1, 0, '.')
-            mod_tok.children = [lhs, rhs]
+            mod_tok = TOKEN('T_GET_ATTR', '.',
+                TOKEN('T_TEXT', parts[0]),
+                TOKEN('T_TEXT', parts[1]))
 
             for i in range(2, len(parts)):
-                lhs = mod_tok
-                rhs = Token(Token.T_TEXT, 1, 0, parts[i])
-                mod_tok = Token(Token.T_GET_ATTR, 1, 0, '.')
-                mod_tok.children = [lhs, rhs]
+                mod_tok = TOKEN('T_GET_ATTR', '.',
+                            mod_tok,
+                            TOKEN('T_TEXT', parts[i]))
 
         else:
-            mod_tok = Token(Token.T_TEXT, 1, 0,modname)
+            mod_tok = TOKEN('T_TEXT', modname)
 
         tok_iifi = TOKEN('T_MODULE', '',
             TOKEN('T_ASSIGN', '=',
@@ -177,7 +178,9 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
 def buildPythonAst(modname, mod, imports, exports):
 
     def TOKEN(type, value, *children):
-        return Token(type, 1, 0, value, children)
+        tok = Token(type, 1, 0, value, children)
+        tok.file = "<python_ast>"
+        return tok
 
     import_names = sorted(list(imports.keys()))
     argument_names = import_names[:]

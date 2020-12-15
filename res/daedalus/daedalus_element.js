@@ -435,7 +435,7 @@ const placeholder = StyleSheet({
 /**
  * Reference implementation for a Draggable Item
  */
-class DraggableListItem extends DomElement {
+export class DraggableListItem extends DomElement {
 
     constructor() {
         super("div", {}, []);
