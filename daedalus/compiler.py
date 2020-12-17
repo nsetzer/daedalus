@@ -14,6 +14,9 @@ version 2 compiler requirements:
         each token has a pointer to the reference object
         unclear if this is a viable long term solution. (cloneing issues?)
 
+TODO:
+    pull required transforms (lambda) out of the compiler
+
 """
 
 import ast
@@ -224,7 +227,21 @@ class Compiler(object):
         if self.function_body is not None:
             return self.function_body()
 
-    def _do_compile(self, ast):
+    def compile(self, ast):
+
+        self.function_body = None
+        #transform = TransformClassToFunction()
+        #transform.transform(ast)
+
+        #transform = TransformAssignScope()
+        #if self.flags & Compiler.CF_REPL:
+        #    transform.disable_warnings = True
+        #transform.transform(ast)
+
+        # TODO: this was removed because the new transform can infer this state
+        #   TransformReplaceIdentity can check if the variable is Undefined
+        #if self.flags & Compiler.CF_REPL:
+        #    self.module_globals.update(transform.globals)
 
         self._compile(ast)
         self._finalize()
@@ -232,21 +249,6 @@ class Compiler(object):
         stacksize = calcsize(self.bc)
         code = self.bc.to_code(stacksize)
         self.function_body = types.FunctionType(code, self.globals, self.bc.name)
-
-    def compile(self, ast):
-
-        self.function_body = None
-        transform = TransformClassToFunction()
-        transform.transform(ast)
-
-        transform = TransformAssignScope()
-        if self.flags & Compiler.CF_REPL:
-            transform.disable_warnings = True
-        transform.transform(ast)
-        if self.flags & Compiler.CF_REPL:
-            self.module_globals.update(transform.globals)
-
-        self._do_compile(ast)
 
     def dump(self):
         if self.function_body is not None:
@@ -1411,10 +1413,9 @@ class Compiler(object):
 
         elif tok.type == Token.T_LOCAL_VAR:
 
-            if self.flags&Compiler.CF_USE_REF and tok.ref:
-                name = tok.ref.name
-            else:
-                name = tok.value
+            name = tok.value
+            #if self.flags&Compiler.CF_USE_REF and tok.ref:
+            #    name = tok.ref.name
 
             if tok.value in self.bc.cellvars:
                 index = self.bc.cellvars.index(name)
@@ -1435,11 +1436,11 @@ class Compiler(object):
 
         elif tok.type == Token.T_GLOBAL_VAR:
             name = tok.value
-            if self.flags&Compiler.CF_USE_REF and tok.ref:
-                #print(tok.ref.__class__.__name__)
-                if tok.ref.__class__.__name__ != "UndefinedRef":
-                #if name not in self.globals:
-                    name = tok.ref.name
+            #if self.flags&Compiler.CF_USE_REF and tok.ref:
+            #    #print(tok.ref.__class__.__name__)
+            #    if tok.ref.__class__.__name__ != "UndefinedRef":
+            #    #if name not in self.globals:
+            #        name = tok.ref.name
 
             try:
 
@@ -1457,8 +1458,8 @@ class Compiler(object):
         elif tok.type == Token.T_FREE_VAR:
 
             name = tok.value
-            if self.flags&Compiler.CF_USE_REF and tok.ref:
-                name = tok.ref.name
+            #if self.flags&Compiler.CF_USE_REF and tok.ref:
+            #    name = tok.ref.name
 
             if tok.value in self.bc.freevars:
                 index = len(self.bc.cellvars) + self.bc.freevars.index(name)
@@ -1495,6 +1496,8 @@ class Compiler(object):
             self.bc.varnames.append(tok.value)
             return 'FAST', index
 
+        print(self.bc.freevars)
+        print(self.bc.cellvars)
         raise CompileError(tok, "unable to map token")
 
     def _token2index_name(self, tok, load=False):

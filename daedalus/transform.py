@@ -632,10 +632,10 @@ class VariableScope(object):
 
         # freevars are identifiers defined in a parent scope
         # that are used in this or a child scope
-        self.freevars = set()
+        self.freevars = {}
         # cellvars are identifiers defined in this scope used
         # by a child scope
-        self.cellvars = set()
+        self.cellvars = {}
 
         # vars are identifiers defined in this scope
         self.vars = set()
@@ -656,7 +656,7 @@ class VariableScope(object):
 
         self.defered_functions = []
 
-    def _getRef(self, scope, label):
+    def _getRef(self, label):
         """
         returns the reference if it exists for a label in the given scope
         search the current, then parent block scopes before searching
@@ -665,16 +665,13 @@ class VariableScope(object):
 
         ref = None
 
-        if not scope:
-            return ref
-
-        for mapping in reversed(scope.blscope):
+        for mapping in reversed(self.blscope):
             if label in mapping:
                 ref = mapping[label]
                 break
 
-        if ref is None and label in scope.fnscope:
-            ref = scope.fnscope[label]
+        if ref is None and label in self.fnscope:
+            ref = self.fnscope[label]
 
         return ref
 
@@ -777,10 +774,10 @@ class VariableScope(object):
         # search for the scope the defines this label
 
         if label in self.fnscope:
-            ref = self._getRef(self, label)
+            ref = self._getRef(label)
 
         elif any([label in bl for bl in self.blscope]):
-            ref = self._getRef(self, label)
+            ref = self._getRef(label)
 
         else:
             scopes = [self.parent]
@@ -814,7 +811,7 @@ class VariableScope(object):
                 # found in a parent scope
                 scope = scopes[-1]
 
-                #ref = self._getRef(scope, label)
+                #ref = self._getRef(label)
                 ref = scope.refs[label]
 
                 if ref is None:
@@ -823,11 +820,15 @@ class VariableScope(object):
                 if not ref.isGlobal():
                     token.type = Token.T_FREE_VAR
 
-                    identity = ref.identity()
-                    scope.defineCellVar(identity)
+                    # here the identity is used to handle the special
+                    # case where the same variable name could be used
+                    # with different meanings in the same block context
+                    identity = ref.short_name()
+                    #print("define", identity, ref.long_name())
+                    scope.defineCellVar(identity, ref)
                     for scope2 in scopes[:-1]:
-                        scope2.defineFreeVar(identity)
-                    self.freevars.add(identity)
+                        scope2.defineFreeVar(identity, ref)
+                    self.freevars[identity] = ref
 
         token.value = ref.identity()
         if token.type == Token.T_TEXT:
@@ -924,7 +925,7 @@ class VariableScope(object):
                     defered.blrefs[key] = ref
 
     def _diag(self, token):
-        sys.stderr.write("%10s %s %s %s\n" % (token.type, list(self.vars), list(self.freevars), list(self.cellvars)))
+        sys.stderr.write("%10s %s %s %s\n" % (token.type, list(self.vars), list(self.freevars.keys()), list(self.cellvars.keys())))
 
     def __hash__(self):
         return hash(self.name)
@@ -941,13 +942,13 @@ class VariableScopeReference(object):
     def contains(self, label):
         return label in self.refs
 
-    def defineCellVar(self, identity):
+    def defineCellVar(self, identity, ref):
 
-        self.scope.cellvars.add(identity)
+        self.scope.cellvars[identity] = ref
 
-    def defineFreeVar(self, identity):
+    def defineFreeVar(self, identity, ref):
 
-        self.scope.freevars.add(identity)
+        self.scope.freevars[identity] = ref
 
     def containsIdentity(self, identity):
         return any(ref.identity()==identity for ref in self.refs.values())
@@ -1322,7 +1323,7 @@ class TransformAssignScope(object):
             Token.T_BLOCK: self.finalize_block,
             Token.T_MODULE: self.finalize_module,
 
-            Token.T_CLASS: self.finalize_function,
+            Token.T_CLASS: self.finalize_class,
 
             Token.T_ASSIGN: self.finalize_assign,
             Token.T_BINARY: self.finalize_binary,
@@ -1694,15 +1695,48 @@ class TransformAssignScope(object):
         # append a token to represent the closure of the function block
         # this is not used for formating, but for meta-data used
         # by the compiler
+
+        # conditionally create closure in case a different transform
+        # has already generated the token.
+        #if len(token.children) == 4:
+        #    closure = token.children[3]
+        #    closure.children = []
+        #else:
+        #    closure = Token(Token.T_CLOSURE, 0, 0, "")
+        #    token.children.append(closure)
+
         closure = Token(Token.T_CLOSURE, 0, 0, "")
-
-        for name in sorted(scope.cellvars):
-            closure.children.append(Token(Token.T_CELL_VAR, 0, 0, name))
-
-        for name in sorted(scope.freevars):
-            closure.children.append(Token(Token.T_FREE_VAR, 0, 0, name))
-
         token.children.append(closure)
+
+        for name, ref in sorted(scope.cellvars.items()):
+            tok = Token(Token.T_CELL_VAR, 0, 0, name)
+            tok.ref = ref
+            tok.ref_attr = 8
+            closure.children.append(tok)
+
+        for name, ref in sorted(scope.freevars.items()):
+            tok = Token(Token.T_FREE_VAR, 0, 0, name)
+            tok.ref = ref
+            tok.ref_attr = 8
+            closure.children.append(tok)
+
+        #token.children.append(closure)
+
+    def finalize_class(self, flags, scope, token, parent):
+        closure = Token(Token.T_CLOSURE, 0, 0, "")
+        token.children.append(closure)
+
+        for name,ref in sorted(scope.cellvars.items()):
+            tok = Token(Token.T_CELL_VAR, 0, 0, name)
+            tok.ref = ref
+            tok.ref_attr = 8
+            closure.children.append(tok)
+
+        for name,ref in sorted(scope.freevars.items()):
+            tok = Token(Token.T_FREE_VAR, 0, 0, name)
+            tok.ref = ref
+            tok.ref_attr = 8
+            closure.children.append(tok)
 
     def finalize_block(self, flags, scope, token, parent):
 
@@ -1713,11 +1747,14 @@ class TransformAssignScope(object):
 
         scope.updateDeferedBlock()
 
-        vars = scope.popBlockScope()
+        refs = scope.popBlockScope()
 
         # if self.python
-        for var in vars.values():
-            token.children.append(Token(Token.T_DELETE_VAR, token.line, token.index, var.identity()))
+        for ref in refs.values():
+            tok = Token(Token.T_DELETE_VAR, token.line, token.index, ref.identity())
+            tok.ref = ref
+            tok.ref_attr = 8
+            token.children.append(tok)
 
     # -------------------------------------------------------------------------
 
@@ -2040,11 +2077,35 @@ class TransformBaseV2(object):
             for child in reversed(token.children):
                 tokens.append(child)
 
-    def visit(self, token, child, index):
+    def visit(self, parent, token, index):
         raise NotImplementedError()
 
+class TransformReplaceIdentity(TransformBaseV2):
+
+    def __init__(self, use_short_name=True):
+
+        super().__init__()
+
+        self.use_short_name = use_short_name
+
+    def visit(self, parent, token, index):
+
+        if token.ref:
+            if not isinstance(token.ref, UndefinedRef):
+                if self.use_short_name:
+                    token.value = token.ref.short_name()
+                else:
+                    token.value = token.ref.long_name()
+
 class TransformClassToFunction(TransformBaseV2):
+    # TODO: this class should be renamed to reflect new behavior
+    #       it will now fix an ast so that it can be compiled.
+    # TODO: this transform in mode2 could apply shortname/longname
+    #       text transforms from reference to token value
+
     """
+
+    this transform can be run before or after assiging variable scopes
 
     Given:
         class Shape() {
@@ -2072,16 +2133,44 @@ class TransformClassToFunction(TransformBaseV2):
     into the body of the function
     """
 
-    def visit(self, token, child, index):
+    def visit(self, parent, token, index):
 
-        if child.type == Token.T_CLASS:
-            self.visit_class(token, child, index)
+        if token.type == Token.T_LAMBDA:
+            self.visit_lambda(parent, token, index)
+
+        elif token.type == Token.T_CLASS:
+            self.visit_class(parent, token, index)
+
+    def visit_lambda(self, parent, token, index):
+
+        arglist = token.children[1]
+        block = token.children[2]
+
+        # this test used to be performed in the scope transform
+        if arglist.type != Token.T_ARGLIST:
+            token.children[1] = Token(Token.T_ARGLIST, arglist.line, arglist.index, '()', [arglist])
+
+        # this test used to be performed in the scope transform
+        if block.type != Token.T_BLOCK:
+            token.children[2] = Token(Token.T_BLOCK, block.line, block.index, '{}',
+                [Token(Token.T_RETURN, block.line, block.index, 'return', [block])])
 
     def visit_class(self, parent, token, index):
+
+        ln = token.line
+        co = token.index
 
         name = token.children[0]
         extends = token.children[1]
         clsbody = token.children[2]
+
+        # mode 1 is the default, for when this transform is run priorto AssignScope
+        # mode 2 is used if AssignScope has been run, the Closures must be preserved
+        #  -either order should produce identical output
+
+        mode = 1
+        if len(token.children) == 4 and token.children[3].type == Token.T_CLOSURE:
+            mode = 2 # variable scope has already been run
 
         constructor = None
 
@@ -2098,13 +2187,21 @@ class TransformClassToFunction(TransformBaseV2):
                 methods.append(child)
 
         if constructor is None:
-            constructor = Token(Token.T_LAMBDA, 0, 0, '=>',
-                    [Token(Token.T_TEXT, 0, 0, 'Anonymous'),
-                    Token(Token.T_ARGLIST, 0, 0, '()'),
-                    Token(Token.T_BLOCK, 0, 0, '{}')]
+            #TODO: for inheritance this will need to call super
+            constructor = Token(Token.T_LAMBDA, ln, co, '=>',
+                    [Token(Token.T_TEXT, ln, co, 'Anonymous'),
+                    Token(Token.T_ARGLIST, ln, co, '()'),
+                    Token(Token.T_BLOCK, ln, co, '{}'),
+                    ]
                 )
 
-        conbody = constructor.children[2]
+            if mode == 2:
+                # constructor.append(Token(Token.T_CLOSURE, ln, co, ''))
+                constructor.children.append(token.children[3])
+
+        #conbody = constructor.children[2]
+
+        #    constructor.children.append(Token(Token.T_CLOSURE, 0, 0, ""))
 
         # methods assign to the prototype
         # static methods assign to the class
@@ -2122,11 +2219,10 @@ class TransformClassToFunction(TransformBaseV2):
         # after the class method is defined, define new methods on
         # the created object by inserting statements that add the attribute
         # TODO: consider an IIFI for inline classes with static methods
-        ln = token.line
-        co = token.index
+
         for method in static_methods:
             var = Token(Token.T_GET_ATTR, ln, co, '.', [
-                Token(Token.T_TEXT, ln, co, name.value),
+                name,
                 Token(Token.T_ATTR, ln, co, method.children[0].value)
             ])
             # TODO: this function has a name, and probably shouldnt
@@ -2137,14 +2233,20 @@ class TransformClassToFunction(TransformBaseV2):
                 var,
                 method
             ])
+
+            #if self.mode==2:
+            #    anonfn.children.append(method.children[3])
+
             parent.children.insert(index+1, static)
 
         token.type = Token.T_FUNCTION
         token.value = 'function'
-        token.children = []
+        #token.children = []
 
         arglist = constructor.children[1]
         fnbody = constructor.children[2]
+
+        closure = Token(Token.T_CLOSURE, token.line, token.index, "")
 
         for method in methods:
             anonfn = Token(Token.T_LAMBDA, token.line, token.index, "=>",
@@ -2158,9 +2260,21 @@ class TransformClassToFunction(TransformBaseV2):
                 [attr, anonfn])
             fnbody.children.insert(0, tok)
 
-        token.children.append(name)
-        token.children.append(arglist)
-        token.children.append(fnbody)
+            if mode==2:
+                anonfn.children.append(method.children[3])
+
+        #token.children.append(name)
+        #token.children.append(arglist)
+        #token.children.append(fnbody)
+        token.children[0] = name
+        token.children[1] = arglist
+        token.children[2] = fnbody
+        # assigning in this way preserves any existing closure
+        # token.children[3] = closure
+
+        #if self.mode==2:
+        #    token.children.append(closure)
+
 
 class TransformBaseV3(object):
     def __init__(self):

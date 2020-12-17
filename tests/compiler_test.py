@@ -5,7 +5,7 @@ from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
-from daedalus.transform import VariableScope
+from daedalus.transform import VariableScope, TransformIdentityScope, TransformReplaceIdentity, TransformClassToFunction
 
 try:
 
@@ -36,6 +36,15 @@ try:
         def evaljs(self, text, diag=False):
             tokens = self.lexer.lex(text)
             ast = self.parser.parse(tokens)
+
+
+            transform = TransformIdentityScope()
+            transform.disable_warnings = True
+            transform.transform(ast)
+
+            TransformClassToFunction().transform(ast)
+
+            TransformReplaceIdentity().transform(ast)
 
             interpreter = Compiler()
             interpreter.compile(ast)
@@ -718,7 +727,7 @@ try:
                 }
                 return main()
             """
-            result = self.evaljs(text, True)
+            result = self.evaljs(text, False)
             self.assertEqual(result, 1)
 
 except ImportError as e:
