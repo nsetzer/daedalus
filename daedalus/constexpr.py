@@ -4,7 +4,8 @@ from .token import Token, TokenError
 from .lexer import Lexer, LexError
 from .parser import Parser, ParseError
 
-from .transform import TransformIdentityScope, TransformBaseV3
+from .transform import TransformIdentityScope, TransformBaseV3, \
+    TransformClassToFunction, TransformReplaceIdentity
 
 from .compiler import Compiler
 from .formatter import Formatter
@@ -132,26 +133,35 @@ class TransformConstExpr(TransformBaseV3):
 
     def visit_assign(self, token, parent):
 
-
         if parent.type != Token.T_VAR or parent.value != "constexpr":
             return
 
         lhs, rhs = token.children
 
-        target = Token(Token.T_GLOBAL_VAR, lhs.line, lhs.index, lhs.ref.name)
+        rhs = rhs.clone()
+
+        # transform any classes or lambdA calls into a python ast
+        TransformClassToFunction().transform(rhs)
+        # transform variables to use a globally unique (long name) identifier
+        TransformReplaceIdentity(False).transform(rhs)
+
+        identity = lhs.ref.long_name()
+
+        target = Token(Token.T_GLOBAL_VAR, lhs.line, lhs.index, identity)
         children = [target, rhs]
+
         ast = Token(token.type, token.line, token.index, token.value, children)
 
         cc = Compiler(filename="<string>",
                 globals=self.globals,
                 flags=Compiler.CF_REPL|Compiler.CF_USE_REF)
-        cc._do_compile(ast)
+        cc.compile(ast)
 
         #cc.dump()
         result = cc.function_body()
 
-        result_value = cc.globals[lhs.ref.name]
-        #self.globals[lhs.ref.name] = result_value
+        result_value = cc.globals[identity]
+        #self.globals[identity] = result_value
         self.globals = cc.globals
 
         result_token = self.literalToToken(token, result_value)
@@ -160,7 +170,7 @@ class TransformConstExpr(TransformBaseV3):
         if result_token:
             token.children[1] = result_token
 
-        print("!%s=%s" % (lhs.ref.name, result_value))
+        print("!%s=%s" % (identity, result_value))
 
 def main():  # pragma: no cover
     """

@@ -188,6 +188,8 @@ class Token(object):
         tok.file = self.file
         tok.original_value = self.original_value
         tok.children = [c.clone() for c in self.children]
+        tok.ref = self.ref
+        tok.ref_attr = self.ref_attr
         tok.__dict__.update(keys)
         return tok
 
