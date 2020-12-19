@@ -1261,9 +1261,6 @@ class TransformAssignScope(object):
         # discover the variable scope if a mode friendly
         # to python (true) or javascript (false)
         self.python = True
-        self.constexpr_enabled = False
-        self.constexpr_seq_enabled = False
-        self.constexpr_values = {}
 
         self.global_scope = None
 
@@ -1518,11 +1515,11 @@ class TransformAssignScope(object):
         for child in reversed(token.children):
 
             if child.type == Token.T_TEXT:
+                print('define', child.type, child.value)
                 # define
                 self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [child], token)
             else:
                 self._push_tokens(ST_VISIT | (flags & ST_SCOPE_MASK), scope, [child], token)
-
 
     def visit_assign(self, flags, scope, token, parent):
 
@@ -1649,23 +1646,7 @@ class TransformAssignScope(object):
 
     def finalize_default(self, flags, scope, token, parent):
 
-        if self.constexpr_seq_enabled:
-            if token.type == Token.T_SUBSCR and len(token.children) == 2:
-                obj, key = token.children
-
-                obj = self.resolve_reference(scope, obj)
-                key = self.resolve_reference(scope, key)
-
-                if obj.type == Token.T_LIST:
-                    if key.type == Token.T_NUMBER:
-                        tok = js_seq_get_attr(obj, key)
-                        if tok is None:
-                            TransformError(token, "index out of range")
-                        else:
-
-                            token.type = tok.type
-                            token.value = tok.value
-                            token.children = []
+        pass
 
     def finalize_module(self, flags, scope, token, parent):
 
@@ -1758,134 +1739,14 @@ class TransformAssignScope(object):
 
     # -------------------------------------------------------------------------
 
-    def resolve_reference(self, scope, token):
-        """ resolves a reference, or returns a constant
-
-        if token is a constant literal (str, num), return token
-        if token is a label, load the value of the label
-
-        allow chaining, such that if a=1, b=a, then for the expression
-        c=b, the value b would load the chain b=a, a=1.
-
-        """
-        #tok = token
-        visited = set()
-        while token.type in js_vars:
-            visited.add(token)
-            ref = scope.load(token)
-
-            if not ref.name:
-                raise ValueError("name error")
-
-            if ref.name in self.constexpr_values:
-                new_token = self.constexpr_values[ref.name]
-                if new_token in visited:
-                    break;
-                token = new_token
-            else:
-                break;
-
-        #name = str(tok)
-        #if tok.type in js_vars:
-        #    name += "::" + scope.load(tok).name
-        #print("ld", name, "=", token)
-        return token
 
     def finalize_assign(self, flags, scope, token, parent):
 
-        """
-        TODO: constexpr values must be cleared on any variable declaration
-        there is a use-before-defined bug in the code below
-
-        if the user declares `const x=0;`
-        but then in a similar scope also declares `let x;` without
-        assigning then future uses of x -- if x is never assigned to
-        could be used in an expression.
-        its a user bug which could have unintended and hard to debug output
-
-        evidence from this example shows the issue is likely a problem
-        with generating the reference full name for the scope
-
-        Example:
-            function x() {
-
-                {
-                    const x = 7;
-                }
-
-                {
-                    let x;
-                    let y = x + 1;
-                    console.log("x", x) // undefined
-                    console.log("y", y) // NaN, not 8
-
-                }
-            }
-
-        """
-        if not self.constexpr_enabled:
-            return
-
-        lhs, rhs = token.children
-
-        if token.value == "=":
-
-            if lhs.type in js_vars:
-
-                ref = scope.load(lhs)
-
-                if parent.type != Token.T_VAR or parent.value != "const":
-                    #print("assign failed", parent.type, parent.value)
-                    if ref.name in self.constexpr_values:
-                        del self.constexpr_values[ref.name]
-                else:
-                    self.constexpr_values[ref.name] = rhs
-                    #print("assign", ref.name, " = ", rhs)
-        else:
-            # +=, etc not yet supported
-            if lhs.type in js_vars:
-                ref = scope.load(lhs)
-                if ref.name in self.constexpr_values:
-                    del self.constexpr_values[ref.name]
+        pass
 
     def finalize_binary(self, flags, scope, token, parent):
 
-        if not self.constexpr_enabled:
-            return
-
-        lhs, rhs = token.children
-
-        lhs = self.resolve_reference(scope, lhs)
-        rhs = self.resolve_reference(scope, rhs)
-
-        if is_str(lhs) and is_str(rhs):
-            lv = py_ast.literal_eval(lhs.value)
-            rv = py_ast.literal_eval(rhs.value)
-
-            if token.value in js_num_ops:
-                print("compute str:", token.file, token.line, lv, token.value, rv)
-                token.type = Token.T_STRING
-                token.value = repr(js_str_ops[token.value](lv, rv))
-                token.children = []
-
-        elif is_num(lhs) and is_num(rhs):
-            lv = py_ast.literal_eval(lhs.value)
-            rv = py_ast.literal_eval(rhs.value)
-
-            if token.value in js_num_ops:
-                token.type = Token.T_NUMBER
-                print("compute num:", token.file, token.line, lv, token.value, rv)
-                token.value = repr(js_num_ops[token.value](lv, rv))
-                token.children = []
-
-        elif (is_num(lhs) and is_num(rhs)) or (is_num(lhs) and is_str(rhs)):
-            lv = str(py_ast.literal_eval(lhs.value))
-            rv = str(py_ast.literal_eval(rhs.value))
-            if token.value == "+":
-                print("compute:", token.file, token.line, lv, token.value, rv)
-                token.type = Token.T_NUMBER
-                token.value = repr(lv + rv)
-                token.children = []
+        pass
 
     # -------------------------------------------------------------------------
 
@@ -2081,6 +1942,9 @@ class TransformBaseV2(object):
         raise NotImplementedError()
 
 class TransformReplaceIdentity(TransformBaseV2):
+    """
+    mangle variable names for the python compiler
+    """
 
     def __init__(self, use_short_name=True):
 
@@ -2089,6 +1953,16 @@ class TransformReplaceIdentity(TransformBaseV2):
         self.use_short_name = use_short_name
 
     def visit(self, parent, token, index):
+
+        if token.type == Token.T_GLOBAL_VAR:
+            # Note: the old implementation used a mapping of
+            #   mangled label -> original label
+            # then, after the compiled code was executed, could
+            # extract the globals and update the globals dictionary
+            # by using the mapping to convert mangled names back to
+            # the original name.
+            # Now, instead global vars are assumed unique and not mangled.
+            return
 
         if token.ref:
             if not isinstance(token.ref, UndefinedRef):
@@ -2424,7 +2298,7 @@ class TransformConstEval(TransformBaseV3):
             rv = py_ast.literal_eval(rhs.value)
 
             if token.value in js_num_ops:
-                print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
+                #print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.type = Token.T_STRING
                 token.value = repr(js_str_ops[token.value](lv, rv))
                 token.children = []
@@ -2435,7 +2309,7 @@ class TransformConstEval(TransformBaseV3):
 
             if token.value in js_num_ops:
                 token.type = Token.T_NUMBER
-                print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
+                #print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.value = repr(js_num_ops[token.value](lv, rv))
                 token.children = []
 
@@ -2443,12 +2317,10 @@ class TransformConstEval(TransformBaseV3):
             lv = str(py_ast.literal_eval(lhs.value))
             rv = str(py_ast.literal_eval(rhs.value))
             if token.value == "+":
-                print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
+                #print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.type = Token.T_NUMBER
                 token.value = repr(lv + rv)
                 token.children = []
-        else:
-            print("error", token)
 
 def main_css():
 

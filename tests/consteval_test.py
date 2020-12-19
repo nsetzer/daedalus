@@ -46,7 +46,9 @@ class ConstEvalTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
 
-        TransformIdentityScope().transform(ast)
+        xform = TransformIdentityScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
         TransformConstEval().transform(ast)
 
         expected = TOKEN('T_MODULE', '',
@@ -66,7 +68,9 @@ class ConstEvalTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
 
-        TransformIdentityScope().transform(ast)
+        xform = TransformIdentityScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
         TransformConstEval().transform(ast)
 
         expected = TOKEN('T_MODULE', '',
@@ -91,7 +95,9 @@ class ConstEvalTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
 
-        TransformIdentityScope().transform(ast)
+        xform = TransformIdentityScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
         TransformConstEval().transform(ast)
 
         expected = TOKEN('T_MODULE', '',
@@ -128,7 +134,9 @@ class ConstEvalTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
 
-        TransformIdentityScope().transform(ast)
+        xform = TransformIdentityScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
         TransformConstEval().transform(ast)
 
         expected = TOKEN('T_MODULE', '',

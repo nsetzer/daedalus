@@ -162,13 +162,10 @@ class LexerBase(object):
     def _getstr(self, n):
         """ return the next N characters """
 
-        s = ''
-        try:
-            for i in range(n):
-                s += self._getch()
-        except StopIteration:
-            return None
-        return s
+        s = []
+        for i in range(n):
+            s.append(self._getch())
+        return ''.join(s)
 
     def _peekch(self):
         """ return the next character, do not advance the iterator """
@@ -319,18 +316,18 @@ class Lexer(LexerBase):
                 self._maybe_push()
                 self._type = Token.T_SPECIAL
                 self._putch(c)
-                try:
-                    nc = self._peekch()
-                except StopIteration:
-                    nc = None
+                #try:
+                nc = self._peekch()
+                #except StopIteration:
+                #    nc = None
 
                 if nc:
                     if nc == '.' or nc == '?':
                         # collect ?. or ??
                         self._putch(self._getch())
                     self._push()
-                else:
-                    self._push()
+                #else:
+                #    self._push()
 
             elif c in chset_special2:
                 self._maybe_push()
@@ -452,7 +449,20 @@ class Lexer(LexerBase):
 
             elif c == string_terminal:
                 self._putch(string_terminal)
-                self._push()
+                prev_tok = self._prev()
+                if prev_tok and \
+                   prev_tok.value and \
+                   prev_tok.value[-1] == string_terminal:
+                    # merge consecutive strings of the same type (single-quote, double-quote, backtick)
+                    # if strings are on multiple lines, then the newline character must be escaped.
+                    # TODO: consider using self._prev() to automatically skip previous new lines
+                    prev_tok.value = prev_tok.value[:-1] + self._gettok()[1:]
+                    self._type = self._default_type
+                    self._initial_line = -1
+                    self._initial_index = -1
+                    self._restok()
+                else:
+                    self._push()
                 break
             else:
                 self._putch(c)
@@ -526,37 +536,48 @@ class Lexer(LexerBase):
 
     def _lex_multi_comment(self):
         """ read a comment and produce no token """
-
+        error = 0
         while True:
             try:
                 c = self._getch()
             except StopIteration:
+                error=1
                 break
 
             if c == '*':
                 try:
                     c = self._peekch()
                 except StopIteration:
+                    error=1
                     break
 
                 if c == '/':
                     self._getch()
                     break
 
+        if error:
+            self._error("unterminated multiline comment")
+
     def _lex_documentation(self):
-        """ read a comment and produce no token """
+        """ read a comment and produce a documentation token
+
+            - /** */  : multi line documentation
+        """
+        error = 0
         self._type = Token.T_DOCUMENTATION
         self._putch("/")
         while True:
             try:
                 c = self._getch()
             except StopIteration:
+                error=1
                 break
 
             if c == '*':
                 try:
                     c2 = self._peekch()
                 except StopIteration:
+                    error=1
                     break
 
                 self._putch(c)
@@ -570,12 +591,17 @@ class Lexer(LexerBase):
             else:
                 self._putch(c)
 
+        if error:
+            self._error("unterminated documentation comment")
+
     def _lex_regex(self):
 
+        error = 0
         while True:
             try:
                 c = self._getch()
             except StopIteration:
+                error = 1
                 break
 
             if c == '\\':
@@ -591,6 +617,9 @@ class Lexer(LexerBase):
                 break
             else:
                 self._putch(c)
+
+        if error:
+            self._error("unterminated regex")
 
     def _prev(self):
         i = len(self.tokens) - 1
@@ -619,7 +648,7 @@ import timeit
 import cProfile
 import re
 
-def perf():
+def perf():  # pragma: no cover
 
     text = "const x = '%s';" % ("a" * (1024 * 1024))
 
@@ -628,7 +657,7 @@ def perf():
     return 0
 
 
-def main():
+def main():  # pragma: no cover
 
     cProfile.run("perf()")
 

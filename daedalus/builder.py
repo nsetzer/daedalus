@@ -6,7 +6,8 @@ from . import __path__
 import json
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser
-from .transform import TransformExtractStyleSheet, TransformMinifyScope
+from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
+    TransformConstEval
 from .formatter import Formatter
 from ast import literal_eval
 
@@ -235,7 +236,7 @@ class BuildError(Exception):
             self.column = token.index
 
 class JsFile(object):
-    def __init__(self, path, name=None, source_type=1, platform=None, python=False):
+    def __init__(self, path, name=None, source_type=1, platform=None, quiet=False):
         super(JsFile, self).__init__()
         self.path = path
         self.imports = {}
@@ -247,7 +248,7 @@ class JsFile(object):
         self.size = 0
         self.ast = None
         self.styles = []
-        self.python = python
+        self.quiet = quiet
 
         if not name:
             self.name = os.path.splitext(os.path.split(name)[1])[0]
@@ -283,8 +284,8 @@ class JsFile(object):
             for token in tokens:
                 token.file = self.source_path
             parser = Parser()
-            parser.python = self.python
             ast = parser.parse(tokens)
+            TransformConstEval().transform(ast)
             uid = TransformExtractStyleSheet.generateUid(self.source_path)
             tr1 = TransformExtractStyleSheet(uid)
             tr1.transform(ast)
@@ -308,7 +309,8 @@ class JsFile(object):
 
         self.mtime = os.stat(self.source_path).st_mtime
 
-        sys.stderr.write("%10d %.2f %s\n" % (len(source), t2 - t1, self.source_path))
+        if not self.quiet:
+            sys.stderr.write("%10d %.2f %s\n" % (len(source), t2 - t1, self.source_path))
 
     def _get_imports_exports(self, ast):
         self.imports = {}
@@ -326,7 +328,7 @@ class JsFile(object):
 
                 ast.children.pop(0)
 
-            elif token.type == Token.T_IMPORT_MODULE and not self.python:
+            elif token.type == Token.T_IMPORT_MODULE: # and not self.python:
 
                 fromlist = []
                 for child in token.children[0].children:
@@ -378,7 +380,7 @@ class JsFile(object):
         return False
 
 class JsModule(object):
-    def __init__(self, index_js, platform=None, python=False):
+    def __init__(self, index_js, platform=None, quiet=False):
         super(JsModule, self).__init__()
         self.index_js = index_js
         self.files = {index_js.path: index_js}
@@ -391,7 +393,7 @@ class JsModule(object):
         self.source_size = 0
         self.uid = 0
         self.platform = platform
-        self.python = python
+        self.quiet = quiet
 
     def _getFiles(self):
         # sort include files
@@ -445,7 +447,7 @@ class JsModule(object):
                     pass
                 elif path not in self.files:
                     tmp_name = os.path.splitext(os.path.split(path)[1])[0]
-                    queue.append(JsFile(path, tmp_name, 2, platform=self.platform, python=self.python))
+                    queue.append(JsFile(path, tmp_name, 2, platform=self.platform, quiet=self.quiet))
                     self.dirty = True
                 else:
                     queue.append(self.files[path])
@@ -483,14 +485,15 @@ class JsModule(object):
 
         all_exports = self.module_exports | self.static_exports
 
-        if self.python:
+        if self.platform == "python":
             self.ast = buildPythonAst(self.name(), ast, self.module_imports, all_exports)
         else:
             self.ast = buildModuleIIFI(self.name(), ast, self.module_imports, all_exports, merge)
 
         self.dirty = False
         t2 = time.time()
-        sys.stderr.write("%10s %.2f rebuild ast: %s\n" % ('', t2 - t1, self.name()))
+        if not self.quiet:
+            sys.stderr.write("%10s %.2f rebuild ast: %s\n" % ('', t2 - t1, self.name()))
         return self.ast
 
     def setStaticData(self, data):
@@ -518,8 +521,7 @@ class Builder(object):
         self.files = {}
         self.modules = {}
         self.source_types = {}
-
-        self.python = False
+        self.quiet = True
 
         if static_data is None:
             static_data = {}
@@ -575,10 +577,10 @@ class Builder(object):
                 if modpath not in self.files:
                     if modname.endswith(".js"):
                         modname = os.path.splitext(os.path.split(modpath)[1])[0]
-                    self.files[modpath] = JsFile(modpath, modname, 2, platform=self.platform, python=self.python)
+                    self.files[modpath] = JsFile(modpath, modname, 2, platform=self.platform, quiet=self.quiet)
 
                 if modpath not in self.modules:
-                    self.modules[modpath] = JsModule(self.files[modpath], platform=self.platform, python=self.python)
+                    self.modules[modpath] = JsModule(self.files[modpath], platform=self.platform, quiet=self.quiet)
                     self.modules[modpath].setStaticData(self.static_data.get(modname, None))
 
                 if modpath not in visited:
@@ -608,13 +610,13 @@ class Builder(object):
 
         if path not in self.files:
             name = os.path.splitext(os.path.split(path)[1])[0]
-            self.files[path] = JsFile(path, name, source_type, platform=self.platform, python=self.python)
+            self.files[path] = JsFile(path, name, source_type, platform=self.platform, quiet=self.quiet)
 
         if self.files[path].source_type != source_type:
             raise Exception("incompatible types")
 
         if path not in self.modules:
-            self.modules[path] = JsModule(self.files[path], platform=self.platform, python=self.python)
+            self.modules[path] = JsModule(self.files[path], platform=self.platform, quiet=self.quiet)
             self.modules[path].setStaticData(self.static_data.get(modname, None))
 
         self._discover(self.modules[path])
@@ -650,17 +652,14 @@ class Builder(object):
         order = sorted(depth.keys(), key=lambda p: depth[p], reverse=True)
         return [self.modules[p] for p in order]
 
-    def compile_module(self, path, minify=False):
+    def build_module(self, path, minify=False):
 
-        self.python = True
         jsm = self.discover(path)
         ast = jsm.getAST()
 
-        #js = Formatter(opts={'minify': minify}).compile(ast)
-
         return ast
 
-    def compile(self, path, standalone=False, minify=False):
+    def _build_impl(self, path, standalone=False, minify=False):
         t1 = time.time()
 
         jsm = self.discover(path)
@@ -745,7 +744,8 @@ class Builder(object):
         final_source_size = len(js)
         p = 100 * final_source_size / source_size
         t2 = time.time()
-        sys.stderr.write("%10d %.2f %.2f%% of %d bytes\n" % (final_source_size, t2 - t1, p, source_size))
+        if not self.quiet:
+            sys.stderr.write("%10d %.2f %.2f%% of %d bytes\n" % (final_source_size, t2 - t1, p, source_size))
         return css, js, export_name
 
     def build(self, path, minify=False, onefile=False):
@@ -753,7 +753,7 @@ class Builder(object):
         # can be overridden
 
         try:
-            css, js, root = self.compile(path, minify=minify)
+            css, js, root = self._build_impl(path, minify=minify)
         except BuildError as e:
             return self.build_error(e)
 
