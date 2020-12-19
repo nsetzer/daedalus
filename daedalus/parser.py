@@ -531,10 +531,24 @@ class Parser(object):
         #elif token.type == token.T_KEYWORD and token.value == "class":
         #    self.collect_keyword_class(tokens, index)
 
+        #elif token.type == Token.T_SPECIAL and token.value == '=>':
+        #    return self.visit_lambda(parent, tokens, index, ["=>"])
+
         elif token.type == Token.T_GROUPING and token.value == '()':
             i1 = self.peek_token(tokens, token, index, -1)
+            if i1:
+                i2 = self.peek_token(tokens, token, i1, -1)
+            else:
+                i2 = None
 
-            if i1 is not None and tokens[i1].type != Token.T_SPECIAL:
+            # special case for `() => {} ()`
+            if i1 is not None and i2 is not None:
+                if tokens[i2].type == Token.T_SPECIAL and tokens[i2].value == "=>":
+                     if tokens[i1].type == Token.T_GROUPING:
+                        print("!", self.visit_lambda(parent, tokens, i2, ["=>"]))
+                        return -2
+
+            if i1 is not None and tokens[i1].type not in (Token.T_SPECIAL, ):
                 i2 = self.peek_keyword(tokens, token, i1, -1)
                 # TODO: for (x in y) (expr)()
                 # only 1 of these is a valid function call,
@@ -675,6 +689,9 @@ class Parser(object):
 
             T_PREFIX
                 <any>
+
+        Notes:
+            the use of a pound sign (#) is an unused javascript extension
 
         """
         token = tokens[index]

@@ -13,6 +13,7 @@ from daedalus.lexer import Lexer, Token, TokenError
 from daedalus.parser import Parser
 from daedalus.compiler import Compiler
 from daedalus.jseval import JsContext
+from daedalus.builtins import defaultGlobals
 
 class ExitRepl(Exception):
     pass
@@ -107,6 +108,16 @@ class Repl(object):
 
         elif text == "diag":
             pass
+
+        elif text == "globals":
+            defaults = defaultGlobals()
+
+            for key, val in self.ctxt.globals.items():
+
+                if key in defaults and defaults[key] is val:
+                    continue
+
+                print(key, val)
 
         elif text.startswith("ast "):
             text = text[4:]

@@ -293,13 +293,22 @@ class RunCLI(CLI):
 
         jspath = os.path.abspath(args.index_js)
 
-        cc = compile_file(jspath)
+        cc = compile_file(jspath, quiet=True)
 
         v = 0
         try:
             v = cc.execute()
         finally:
-            print(v)
+            pass
+
+        rv = 0
+        if 'main' in cc.globals:
+            f = cc.globals['main']
+            rv_ = f()
+            if isinstance(rv_, int):
+                rv = rv_
+        return rv
+
 
 def register_parsers(parser):
 
@@ -331,10 +340,15 @@ def main():
         FORMAT = '%(levelname)-8s - %(message)s'
         logging.basicConfig(level=logging.INFO, format=FORMAT)
 
+        rv = 0
         if not hasattr(args, 'func'):
             parser.print_help()
         else:
-            args.func(args)
+            rv = args.func(args)
+
+        if rv:
+            sys.exit(rv)
+
 
 
 if __name__ == '__main__':

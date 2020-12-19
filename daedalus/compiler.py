@@ -17,6 +17,33 @@ version 2 compiler requirements:
 TODO:
     pull required transforms (lambda) out of the compiler
 
+
+Fixed bugs that need tests:
+
+        //return (self) => {
+        //    self.index = 0;
+        //    self.index += 1
+        //    return self
+        //}({})
+
+        //self = {index: 0}
+        //self.index += 1
+        //return self
+
+        //self = [0]
+        //self[0] += 1
+        //return self
+
+        //let c;
+
+Open Bugs:
+
+        //function f(x=1){
+        //    return x
+        //}
+        //return f()
+
+
 """
 
 import ast
@@ -71,6 +98,22 @@ ST_BRANCH_TRUE = 0x100
 ST_BRANCH_FALSE = 0x200
 
 ST_WHILE = 0x100
+
+binop_store = {
+    "+=": "INPLACE_ADD",
+    "*=": "INPLACE_MULTIPLY",
+    "@=": "INPLACE_MATRIX_MULTIPLY",
+    "//=": "INPLACE_FLOOR_DIVIDE",
+    "/=": "INPLACE_TRUE_DIVIDE",
+    "%=": "INPLACE_MODULO",
+    "-=": "INPLACE_SUBTRACT",
+    "**=": "INPLACE_POWER",
+    "<<=": "INPLACE_LSHIFT",
+    ">>=": "INPLACE_RSHIFT",
+    "&=": "INPLACE_AND",
+    "^=": "INPLACE_XOR",
+    "|=": "INPLACE_OR",
+}
 
 class Compiler(object):
 
@@ -207,7 +250,7 @@ class Compiler(object):
 
         self.flags = flags
 
-        self.globals = self.defaultGlobals()
+        self.globals = Compiler.defaultGlobals()
 
         if globals:
             self.globals.update(globals)
@@ -292,6 +335,10 @@ class Compiler(object):
         while self.seq:
             depth, state, token = self.seq.pop()
 
+            if isinstance(token, BytecodeInstr):
+                self.bc.append(token)
+                continue
+
             if state & ST_COMPILE == ST_COMPILE:
                 fn = self.compile_mapping.get(token.type, None)
                 if fn is not None:
@@ -353,7 +400,7 @@ class Compiler(object):
         while retry:
             attempts += 1
             if attempts > 10:
-                sys.stderr.write("ekanscrypt compiler warning: finalize attempt %d\n" % attempts)
+                sys.stderr.write("compiler warning: finalize attempt %d\n" % attempts)
             if attempts > 20:
                 raise CompilerError(Token("", 1, 0, ""), "failed to finalize")
 
@@ -444,15 +491,89 @@ class Compiler(object):
         self._push(depth, flag0, token.children[0])
 
     def _traverse_assign(self, depth, state, token):
+        """
+        >>> def f(this):          | () => {
+        ...   this.index = 0      |   this.index = 0
+        ...   this.index += 1     |   this.index += 1
+        ...                       | }
+        >>> dis.dis(f)
+          2           0 LOAD_CONST               1 (0)
+                      2 LOAD_FAST                0 (this)
+                      4 STORE_ATTR               0 (index)
 
+          3           6 LOAD_FAST                0 (this)
+                      8 DUP_TOP
+                     10 LOAD_ATTR                0 (index)
+                     12 LOAD_CONST               2 (1)
+                     14 INPLACE_ADD
+                     16 ROT_TWO
+                     18 STORE_ATTR               0 (index)
+                     20 LOAD_CONST               0 (None)
+                     22 RETURN_VALUE
+
+
+        >>> def f(self):          | () => {
+        ...   self = [0]          |   self = [0]
+        ...   self[0] += 1        |   self[0] += 1
+        ...                       | }
+        >>> dis.dis(f)
+          2           0 LOAD_CONST               1 (0)
+                      2 BUILD_LIST               1
+                      4 STORE_FAST               0 (self)
+
+          3           6 LOAD_FAST                0 (self)
+                      8 LOAD_CONST               1 (0)
+                     10 DUP_TOP_TWO
+                     12 BINARY_SUBSCR
+                     14 LOAD_CONST               2 (1)
+                     16 INPLACE_ADD
+                     18 ROT_THREE
+                     20 STORE_SUBSCR
+                     22 LOAD_CONST               0 (None)
+                     24 RETURN_VALUE
+
+        """
         if token.value == "=":
             self._push(depth, ST_TRAVERSE | ST_STORE, token.children[0])
             self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
             self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
         else:
-            self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
-            self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[0])
-            self._push(depth, ST_TRAVERSE | ST_LOAD, token.children[1])
+            lhs, rhs = token.children
+
+            """
+            self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
+            if state & ST_PHASE_3:
+                self.bc.append(BytecodeInstr('ROT_THREE'))
+            self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
+
+            """
+            if lhs.type == Token.T_GET_ATTR:
+                clhs, crhs = lhs.children
+                self._push(depth, ST_TRAVERSE | ST_STORE, crhs)
+                self._push(depth, 0, BytecodeInstr('ROT_TWO'))
+                #self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
+                self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
+                self._push(depth, 0, BytecodeInstr(binop_store[token.value], lineno=token.line))
+                self._push(depth, ST_COMPILE | ST_STORE, lhs)
+                self._push(depth, ST_TRAVERSE | ST_LOAD, rhs)
+                self._push(depth+1, ST_TRAVERSE | ST_LOAD, crhs)
+                self._push(depth, 0, BytecodeInstr('DUP_TOP'))
+                self._push(depth+1, ST_TRAVERSE | ST_LOAD, clhs)
+            elif lhs.type == Token.T_SUBSCR:
+                clhs, crhs = lhs.children
+                #self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)) | ST_PHASE_3, token)
+                self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
+                self._push(depth, 0, BytecodeInstr('ROT_THREE'))
+                self._push(depth, 0, BytecodeInstr(binop_store[token.value], lineno=token.line))
+                self._push(depth, ST_TRAVERSE | ST_LOAD, rhs)
+                self._push(depth, 0, BytecodeInstr('BINARY_SUBSCR'))
+                self._push(depth, 0, BytecodeInstr('DUP_TOP_TWO'))
+                self._push(depth+1, ST_TRAVERSE | ST_LOAD, crhs)
+                self._push(depth+1, ST_TRAVERSE | ST_LOAD, clhs)
+            else:
+                self._push(depth, ST_COMPILE | (state & (ST_STORE | ST_LOAD)), token)
+                self._push(depth, ST_TRAVERSE | ST_LOAD, lhs)
+                self._push(depth, ST_TRAVERSE | ST_LOAD, rhs)
 
     def _build_spread(self, type_, expr_args):
 
@@ -626,25 +747,39 @@ class Compiler(object):
         # get user defined positional arguments
         rest_name = "_x_daedalus_js_args"
         arglabels = []
+        argdefaults = []
         vartypes= (Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR, Token.T_FREE_VAR)
         if arglist.type in vartypes:
             arglabels.append(arglist.value)
+            argdefaults.append(None)
         else:
             for arg in arglist.children:
                 if arg.type in vartypes:
                     arglabels.append(arg.value)
+                    argdefaults.append(None)
                 elif arg.type == Token.T_SPREAD:
                     rest_name = arg.children[0].value
+                elif arg.type == Token.T_ASSIGN:
+                    lhs = arg.children[0]
+                    if lhs.type in vartypes:
+                        arglabels.append(arg.children[0].value)
+                        argdefaults.append(arg.children[1])
+                    else:
+                        raise CompileError(arg, "invalid argument")
                 else:
                     raise CompileError(arg, "unexpected argument")
-
 
         argcount = len(arglabels)
 
         # set the default value of user defined arguments to be JS `undefined`
         undef_kind, undef_index = self._token2index(JsUndefined.Token, True)
-        for arglabel in arglabels:
-            self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
+        for arglabel, argdefault in zip(arglabels, argdefaults):
+            if argdefault is None:
+                self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
+            else:
+                self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
+                print("unsupported default arg %s" % argdefault)
+
             sub.bc.varnames.append(arglabel)
 
         # add 'this' as an optional keyword argument defaulting to 'undefined'
@@ -932,9 +1067,22 @@ class Compiler(object):
     def _traverse_var(self, depth, state, token):
         """assume that variables have been taken care of by now
         by the various transform functions
+
+        allow:
+            let x;  -- declare a variable and set undefined
+            let x=<>; -- declare a variable and initialize to <>
+
+
         """
         for child in reversed(token.children):
-            self._push(depth + 1, ST_TRAVERSE, child)
+
+            if child.type != Token.T_ASSIGN:
+                kind, index = self._token2index(JsUndefined.Token, load=True)
+                self.bc.append(BytecodeInstr('LOAD_' + kind, index))
+                kind, index = self._token2index(child, load=False)
+                self.bc.append(BytecodeInstr('STORE_' + kind, index))
+            else:
+                self._push(depth + 1, ST_TRAVERSE, child)
 
     def _traverse_logical_and(self, depth, state, token):
 
@@ -1039,31 +1187,12 @@ class Compiler(object):
 
     def _compile_assign(self, depth, state, token):
 
-        binop_store = {
-            "+=": "INPLACE_ADD",
-            "*=": "INPLACE_MULTIPLY",
-            "@=": "INPLACE_MATRIX_MULTIPLY",
-            "//=": "INPLACE_FLOOR_DIVIDE",
-            "/=": "INPLACE_TRUE_DIVIDE",
-            "%=": "INPLACE_MODULO",
-            "-=": "INPLACE_SUBTRACT",
-            "**=": "INPLACE_POWER",
-            "<<=": "INPLACE_LSHIFT",
-            ">>=": "INPLACE_RSHIFT",
-            "&=": "INPLACE_AND",
-            "^=": "INPLACE_XOR",
-            "|=": "INPLACE_OR",
-        }
-
         if token.value == '=':
             if state&ST_LOAD:
                 self.bc.append(BytecodeInstr('DUP_TOP'))
 
         if token.value in binop_store:
             self.bc.append(BytecodeInstr(binop_store[token.value], lineno=token.line))
-            #if state&ST_LOAD:
-            #    self.bc.append(BytecodeInstr('DUP_TOP'))
-            # TODO: this has side effects if LHS is complicated
             self._push(depth, ST_COMPILE | ST_STORE, token.children[0])
 
     def _compile_text(self, depth, state, token):

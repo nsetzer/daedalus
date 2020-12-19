@@ -73,6 +73,20 @@ class JsStr(str):
             other = str(other)
         return JsStr(super().__radd__(other))
 
+    @property
+    def length(self):
+        return len(self)
+
+    def slice(self, from_, to_=None):
+
+        if to_ is None:
+            return JsStr(self[from_:])
+
+        return JsStr(self[from_: to_])
+
+
+
+
 JsStr.Token = Token(Token.T_TEXT, 0, 0, "JsStr")
 
 class JsUndefined(JsObjectBase):

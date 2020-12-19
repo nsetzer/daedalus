@@ -37,7 +37,6 @@ try:
             tokens = self.lexer.lex(text)
             ast = self.parser.parse(tokens)
 
-
             transform = TransformIdentityScope()
             transform.disable_warnings = True
             transform.transform(ast)

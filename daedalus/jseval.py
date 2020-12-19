@@ -16,7 +16,9 @@ from .builder import Builder
 from .builtins import JsObject
 from .util import Namespace
 from .transform import TransformAssignScope, \
-    TransformClassToFunction, TransformMinifyScope
+    TransformClassToFunction, TransformMinifyScope,\
+    TransformIdentityScope, TransformClassToFunction, \
+    TransformReplaceIdentity
 
 def save_module(path, co):
     """
@@ -55,15 +57,22 @@ def load_module(path):
         rb.read(4)
         return marshal.load(rb)
 
-def compile_file(path):
+def compile_file(path, quiet=False):
 
 
     paths = [os.path.split(path)[0]]
     static_data = {}
-    builder = Builder(paths, static_data)
+    builder = Builder(paths, static_data, platform="python")
+
+    ast = builder.build_module(path)
+
+    TransformIdentityScope().transform(ast)
+
+    TransformClassToFunction().transform(ast)
+
+    TransformReplaceIdentity().transform(ast)
 
     compiler = Compiler()
-    ast = builder.compile_module(path)
     #try:
     compiler.compile(ast)
     #finally:
@@ -88,11 +97,13 @@ class JsContext(object):
         parser.python = True
         ast = parser.parse(tokens)
 
-        transform = TransformClassToFunction()
+        transform = TransformIdentityScope()
+        transform.disable_warnings = True
         transform.transform(ast)
 
-        transform = TransformAssignScope()
-        transform.transform(ast)
+        TransformClassToFunction().transform(ast)
+
+        TransformReplaceIdentity().transform(ast)
 
         return ast
 
@@ -106,6 +117,7 @@ class JsContext(object):
         ast = Parser().parse(tokens)
 
         transform = TransformMinifyScope()
+        transform.disable_warnings = True
         transform.transform(ast)
 
         mintext = Formatter().format(ast)
@@ -116,8 +128,17 @@ class JsContext(object):
 
         tokens = Lexer().lex(text)
         parser = Parser()
-        parser.python = True
+        #parser.python = True
         ast = parser.parse(tokens)
+
+        transform = TransformIdentityScope()
+        transform.disable_warnings = True
+        transform.transform(ast)
+
+        TransformClassToFunction().transform(ast)
+
+        xform = TransformReplaceIdentity()
+        xform.transform(ast)
 
         compiler = Compiler(filename="<string>",
             globals=self.globals,
@@ -134,7 +155,8 @@ class JsContext(object):
         result = compiler.function_body()
 
         if isinstance(result, dict):
-            self.globals.update(result)
+            #self.globals.update(result)
+            self.globals.update(compiler.globals)
 
         return result
 
