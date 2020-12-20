@@ -289,6 +289,7 @@ def JsNew(constructor, *args):
         obj = JsObject()
         if constructor.prototype:
             obj.prototype = constructor.prototype
+        obj.prototype['_x_daedalus_js_constructor'] = constructor
         constructor.fn(*args, this=obj)
         return obj
     else:
@@ -597,7 +598,7 @@ def JsTypeof(obj):
 JsTypeof.Token = Token(Token.T_TEXT, 0, 0, "JsTypeof")
 
 def JsInstanceof(objValue, objType):
-    return False
+    return objValue['prototype']['_x_daedalus_js_constructor'] is objType
 
 JsInstanceof.Token = Token(Token.T_TEXT, 0, 0, "JsInstanceof")
 

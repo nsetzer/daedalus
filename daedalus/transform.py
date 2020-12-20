@@ -1427,7 +1427,7 @@ class TransformAssignScope(object):
                 # if not (token.type == Token.T_METHOD and not self.python):
                 # alt:?
                 # if not token.type == Token.T_METHOD or self.python:
-                scope.define(0, child.children[0])
+                scope.define(SC_FUNCTION, child.children[0])
             elif child.type == Token.T_CLASS:
                 scope.define(0, child.children[0], DF_CLASS)
 
@@ -1515,7 +1515,6 @@ class TransformAssignScope(object):
         for child in reversed(token.children):
 
             if child.type == Token.T_TEXT:
-                print('define', child.type, child.value)
                 # define
                 self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [child], token)
             else:

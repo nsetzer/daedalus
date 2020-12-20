@@ -578,6 +578,67 @@ try:
             result = self.evaljs(text)
             self.assertEqual(result.length, 3)
 
+        def test_while_break(self):
+            text = """
+                sum = 0
+                while (sum < 100) {
+                    if (sum >= 10) {
+                        break;
+                    }
+                    sum += 2
+                }
+                return sum
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, 10)
+
+        def test_while_break(self):
+            text = """
+                cnt = 0
+                sum = 0
+                // every other loop add 2 to sum
+                while (sum < 100) {
+                    cnt += 1
+                    if (cnt%2) {
+                        continue;
+                    }
+                    sum += 2
+                }
+                return sum
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, 100)
+
+
+        def test_for_break(self):
+            text = """
+                sum = 0
+                for (let i =0; i < 10; i++) {
+                    if (i > 5) {
+                        break
+                    }
+                    sum += i
+                }
+                return sum
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, 15)
+
+        def test_for_continue(self):
+            text = """
+                sum = 0
+                for (let i =0; i < 10; i++) {
+                    if (i%2 === 0) {
+                        continue
+                    }
+                    sum += i
+                }
+                return sum
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, 25)
+
+
         def test_break_nested_2(self):
             # This test will segfault or otherwise crash
             # on linux and windows if the stack is not properly maintained
@@ -658,32 +719,35 @@ try:
         @unittest.skip("not implemented")
         def test_evaljs_class_prototype(self):
             """
-            this test demonstrates how named functions are hosted
+            this test demonstrates how named functions are hoisted
 
             - functions are defined at the top of the current block
             - default arguments can be modified after defining the function
             - functions are available after a block scope ends
+
+            arg
             """
             text = """
-
-                main = function() {
+                (()=>{
                   // B is undefined
-                  console.log("result 1", B) // B is undefined
+                  const v = [];
+                  //v.push(B); // undefined
                   {
-                    console.log("result 2", B()) // prints undefined
+                    //v.push(B()); // undefined
                     function B(arg=x) {
                       return arg;
                     }
                     var x = 1
-                    console.log("result 3", B()) // prints 1
+                    v.push(B()); // 1
                     var x = 2;
-                    console.log("result 4", B()) // prints 2
+                    v.push(B()); // 2
                   }
-                  console.log("result 5", B) // B is defined
-                }
-                main()
+                  v.push(B); // B is a defined function
+                  return v
+                })();
             """
             result = self.evaljs(text)
+            print(result)
 
         @unittest.skip("not implemented")
         def test_evaljs_function_arg_scope(self):
@@ -728,6 +792,67 @@ try:
             """
             result = self.evaljs(text, False)
             self.assertEqual(result, 1)
+
+        def test_scope_undefined(self):
+            text = """
+                var c;
+                return c;
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, JsUndefined._instance)
+
+        def test_function_default_const(self):
+            text = """
+                function f(x=123){
+                    return x
+                }
+                return f()
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, 123)
+
+        def test_binop_setattr_store(self):
+            text = """
+                this = {index: 0}
+                this.index += 1
+                return this
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result['index'], 1)
+
+        def test_binop_subscr_store(self):
+            text = """
+                this = [0]
+                this[0] += 1
+                return this
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result[0], 1)
+
+
+        def test_ternary(self):
+            text = """
+                let x = 0, r = [];
+                r.push((x===0)?true:false)
+                r.push((x===1)?true:false)
+                return r
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result[0], True)
+            self.assertEqual(result[1], False)
+
+        def test_instance_of(self):
+            text = """
+                function A() {}
+                function B() {}
+                let a = new A(), r = []
+                r.push(a instanceof A)
+                r.push(a instanceof B)
+                return r
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result[0], True)
+            self.assertEqual(result[1], False)
 
 except ImportError as e:
     pass
