@@ -20,28 +20,15 @@ TODO:
 
 Fixed bugs that need tests:
 
-        //return (self) => {
-        //    self.index = 0;
-        //    self.index += 1
-        //    return self
-        //}({})
-
+        -- binop setattr store
         //self = {index: 0}
         //self.index += 1
         //return self
 
+        -- binop subscr store
         //self = [0]
         //self[0] += 1
         //return self
-
-        //let c;
-
-Open Bugs:
-
-        //function f(x=1){
-        //    return x
-        //}
-        //return f()
 
 
 """
@@ -299,6 +286,40 @@ class Compiler(object):
 
     # -------------------------------------------------------------------------
 
+    def _compile_sequence(self, flag, token):
+        """
+        sub-tree compilition is a work around for the tricky case
+        of compiling function arguments -- and should be used sparingly
+
+        """
+
+        seq_save = self.seq
+
+        self.seq = [(0, flag, token)]
+
+        while self.seq:
+            depth, state, token = self.seq.pop()
+
+            if isinstance(token, BytecodeInstr):
+                self.bc.append(token)
+                continue
+
+            if state & ST_COMPILE == ST_COMPILE:
+                fn = self.compile_mapping.get(token.type, None)
+                if fn is not None:
+                    fn(depth, state, token)
+                else:
+                    raise CompileError(token, "token not supported for compile")
+            else:
+                # traverse the AST to produce a linear sequence
+                fn = self.traverse_mapping.get(token.type, None)
+                if fn is not None:
+                    fn(depth, state, token)
+                else:
+                    raise CompileError(token, "token not supported for traverse")
+
+        self.seq = seq_save
+
     def _compile(self, ast):
         """ non-recursive implementation of _compile
 
@@ -330,33 +351,8 @@ class Compiler(object):
             kind, index = self._token2index(Token(Token.T_TEXT, 0, 0, 'this'), load=False)
             self.bc.append(BytecodeInstr('STORE_' + kind, index))
 
-        self.seq = [(0, flg, ast)]
-
-        while self.seq:
-            depth, state, token = self.seq.pop()
-
-            if isinstance(token, BytecodeInstr):
-                self.bc.append(token)
-                continue
-
-            if state & ST_COMPILE == ST_COMPILE:
-                fn = self.compile_mapping.get(token.type, None)
-                if fn is not None:
-                    fn(depth, state, token)
-                else:
-                    #print(token.type, token.value)
-                    raise CompileError(token, "token not supported for compile")
-            else:
-                # traverse the AST to produce a linear sequence
-                fn = self.traverse_mapping.get(token.type, None)
-                if fn is not None:
-                    fn(depth, state, token)
-                else:
-                    raise CompileError(token, "token not supported for traverse")
-                    #print(token.type, token.value)
-                    #for child in reversed(token.children):
-                    #    self._push(0, ST_TRAVERSE, child)
-
+        self.seq = []
+        self._compile_sequence(flg, ast)
 
         if self.flags & Compiler.CF_REPL:
             tok = Token(Token.T_GLOBAL_VAR, 0, 0, "_")
@@ -669,8 +665,6 @@ class Compiler(object):
         block = token.children[2]
         closure = token.children[3]
 
-
-
         self._build_function(state|ST_LOAD, token, name, arglist, block, closure, autobind=False)
 
         kind, index = self._token2index(name, False)
@@ -773,12 +767,13 @@ class Compiler(object):
 
         # set the default value of user defined arguments to be JS `undefined`
         undef_kind, undef_index = self._token2index(JsUndefined.Token, True)
+
         for arglabel, argdefault in zip(arglabels, argdefaults):
+
             if argdefault is None:
                 self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
             else:
-                self.bc.append(BytecodeInstr('LOAD_' + undef_kind, undef_index, lineno=token.line))
-                print("unsupported default arg %s" % argdefault)
+                self._compile_sequence(ST_LOAD, argdefault)
 
             sub.bc.varnames.append(arglabel)
 
@@ -1434,7 +1429,7 @@ class Compiler(object):
             nop.add_label(token.label_begin)
             self.bc.append(nop)
 
-            token.continue_target = nop
+            #token.continue_target = nop
 
             self._push(depth, ST_COMPILE | ST_PHASE_2, token)
             self._push(depth, ST_TRAVERSE, arglist.children[1])
@@ -1445,20 +1440,30 @@ class Compiler(object):
             self.bc.append(instr)
 
             self._push(depth, ST_COMPILE | ST_PHASE_3, token)
-            self._push(depth, ST_TRAVERSE, arglist.children[2])
             self._push(depth, ST_TRAVERSE, body)
 
         elif state & ST_PHASE_3:
+
+            nop = BytecodeInstr('NOP')
+            self.bc.append(nop)
+
+            token.continue_target = nop
+            self._push(depth, ST_COMPILE | ST_PHASE_4, token)
+            self._push(depth, ST_TRAVERSE, arglist.children[2])
+
+        elif state & ST_PHASE_4:
 
             self.bc.append(BytecodeJumpInstr('JUMP_ABSOLUTE', token.label_begin))
 
             nop = BytecodeInstr('NOP')
             self.bc.append(nop)
+
             nop.add_label(token.label_end)
 
             token.break_target = nop
 
             self._finalize_break_continue(token)
+
 
     def _compile_ternary(self, depth, state, token):
 
@@ -1565,11 +1570,6 @@ class Compiler(object):
 
         elif tok.type == Token.T_GLOBAL_VAR:
             name = tok.value
-            #if self.flags&Compiler.CF_USE_REF and tok.ref:
-            #    #print(tok.ref.__class__.__name__)
-            #    if tok.ref.__class__.__name__ != "UndefinedRef":
-            #    #if name not in self.globals:
-            #        name = tok.ref.name
 
             try:
 

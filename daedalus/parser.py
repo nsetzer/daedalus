@@ -542,11 +542,12 @@ class Parser(object):
                 i2 = None
 
             # special case for `() => {} ()`
-            if i1 is not None and i2 is not None:
-                if tokens[i2].type == Token.T_SPECIAL and tokens[i2].value == "=>":
-                     if tokens[i1].type == Token.T_GROUPING:
-                        print("!", self.visit_lambda(parent, tokens, i2, ["=>"]))
-                        return -2
+            # correct syntax would be (()=>{})()
+            #if i1 is not None and i2 is not None:
+            #    if tokens[i2].type == Token.T_SPECIAL and tokens[i2].value == "=>":
+            #         if tokens[i1].type == Token.T_GROUPING:
+            #            self.visit_lambda(parent, tokens, i2, ["=>"])
+            #            return -2
 
             if i1 is not None and tokens[i1].type not in (Token.T_SPECIAL, ):
                 i2 = self.peek_keyword(tokens, token, i1, -1)
