@@ -211,4 +211,5 @@ if __name__ == '__main__':
     X = [10, 20, 30]
     Y = [eq(x) for x in X]
 
-    fn = quadratic(X, Y)
+    fn = solve_quadratic(X, Y)
+    print(fn)

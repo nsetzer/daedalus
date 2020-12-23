@@ -278,9 +278,9 @@ class TransformMagicConstants(TransformBase):
         """
 
         transform
-            a ?? b
-        into
-            ((x,y)=>(x!==null&&x!==undefined)?x:y)(a,b)
+            __LINE__
+            __COLUMN__
+            __FILENAME__
 
         """
 
@@ -299,7 +299,7 @@ class TransformMagicConstants(TransformBase):
 
             if token.file:
                 token.type = Token.T_STRING
-                token.value = "'%s'" % os.path.split(token.file)[1]
+                token.value = repr(os.path.split(token.file)[1])
             else:
 
                 token.type = Token.T_STRING
@@ -2046,18 +2046,34 @@ class TransformClassToFunction(TransformBaseV2):
             mode = 2 # variable scope has already been run
 
         constructor = None
-
         methods = []
         static_methods = []
+        static_props = []
 
         for child in clsbody.children:
-            if child.children[0].value == 'constructor':
+            if child.children and child.children[0].value == 'constructor':
                 constructor = child
-            elif child.value == 'static':
+            elif child.type == Token.T_STATIC_PROPERTY:
+
+                if child.children and child.children[0]:
+                    gc = child.children and child.children[0]
+
+                    if gc.type == Token.T_ASSIGN and gc.value == "=":
+                        static_props.append(gc)
+
+            elif child.type == Token.T_METHOD and child.value == "static":
+
                 static_methods.append(child)
 
-            else:
+                #raise TransformError(gc, "expected static method declaration or property")
+
+            elif child.type == Token.T_ASSIGN and child.value == "=":
+                raise TransformError(gc, "non static default property not supported")
+            elif child.type == Token.T_METHOD:
                 methods.append(child)
+
+            else:
+                raise TransformError(gc, "expected method declaration or property")
 
         if constructor is None:
             #TODO: for inheritance this will need to call super
@@ -2110,6 +2126,17 @@ class TransformClassToFunction(TransformBaseV2):
             #if self.mode==2:
             #    anonfn.children.append(method.children[3])
 
+            parent.children.insert(index+1, static)
+
+        for prop in static_props:
+            var = Token(Token.T_GET_ATTR, ln, co, '.', [
+                name,
+                Token(Token.T_ATTR, ln, co, prop.children[0].value)
+            ])
+            static = Token(Token.T_ASSIGN, ln, co, '=', [
+                var,
+                prop.children[1]
+            ])
             parent.children.insert(index+1, static)
 
         token.type = Token.T_FUNCTION

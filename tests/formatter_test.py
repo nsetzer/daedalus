@@ -723,6 +723,11 @@ class FormatterTestCase(unittest.TestCase):
             class C {static f() {} f2(){}}
         """, 'class C{static f(){}f2(){}}')
 
+    def test_001_static_props(self):
+        self._chkeq("""
+            class C {static p = 123}
+        """, 'class C{static p=123}')
+
     def test_001_unpack_sequence(self):
 
         self._chkeq("""
@@ -745,36 +750,6 @@ class FormatterTestCase(unittest.TestCase):
         self._chkeq("""
             for (let x=1,y=2,z=3; x<y,y<z; --x,z++) {}
         """, 'for(let x=1,y=2,z=3;x<y,y<z;--x,z++){}')
-
-    @unittest.skip("not implemented")
-    def test_evaljs_scope_hoist_function_def(self):
-        """
-        this test demonstrates how named functions are hosted
-
-        - functions are defined at the top of the current block
-        - default arguments can be modified after defining the function
-        - functions are available after a block scope ends
-        """
-        text = """
-
-            main = function() {
-              // B is undefined
-              console.log("result 1", B) // B is undefined
-              {
-                console.log("result 2", B()) // prints undefined
-                function B(arg=x) {
-                  return arg;
-                }
-                var x = 1
-                console.log("result 3", B()) // prints 1
-                var x = 2;
-                console.log("result 4", B()) // prints 2
-              }
-              console.log("result 5", B) // B is defined
-            }
-            main()
-        """
-        result = self.evaljs(text)
 
 class FormatterStressTestCase(unittest.TestCase):
 
@@ -817,7 +792,7 @@ class FormatterStressTestCase(unittest.TestCase):
         self.assertEqual(output, text)
 
     def test_002_deep_1(self):
-        # the lexer / parser /.formatter should
+        # the lexer / parser / formatter should
         # support an expression with a nesting depth
         # deeper than 1000 tokens
 
@@ -847,6 +822,21 @@ class FormatterStressTestCase(unittest.TestCase):
 
         N = 500
         text = ("(" * N) + (")" * N)
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+
+        self.assertEqual(output, text)
+
+    def test_002_deep_3(self):
+        # allternating attribute access with nested parthesis
+        # there is a significant slowdown for large N
+        N = 500
+        prefix = "(x["
+        suffix = "])"
+        terminal = "(x[0])"
+        parts = [prefix] * N + [terminal] + [suffix] * N
+        text = "".join(parts)
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast).replace("\n", "")

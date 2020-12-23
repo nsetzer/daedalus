@@ -673,6 +673,15 @@ try:
             result = self.evaljs(text, False)
             self.assertEqual(result, 123)
 
+        def test_static_prop(self):
+
+            text = """
+                class C { static p = 123 }
+                return C.p
+            """
+            result = self.evaljs(text, False)
+            self.assertEqual(result, 123)
+
         def test_evaljs_class(self):
 
             text = """
