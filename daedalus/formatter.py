@@ -334,6 +334,13 @@ class Formatter(object):
             elif token.type == Token.T_KEYWORD:
 
                 out.append((depth, token.type, token.value))
+
+            elif token.type == Token.T_STATIC_PROPERTY:
+
+                out.append((depth, token.type, token.value))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+
             elif token.type == Token.T_ATTR:
 
                 out.append((depth, token.type, token.value))

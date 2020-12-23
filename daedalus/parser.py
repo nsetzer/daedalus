@@ -116,6 +116,7 @@ class Parser(object):
     W_VAR_USED = 6
     W_UNSAFE_BOOLEAN_TEST = 7  # Note: could be expanded to testing between operator &&, ||
     W_USELESS_KEYWORD = 8
+    W_GROUPING = 9
 
     def __init__(self):
         super(Parser, self).__init__()
@@ -127,7 +128,8 @@ class Parser(object):
         R2L = -1
 
         self.precedence = [
-            (R2L, self.visit_unary_prefix, ['#']),
+            # hash is a proposed feature for private members
+            #(R2L, self.visit_unary_prefix, ['#']),
             (L2R, self.visit_attr, ['.', "?."]),  # also: x[], x()
             (L2R, self.visit_new, []),
             (L2R, self.visit_unary_postfix, ['++', '--']),
@@ -172,6 +174,7 @@ class Parser(object):
             Parser.W_VAR_USED: "unsafe use of keyword var",
             Parser.W_UNSAFE_BOOLEAN_TEST: "unsafe boolean test. use (!!{token}) or (({token} !== undefined) && ({token} !== null))",
             Parser.W_USELESS_KEYWORD: "useless use of keyword",
+            Parser.W_GROUPING: "expected parenthetical grouping",
         }
         self.warnings_count = {}
 
@@ -211,10 +214,27 @@ class Parser(object):
 
     def parse(self, tokens):
 
-        self.group(tokens)
+        pairs = {
+            '(': ')',
+            '[': ']',
+            '{': '}',
+        }
+
+        # iterate in reverse looking for the opening symbol
+        # then perform a forward scan to find it's matching pair
+        index = len(tokens) - 1
+        while index >= 0:
+            token = tokens[index]
+            if token.type == Token.T_SPECIAL and token.value in pairs:
+                self.grouping(tokens, index, token.value, pairs[token.value])
+                self.scan(token)
+            index -= 1
 
         mod = Token(Token.T_MODULE, 0, 0, "")
         mod.children = tokens
+        self.scan(mod)
+
+
 
         TransformRemoveSemicolons().transform(mod)
         TransformGrouping().transform(mod)
@@ -365,45 +385,31 @@ class Parser(object):
 
         return tok
 
-    def group(self, initial_tokens):
-        """
+    def grouping(self, tokens, index, open, close):
+        current = tokens[index]
 
-        This is a DFS algorithm that scans the document from top
-        to bottom and from the outer most nesting in.
-        """
+        current.type = Token.T_GROUPING
+        current.value = open + close
+        index += 1
 
-        pairs = {
-            '(': ')',
-            '[': ']',
-            '{': '}',
-        }
+        counter = 1
+        start = index
+        while index < len(tokens):
+            token = tokens[index]
+            if token.type == Token.T_SPECIAL and token.value == open:
+                counter += 1
+            elif token.type == Token.T_SPECIAL and token.value == close:
+                counter -= 1
+                if counter == 0:
+                    current.children = tokens[start:index]
+                    del tokens[start:index+1]
+                    break
+            index += 1
 
-        seq = [[None, initial_tokens, 0]]
+        if counter != 0:
+            raise ParseError(current, "matching %s not found" % close)
 
-        while len(seq):
-
-            parent, tokens, i = seq[-1]
-            while i < len(tokens):
-
-                token = tokens[i]
-
-                if token.type == Token.T_SPECIAL and token.value in pairs:
-
-                    self.collect_grouping(tokens, i, token.value, pairs[token.value])
-
-                    if token is not None:
-                        # save the current state and continue processing the child
-                        seq[-1][2] = i
-                        seq.append([token, token.children, 0])
-                        break
-                i += 1
-
-            # remove the token when scanning has finished
-            if i >= len(tokens):
-                self.scan(parent, tokens)
-                seq.pop()
-
-    def scan(self, parent, tokens):
+    def scan(self, token):
         """
         scan each token in a sequence. tokens which produce nested
         groups have already been processed. scanning can be done in
@@ -415,19 +421,14 @@ class Parser(object):
         for direction, callback, operators in self.precedence:
 
             i = 0
-            while i < len(tokens):
-
+            while i < len(token.children):
 
                 if direction < 0:
-                    j = len(tokens) - i - 1
+                    j = len(token.children) - i - 1
                 else:
                     j = i
 
-                # TODO: when scanning,
-                #       R2L : return negative consume(...,  1)
-                #       L2R : return negative consume(..., -1)
-                #
-                i += callback(parent, tokens, j, operators)
+                i += callback(token, token.children, j, operators)
 
     def visit_attr(self, parent, tokens, index, operators):
         """
@@ -543,11 +544,12 @@ class Parser(object):
 
             # special case for `() => {} ()`
             # correct syntax would be (()=>{})()
-            #if i1 is not None and i2 is not None:
-            #    if tokens[i2].type == Token.T_SPECIAL and tokens[i2].value == "=>":
-            #         if tokens[i1].type == Token.T_GROUPING:
-            #            self.visit_lambda(parent, tokens, i2, ["=>"])
-            #            return -2
+            if i1 is not None and i2 is not None:
+                if tokens[i2].type == Token.T_SPECIAL and tokens[i2].value == "=>":
+                     if tokens[i1].type == Token.T_GROUPING:
+                        #self.visit_lambda(parent, tokens, i2, ["=>"])
+                        #return -2
+                        self.warn(tokens[i2], Parser.W_GROUPING)
 
             if i1 is not None and tokens[i1].type not in (Token.T_SPECIAL, ):
                 i2 = self.peek_keyword(tokens, token, i1, -1)
@@ -1139,34 +1141,6 @@ class Parser(object):
 
         return 1
 
-    def collect_grouping(self, tokens, index, open, close):
-
-        current = tokens[index]
-
-        current.type = Token.T_GROUPING
-        current.value = open + close
-        index += 1
-
-        counter = 1
-        while index < len(tokens):
-            token = tokens[index]
-            if token.type == Token.T_SPECIAL and token.value == open:
-                current.children.append(tokens.pop(index))
-                counter += 1
-            elif token.type == Token.T_SPECIAL and token.value == close:
-
-                counter -= 1
-                if counter == 0:
-                    tokens.pop(index)
-                    break
-                else:
-                    current.children.append(tokens.pop(index))
-            else:
-                current.children.append(tokens.pop(index))
-
-        if counter != 0:
-            raise ParseError(current, "matching %s not found" % close)
-
     def collect_keyword_break(self, tokens, index):
         token = tokens[index]
         token.type = Token.T_BREAK
@@ -1230,12 +1204,25 @@ class Parser(object):
             child = rhs1.children[index]
             # a function call inside of an object is actually a method def
             offset = 1
-            if child.type == Token.T_FUNCTIONCALL:
-                child.type = Token.T_METHOD
+            if child.type == Token.T_ASSIGN:
+                # check for static class properties
+                li = index - 1
+                if li >= 0:
+                    tok = rhs1.children[li]
+                    if tok.type == Token.T_KEYWORD and tok.value == 'static':
+                        tok.type = Token.T_STATIC_PROPERTY
+                        tmp = rhs1.children.pop(index)
+                        tmp.children[0].type = Token.T_ATTR
+                        tok.children.append(tmp)
 
+            elif child.type == Token.T_FUNCTIONCALL:
+                # the child has type 'method'
                 # store meta data about the method in the value position
                 # the metadata will be get, set, public, private, static
                 # not all of those keywords are valid javascript
+                child.type = Token.T_METHOD
+
+
 
                 li = index - 1
                 if li >= 0:
