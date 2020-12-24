@@ -106,7 +106,89 @@ class TransformTemplateString(TransformBase):
 
         return segments
 
-class Parser(object):
+class ParserBase(object):
+
+    def __init__(self):
+        super(ParserBase, self).__init__()
+
+        self.precedence = []
+
+        self.token_input_grouping_type = Token.T_SPECIAL
+        self.token_output_grouping_type = Token.T_GROUPING
+        self.token_ast_type = Token.T_MODULE
+
+    def parse(self, tokens):
+
+        pairs = {
+            '(': ')',
+            '[': ']',
+            '{': '}',
+        }
+
+        # iterate in reverse looking for the opening symbol
+        # then perform a forward scan to find it's matching pair
+        index = len(tokens) - 1
+        while index >= 0:
+            token = tokens[index]
+            if token.type == self.token_input_grouping_type and token.value in pairs:
+                self.grouping(tokens, index, token.value, pairs[token.value])
+                self.scan(token)
+            index -= 1
+
+        mod = Token(self.token_ast_type, 0, 0, "", tokens)
+        self.scan(mod)
+
+        return mod
+
+    def grouping(self, tokens, index, open, close):
+        current = tokens[index]
+
+        current.type = self.token_output_grouping_type
+        current.value = open + close
+        index += 1
+
+        # this takes into account tokens of the same type,
+        # however this is not required because of the new reverse scan
+        # used by the caller
+        counter = 1
+        start = index
+        while index < len(tokens):
+            token = tokens[index]
+            if token.type == self.token_input_grouping_type and token.value == open:
+                counter += 1
+            elif token.type == self.token_input_grouping_type and token.value == close:
+                counter -= 1
+                if counter == 0:
+                    current.children = tokens[start:index]
+                    del tokens[start:index+1]
+                    break
+            index += 1
+
+        if counter != 0:
+            raise ParseError(current, "matching %s not found" % close)
+
+    def scan(self, token):
+        """
+        scan each token in a sequence. tokens which produce nested
+        groups have already been processed. scanning can be done in
+        either direction: left-to-right or right-to-left.
+
+        the precedence decides how tokens combine together
+        """
+
+        for direction, callback, operators in self.precedence:
+
+            i = 0
+            while i < len(token.children):
+
+                if direction < 0:
+                    j = len(token.children) - i - 1
+                else:
+                    j = i
+
+                i += callback(token, token.children, j, operators)
+
+class Parser(ParserBase):
 
     W_BRANCH_FALSE = 1
     W_BRANCH_TRUE  = 2
@@ -183,6 +265,22 @@ class Parser(object):
 
         self._offset = 0  # used by consume in the negative direction
 
+    def parse(self, tokens):
+
+        mod = super().parse(tokens)
+
+        TransformRemoveSemicolons().transform(mod)
+        TransformGrouping().transform(mod)
+        TransformFlatten().transform(mod)
+        TransformOptionalChaining().transform(mod)
+        TransformNullCoalescing().transform(mod)
+        TransformMagicConstants().transform(mod)
+
+        # the template transform is last because it recursively uses the parser
+        TransformTemplateString().transform(mod)
+
+        return mod
+
     def warn(self, token, type, message=None):
         """
         print a warning message, up to N of each type, as long as
@@ -211,42 +309,6 @@ class Parser(object):
             token.line, token.index, token.type, token.value, text)
 
         sys.stdout.write(text)
-
-    def parse(self, tokens):
-
-        pairs = {
-            '(': ')',
-            '[': ']',
-            '{': '}',
-        }
-
-        # iterate in reverse looking for the opening symbol
-        # then perform a forward scan to find it's matching pair
-        index = len(tokens) - 1
-        while index >= 0:
-            token = tokens[index]
-            if token.type == Token.T_SPECIAL and token.value in pairs:
-                self.grouping(tokens, index, token.value, pairs[token.value])
-                self.scan(token)
-            index -= 1
-
-        mod = Token(Token.T_MODULE, 0, 0, "")
-        mod.children = tokens
-        self.scan(mod)
-
-
-
-        TransformRemoveSemicolons().transform(mod)
-        TransformGrouping().transform(mod)
-        TransformFlatten().transform(mod)
-        TransformOptionalChaining().transform(mod)
-        TransformNullCoalescing().transform(mod)
-        TransformMagicConstants().transform(mod)
-
-        # the template transform is last because it recursively uses the parser
-        TransformTemplateString().transform(mod)
-
-        return mod
 
     def peek_token(self, tokens, token, index, direction):
         """
@@ -384,51 +446,6 @@ class Parser(object):
             tok = Token(Token.T_BLOCK, tok.line, tok.index, '{}', [tok])
 
         return tok
-
-    def grouping(self, tokens, index, open, close):
-        current = tokens[index]
-
-        current.type = Token.T_GROUPING
-        current.value = open + close
-        index += 1
-
-        counter = 1
-        start = index
-        while index < len(tokens):
-            token = tokens[index]
-            if token.type == Token.T_SPECIAL and token.value == open:
-                counter += 1
-            elif token.type == Token.T_SPECIAL and token.value == close:
-                counter -= 1
-                if counter == 0:
-                    current.children = tokens[start:index]
-                    del tokens[start:index+1]
-                    break
-            index += 1
-
-        if counter != 0:
-            raise ParseError(current, "matching %s not found" % close)
-
-    def scan(self, token):
-        """
-        scan each token in a sequence. tokens which produce nested
-        groups have already been processed. scanning can be done in
-        either direction: left-to-right or right-to-left.
-
-        the precedence decides how tokens combine together
-        """
-
-        for direction, callback, operators in self.precedence:
-
-            i = 0
-            while i < len(token.children):
-
-                if direction < 0:
-                    j = len(token.children) - i - 1
-                else:
-                    j = i
-
-                i += callback(token, token.children, j, operators)
 
     def visit_attr(self, parent, tokens, index, operators):
         """
