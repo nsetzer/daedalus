@@ -876,6 +876,7 @@ class Builder(object):
                 "    AndroidEvents[name] = callback;\n" \
                 "}\n" \
                 "function invokeAndroidEvent(name, payload) {\n" \
+                "    //console.log(name + \" \" + payload);" \
                 "    if (!!AndroidEvents[name]) {\n" \
                 "        AndroidEvents[name](JSON.parse(payload));\n" \
                 "    } else {\n" \

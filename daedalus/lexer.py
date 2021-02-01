@@ -161,7 +161,6 @@ class LexerBase(object):
 
     def _getstr(self, n):
         """ return the next N characters """
-
         s = []
         for i in range(n):
             s.append(self._getch())
@@ -493,6 +492,7 @@ class Lexer(LexerBase):
             - /* */   : multi line comment
             - /** */  : multi line documentation
             - a / b   : division
+            - a /= b  : inplace division
             - /^$/    : regular expression
 
         comments produce no token
@@ -504,9 +504,12 @@ class Lexer(LexerBase):
         if c == '/':
             self._lex_single_comment()
         elif c == '=':
+            # TODO: this can be cleaned up to produce
+            #       one token after reading two chars
             self._putch('/')
             self._lex_special2()
         elif c == '*':
+            # TODO: remove _peekstr
             s = self._peekstr(2)
             if s == '**' and self.preserve_documentation:
                 self._lex_documentation()
@@ -657,13 +660,13 @@ def perf():  # pragma: no cover
     return 0
 
 
-def main():  # pragma: no cover
+def mainx():  # pragma: no cover
 
     cProfile.run("perf()")
 
     print("done")
 
-def mainx():  # pragma: no cover
+def main():  # pragma: no cover
 
     # r.match(/filename[^;=\\n]*=((['"]).*?\\2|[^;\\n]*)/)
     # r.match(2/3)
@@ -671,13 +674,14 @@ def mainx():  # pragma: no cover
     text1 = """
     //var f=/\\{ *([\\w_-]+) *\\}/g
 
+    /**/
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":
         text1 = sys.stdin.read()
 
     print(text1)
-    tokens = Lexer().lex(text1)
+    tokens = Lexer({"preserve_documentation": True}).lex(text1)
     for token in tokens:
         print(token)
 

@@ -318,7 +318,7 @@ export class TextInputElement extends DomElement {
     constructor(text, _, submit_callback) {
         super("input", {value: text, type:"text"}, []);
 
-        this.textChanged = Signal(this, 'textChanged');
+        //this.textChanged = Signal(this, 'textChanged');
 
         this.attrs = {
             submit_callback,
@@ -326,34 +326,40 @@ export class TextInputElement extends DomElement {
     }
 
     setText(text) {
-        this.updateProps({value: text})
-        this.textChanged.emit(this.props)
+        //this.updateProps({value: text})
+
+        this.getDomNode().value = text
+
+        //this.textChanged.emit(this.props)
+        //this.update()
     }
 
     getText() {
-        return this.props.value;
+        return this.getDomNode().value;
     }
 
     onChange(event) {
-        this.updateProps({value: event.target.value}, false)
-        this.textChanged.emit(this.props)
+        //this.updateProps({value: event.target.value}, false)
+        //this.textChanged.emit(this.props)
     }
 
     onPaste(event) {
-        this.updateProps({value: event.target.value}, false)
-        this.textChanged.emit(this.props)
+        //this.updateProps({value: event.target.value}, false)
+        //this.textChanged.emit(this.props)
     }
 
     // onKeyDown
     // onKeyPress
 
     onKeyUp(event) {
-        this.updateProps({value: event.target.value}, false)
-        this.textChanged.emit(this.props)
+        //this.updateProps({value: event.target.value}, false)
+        //this.textChanged.emit(this.props)
+
 
         if (event.key == "Enter") {
             if (this.attrs.submit_callback) {
-                this.attrs.submit_callback(this.props.value)
+                console.log("enter: " + this.getText())
+                this.attrs.submit_callback(this.getText())
             }
         }
     }
