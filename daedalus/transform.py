@@ -257,21 +257,6 @@ class TransformOptionalChaining(TransformBase):
                 )]
                 ), rhs]
 
-class TransformNullCoalescing(TransformBase):
-
-    def visit(self, token, parent):
-        """
-
-        transform
-            a ?? b
-        into
-            ((x,y)=>(x!==null&&x!==undefined)?x:y)(a,b)
-
-        """
-
-        if token.type != Token.T_BINARY and token.value != "??":
-            return
-
 class TransformMagicConstants(TransformBase):
 
     def visit(self, token, parent):

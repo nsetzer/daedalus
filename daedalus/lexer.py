@@ -56,20 +56,18 @@ operators1 = set("+-~*/%@&^|!:.,;=(){}[]#")
 # which do not form a prefix of some other operator
 # used to break longers strings of special characters into valid operators
 operators2 = {
-    "+=", "-=", "*=", "**=", "/=", "%=", "@=", "|=", "&=", "^=", ">>=", "<<=",
+    "+=", "-=", "*=", "**=", "/=", "%=", "@=", "^=", "<<=", ">>>=",
     "<", "<=", ">", ">=", "===", "!==",
-    "??",
-    "&&",
-    "||",
     "=>",
     "|>",
     "++", "--",
-    "->", "=>", "?.", "..."
+    "->", "=>", "?.", "...", "??=", "||=", "&&="
 }
 
 # operators composed of 2 or more characters that are also a prefix
 # of an operator found in the previous list.
-operators2_extra = set(["?", "==", "!=", "**", ">>", "<<"])
+operators2_extra = set(["?", "==", "!=", "**",
+    ">>", "<<", "||", "??", "&&", "|=", "&=", ">>=", ">>>"])
 
 # the set of all valid operators for this language
 # if an operator is not in this list, then it is a syntax error
@@ -321,9 +319,14 @@ class Lexer(LexerBase):
                 #    nc = None
 
                 if nc:
-                    if nc == '.' or nc == '?':
+                    if nc == '.':
+                        self._putch(self._getch())
+                    elif nc == '?':
                         # collect ?. or ??
                         self._putch(self._getch())
+                        nc = self._peekch()
+                        if nc == '=':
+                            self._putch(self._getch())
                     self._push()
                 #else:
                 #    self._push()

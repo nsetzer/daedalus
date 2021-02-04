@@ -768,7 +768,7 @@ class Builder(object):
         with open(index_html, "r") as hfile:
             html = hfile.read()
 
-        if self.globals:
+        if self.globals and 'daedalus' in self.globals:
             render_function = self.globals['daedalus'] + '.render'
         else:
             render_function = 'daedalus.render'
@@ -876,7 +876,6 @@ class Builder(object):
                 "    AndroidEvents[name] = callback;\n" \
                 "}\n" \
                 "function invokeAndroidEvent(name, payload) {\n" \
-                "    //console.log(name + \" \" + payload);" \
                 "    if (!!AndroidEvents[name]) {\n" \
                 "        AndroidEvents[name](JSON.parse(payload));\n" \
                 "    } else {\n" \

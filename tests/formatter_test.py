@@ -347,6 +347,30 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_binary_unsigned_rightshit(self):
+
+        text = """
+            a >>> b
+        """
+        expected = "a>>>b"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_binary_null_assign(self):
+
+        text = """
+            a ??= b
+        """
+        expected = "a??=b"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
     def test_001_get_attr(self):
 
         text = """
@@ -750,6 +774,54 @@ class FormatterTestCase(unittest.TestCase):
         self._chkeq("""
             for (let x=1,y=2,z=3; x<y,y<z; --x,z++) {}
         """, 'for(let x=1,y=2,z=3;x<y,y<z;--x,z++){}')
+
+    def test_001_import_js_module(self):
+
+        text = """
+            import {a as b, c} from './module/module.js'
+        """
+        expected = "import {a as b, c} from './module/module.js'"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_import_js_module(self):
+
+        text = """
+            import * as module from './module/module.js'
+        """
+        expected = "import * as module from './module/module.js'"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_export(self):
+
+        text = """
+            export a = 1
+        """
+        expected = "export a=1"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_export_default(self):
+
+        text = """
+            export default a = 1
+        """
+        expected = "export default a=1"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
 
 class FormatterStressTestCase(unittest.TestCase):
 

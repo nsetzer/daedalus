@@ -22,7 +22,7 @@ import sys
 import ast
 from .lexer import Lexer, Token, TokenError
 from .transform import TransformGrouping, \
-    TransformFlatten, TransformOptionalChaining, TransformNullCoalescing, \
+    TransformFlatten, TransformOptionalChaining, \
     TransformMagicConstants, TransformRemoveSemicolons, TransformBase
 
 class ParseError(TokenError):
@@ -233,9 +233,14 @@ class Parser(ParserBase):
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
             #(R2L, self.visit_ternary, ['?']), # merged with visit_assign_v2
-            (R2L, self.visit_assign_v2, ['=>', '=', '+=', '-=', '**=', '*=', '/=',
-                                      '&=', '<<=', '>>=', '&=', '^=',
-                                      '|=']),
+            (R2L, self.visit_assign_v2, [
+                    '=>',
+                    '=', '+=', '-=', '**=', '*=', '/=',
+                    '<<=', '>>=',
+                    '&=', '|=', '^=',
+                    '||=', "??=", "&&=",
+                    ">>>="
+                    ]),
             #(L2R, self.visit_binary, ["in", "of"]),
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
@@ -263,6 +268,9 @@ class Parser(ParserBase):
         self.disabled_warnings = set()
         self.disable_all_warnings = False
 
+        self.feat_xform_optional_chaining = True
+        #self.feat_xform_null_coalescing = True
+
         self._offset = 0  # used by consume in the negative direction
 
     def parse(self, tokens):
@@ -272,8 +280,10 @@ class Parser(ParserBase):
         TransformRemoveSemicolons().transform(mod)
         TransformGrouping().transform(mod)
         TransformFlatten().transform(mod)
-        TransformOptionalChaining().transform(mod)
-        TransformNullCoalescing().transform(mod)
+        if self.feat_xform_optional_chaining:
+            TransformOptionalChaining().transform(mod)
+        #if self.feat_xform_null_coalescing:
+        #    TransformNullCoalescing().transform(mod)
         TransformMagicConstants().transform(mod)
 
         # the template transform is last because it recursively uses the parser
@@ -829,6 +839,16 @@ class Parser(ParserBase):
                     tok2 = tokens[i2]
                     if tok2.type == Token.T_KEYWORD and tok2.value in ('constexpr', 'const', 'let', 'var'):
                         return 1
+
+        if token.value == '*':
+            # for javascript style module imports
+            #   import * as alias from path
+            #   detect `import *` and skip
+            i1 = self.peek_keyword(tokens, token, index, -1)
+            if i1 is not None:
+                tok1 = tokens[i1]
+                if tok1.type == Token.T_KEYWORD and tok1.value == 'import':
+                    return 1
 
         rhs = self.consume(tokens, token, index, 1)
         lhs = self.consume(tokens, token, index, -1)
@@ -1435,6 +1455,20 @@ class Parser(ParserBase):
         token.children = [tok_name, tok_level, tok_fromlist]
 
     def collect_keyword_import(self, tokens, index):
+        """
+
+        Daedalus Imports:
+
+            import foo.bar
+            import module foo.bar
+
+        Javascript Style Imports
+            import {name} from './modules/module.js';
+            import {name as foo} from './modules/module.js';
+            import {name1, name2} from './modules/module.js';
+            import {name1 as foo, name2 as bar} from './modules/module.js';
+            import * as Module from './modules/module.js';
+        """
         token = tokens[index]
 
         next_tok = self.consume(tokens, token, index, 1)
@@ -1446,19 +1480,79 @@ class Parser(ParserBase):
             token.type = Token.T_IMPORT
             module = next_tok
 
-        token.value = self._collect_keyword_import_get_name(module)
+        if module.type == Token.T_SPECIAL and module.value == "*":
+            as_ = self.consume(tokens, token, index, 1)
+            name_ = self.consume(tokens, token, index, 1)
+            from_ = self.consume(tokens, token, index, 1)
+            path_ = self.consume(tokens, token, index, 1)
 
-        i1 = self.peek_keyword(tokens, token, index, 1)
-        if i1 is not None and tokens[i1].type == Token.T_KEYWORD and tokens[i1].value == 'with':
-            self.consume_keyword(tokens, token, index, 1)
-            fromlist = self.consume(tokens, token, index, 1)
-            if fromlist.type != Token.T_GROUPING:
-                raise ParseError(fromlist, "expected {} for fromlist")
-            else:
-                fromlist.type = Token.T_OBJECT
-            token.children.append(fromlist)
+            token.type = Token.T_IMPORT_JS_MODULE_AS
+            token.value = path_.value
+            token.children = [name_]
+
+        elif module.type == Token.T_GROUPING:
+            # javascript style module import
+            token.type = Token.T_IMPORT_JS_MODULE
+            token.children = module.children
+
+            # undo the previous comma parsing
+            j=0;
+            while j < len(token.children):
+                if token.children[j].type == Token.T_COMMA:
+                    token.children[j:j+1] = token.children[j].children
+                j += 1
+
+            # group based on special keyword 'as'
+            j=0;
+            while j < len(token.children):
+                tok = token.children[j]
+                if tok.type == Token.T_TEXT and \
+                   tok.value == "as":
+                    if j == 0 or j == len(token.children) - 1:
+                        # missing lhs or rhs value
+                        raise ParseError(tok, "invalid import alias")
+                    rhs = token.children.pop(j+1)
+                    if rhs.type == Token.T_KEYWORD or \
+                       (rhs.type == Token.T_TEXT and \
+                        rhs.value == "as"):
+                        raise ParseError(rhs, "invalid import alias")
+                    lhs = token.children.pop(j-1)
+                    if lhs.type == Token.T_KEYWORD or \
+                       (lhs.type == Token.T_TEXT and \
+                        lhs.value == "as"):
+                        raise ParseError(lhs, "invalid import alias")
+                    tok.type = Token.T_KEYWORD
+                    tok.children = [lhs, rhs]
+                else:
+                    j += 1
+
+            # now every direct child of token is either a import name
+            # or an import alias
+
+            from_ = self.consume_keyword(tokens, token, index, 1)
+            if from_.type != Token.T_TEXT or from_.value != "from":
+                raise ParseError(from_, "expected keyword 'from'")
+
+            path = self.consume(tokens, token, index, 1)
+            if path.type != Token.T_STRING:
+                raise ParseError(path, "expected path to module as string")
+            token.value = path.value
+
         else:
-            token.children.append(Token(Token.T_OBJECT, token.line, token.index, "{}"))
+            # daedalus style import
+            token.value = self._collect_keyword_import_get_name(module)
+
+            i1 = self.peek_keyword(tokens, token, index, 1)
+            if i1 is not None and tokens[i1].type == Token.T_KEYWORD and tokens[i1].value == 'with':
+                self.consume_keyword(tokens, token, index, 1)
+                fromlist = self.consume(tokens, token, index, 1)
+                if fromlist.type != Token.T_GROUPING:
+                    raise ParseError(fromlist, "expected {} for fromlist")
+                else:
+                    fromlist.type = Token.T_OBJECT
+                token.children.append(fromlist)
+            else:
+                token.children.append(Token(Token.T_OBJECT, token.line, token.index, "{}"))
 
     def collect_keyword_import_from(self, tokens, index):
         token = tokens[index]
@@ -1853,6 +1947,9 @@ def main():  # pragma: no cover
     #       expected object but the error is because of the parent node
 
     text1 = "try {x} catch (e) {e} finally {z}"
+    text1 = "import module foo.bar"
+    text1 = "from module foo import {bar}"
+    text1 = "if (true) {x=1;} + 1"
     print("="* 79)
     print(text1)
     print("="* 79)
@@ -1861,7 +1958,6 @@ def main():  # pragma: no cover
     mod = Parser().parse(tokens)
 
     print(mod.toString(3, pad=". "))
-
 
 if __name__ == '__main__':  # pragma: no cover
     main()

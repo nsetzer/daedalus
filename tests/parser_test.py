@@ -183,6 +183,19 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_mul(self):
+
+        text = "x * 1"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_BINARY', '*',
+                TOKEN('T_TEXT', 'x'),
+                TOKEN('T_NUMBER', '1'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
     def test_001_divide(self):
 
         text = "x / 1"
@@ -228,7 +241,6 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-
     def test_001_sub_assign(self):
 
         text = "a -= b"
@@ -241,7 +253,6 @@ class ParserBinOpTestCase(unittest.TestCase):
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
-
 
 
     def test_001_add_assign(self):
@@ -270,7 +281,6 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-
     def test_001_div_assign(self):
 
         text = "a /= b"
@@ -291,6 +301,45 @@ class ParserBinOpTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_ASSIGN', '**=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_null_assign(self):
+
+        text = "a ??= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '??=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_or_assign(self):
+
+        text = "a ||= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '||=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_and_assign(self):
+
+        text = "a &&= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '&&=',
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_TEXT', 'b'))
         )
@@ -323,6 +372,18 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_bitwise_not(self):
+
+        text = "~ b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_PREFIX', '~',
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
     def test_001_lshift_assign(self):
 
         text = "a <<= b"
@@ -335,7 +396,6 @@ class ParserBinOpTestCase(unittest.TestCase):
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
-
 
     def test_001_rshift_assign(self):
 
@@ -350,17 +410,79 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    @unittest.skip("optional chaining")
-    def test_001_maybe_attribute(self):
+    def test_001_unsigned_rshift(self):
 
-        text = "a?.b"
+        text = "a >>> b"
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '?.',
+            TOKEN('T_BINARY', '>>>',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_unsigned_rshift_assign(self):
+
+        text = "a >>>= b"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '>>>=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_null_coalescing_v1(self):
+
+        text = "a??b"
+        tokens = Lexer().lex(text)
+        parser = Parser()
+
+        ast = parser.parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_BINARY', '??',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b')))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
+    def test_001_optional_chaining_v1(self):
+
+        text = "a?.b"
+        tokens = Lexer().lex(text)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = False
+
+        ast = parser.parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OPTIONAL_CHAINING', '?.',
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_ATTR', 'b'))
         )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_optional_chaining_v2(self):
+
+        text = "a?.b"
+        tokens = Lexer().lex(text)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = True
+
+        ast = parser.parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_BINARY', '.',
+                TOKEN('T_GROUPING', '()',
+                    TOKEN('T_BINARY', '||',
+                        TOKEN('T_GROUPING', '()',
+                            TOKEN('T_TEXT', 'a')),
+                        TOKEN('T_OBJECT', '{}'))),
+                TOKEN('T_ATTR', 'b')))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -430,6 +552,22 @@ class ParserBinOpTestCase(unittest.TestCase):
                             TOKEN('T_FUNCTIONCALL', '',
                                 TOKEN('T_TEXT', 'f'),
                                 TOKEN('T_ARGLIST', '()')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_destructure_assign(self):
+
+        text = "var [a,b,c] = d"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'var',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_UNPACK_SEQUENCE', '[]',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_TEXT', 'b'),
+                        TOKEN('T_TEXT', 'c')),
+                    TOKEN('T_TEXT', 'd'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -948,40 +1086,6 @@ class ParserFunctionTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-class ParserModuleTestCase(unittest.TestCase):
-
-    def test_001_import_export(self):
-
-        # test that all import/export combinations can
-        # be parsed without any issues
-
-        text = """
-            from module foo import {bar}
-            from module foo.bar import {baz}
-            import module foo.bar
-            from foo import {bar}
-            from foo.bar import {baz}
-            import foo
-            import foo.bar
-            include 'foo.js'
-            export a
-            export a = 1
-            export const a = 1
-            export let a = 1
-            export var a = 1
-            export function a () {}
-            export class a {}
-            export default a
-            export default a = 1
-            export default const a = 1
-            export default let a = 1
-            export default var a = 1
-            export default function a () {}
-            export default class a {}
-        """
-        tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
-
 class ParserClassTestCase(unittest.TestCase):
 
     def test_001_class_1(self):
@@ -1356,6 +1460,115 @@ class ParserChallengeTestCase(unittest.TestCase):
                         TOKEN('T_TEXT', 'z')))))
         self._assert(expected, text)
 
+class ParserModuleTestCase(unittest.TestCase):
+    """
+
+            import {name} from './modules/module.js';
+            import {name as foo} from './modules/module.js';
+            import {name1, name2} from './modules/module.js';
+            import {name1 as foo, name2 as bar} from './modules/module.js';
+            import * as Module from './modules/module.js';
+    """
+
+    def test_001_import_export(self):
+
+        # test that all import/export combinations can
+        # be parsed without any issues
+
+        # TODO: remove support for
+        #   'import foo'
+        #   'import foo.bar'
+        # TODO: add support for import module as:
+        #
+        # daedalus import modes:
+        #   from module <name> import {<names>}
+        #   import module <name>
+        #   import module <name> as <name>
+        #   include <path>
+
+        text = """
+            from module foo import {bar}
+            from module foo.bar import {baz}
+            import module foo.bar
+            from foo import {bar}
+            from foo.bar import {baz}
+            import foo
+            import foo.bar
+            include 'foo.js'
+            export a
+            export a = 1
+            export const a = 1
+            export let a = 1
+            export var a = 1
+            export function a () {}
+            export class a {}
+            export default a
+            export default a = 1
+            export default const a = 1
+            export default let a = 1
+            export default var a = 1
+            export default function a () {}
+            export default class a {}
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+
+    def test_001_module(self):
+        text = "import { name } from './module/module.js'"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
+                TOKEN('T_TEXT', 'name')))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_002_module(self):
+        text = "import { name1, name2 } from './module/module.js'"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
+                TOKEN('T_TEXT', 'name1'),
+                TOKEN('T_TEXT', 'name2')))
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_003_module(self):
+        text = "import {a as b} from './module/module.js'"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
+                TOKEN('T_KEYWORD', 'as',
+                    TOKEN('T_TEXT', 'a'),
+                    TOKEN('T_TEXT', 'b'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_004_module(self):
+        text = "import {a as b, c as d} from './module/module.js'"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
+                TOKEN('T_KEYWORD', 'as',
+                    TOKEN('T_TEXT', 'a'),
+                    TOKEN('T_TEXT', 'b')),
+                TOKEN('T_KEYWORD', 'as',
+                    TOKEN('T_TEXT', 'c'),
+                    TOKEN('T_TEXT', 'd'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_005_module(self):
+        text = "import * as module from './module/module.js'"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_JS_MODULE_AS', "'./module/module.js'",
+                TOKEN('T_TEXT', 'module')))
+
+        self.assertFalse(parsecmp(expected, ast, False))
 
 def main():
     unittest.main()

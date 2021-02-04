@@ -417,21 +417,52 @@ class Formatter(object):
                     seq.append((depth, None, child))
                 seq.append((depth, Token.T_KEYWORD, "function*"))
                 seq.append((depth, Token.T_KEYWORD, "async"))
+            elif token.type == Token.T_IMPORT_JS_MODULE:
+                seq.append((depth, Token.T_SPECIAL, token.value))
+                seq.append((depth, Token.T_SPECIAL, 'from '))
+                seq.append((depth, Token.T_SPECIAL, '} '))
+                tmp = False
+                for child in reversed(token.children):
+                    if tmp:
+                        seq.append((depth, Token.T_SPECIAL, ', '))
+                    if child.type == Token.T_KEYWORD:
+                        lhs, rhs = child.children
+                        seq.append((depth, Token.T_SPECIAL, rhs.value))
+                        seq.append((depth, Token.T_SPECIAL, child.value))
+                        seq.append((depth, Token.T_SPECIAL, lhs.value))
+                    else:
+                        seq.append((depth, Token.T_SPECIAL, child.value))
+                    tmp = True
+
+                seq.append((depth, Token.T_SPECIAL, ' {'))
+                seq.append((depth, Token.T_SPECIAL, 'import'))
+            elif token.type == Token.T_IMPORT_JS_MODULE_AS:
+                seq.append((depth, Token.T_SPECIAL, token.value))
+                seq.append((depth, Token.T_SPECIAL, 'from '))
+                alias = token.children[0]
+                seq.append((depth, Token.T_SPECIAL, alias.value))
+                seq.append((depth, Token.T_SPECIAL, ' * as '))
+                seq.append((depth, Token.T_SPECIAL, 'import'))
             elif token.type == Token.T_IMPORT:
+                # the builder uses the information and removes the ast node
                 sys.stdout.write("import not implemented\n")
-                pass
             elif token.type == Token.T_IMPORT_MODULE:
+                # the builder uses the information and removes the ast node
                 sys.stdout.write("import module not implemented\n")
-                pass
             elif token.type == Token.T_INCLUDE:
+                # the builder uses the information and removes the ast node
                 sys.stdout.write("include not implemented\n")
-                pass
             elif token.type == Token.T_EXPORT:
-                sys.stdout.write("export not implemented\n")
-                pass
+                # when minifying, serialize export. the builder
+                # will remove the export keyword when building
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, Token.T_SPECIAL, 'export'))
             elif token.type == Token.T_EXPORT_DEFAULT:
-                sys.stdout.write("export not implemented\n")
-                pass
+                # when minifying, serialize export. the builder
+                # will remove the export keyword when building
+                seq.append((depth, None, token.children[1]))
+                seq.append((depth, Token.T_SPECIAL, 'default'))
+                seq.append((depth, Token.T_SPECIAL, 'export'))
             elif token.type == Token.T_SUBSCR:
                 seq.append((depth, Token.T_SPECIAL, "]"))
                 for child in reversed(token.children[1:]):
@@ -565,6 +596,11 @@ def main():  # pragma: no cover
     switch() {}
     do {} while ()
     x = 0
+    """
+
+    text1 = """
+    import {name} from 'module.js'
+    export name;
     """
 
     tokens = Lexer().lex(text1)

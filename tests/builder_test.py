@@ -5,7 +5,7 @@ from tests.util import edit_distance, parsecmp, TOKEN
 
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser, ParseError
-from daedalus.builder import buildFileIIFI, buildModuleIIFI
+from daedalus.builder import buildFileIIFI, buildModuleIIFI, Builder
 
 class FileIIFIOpTestCase(unittest.TestCase):
 
@@ -118,7 +118,22 @@ class ModuleIIFIOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, mod, False))
 
+class BuilderTestTestCase(unittest.TestCase):
 
+    def test_001_build(self):
+
+        # TODO: expand on this test
+        path = "res/template.js"
+
+        static_data = {"daedalus": {"env": {}}}
+        builder = Builder([], static_data, platform=None)
+        css, js, html = builder.build(path, minify=True, onefile=True)
+
+        #print(css)
+        #print(js)
+        #print(html)
+
+        return
 def main():
     unittest.main()
 
