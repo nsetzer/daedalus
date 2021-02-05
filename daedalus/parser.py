@@ -1950,6 +1950,9 @@ def main():  # pragma: no cover
     text1 = "import module foo.bar"
     text1 = "from module foo import {bar}"
     text1 = "if (true) {x=1;} + 1"
+    text1 = "{[1 + 2]: 0}"
+    text1 = "function f([arg0, arg1]){}"
+    text1 = "function f({arg0:argA, arg1:argnB}){}"
     print("="* 79)
     print(text1)
     print("="* 79)

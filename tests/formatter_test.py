@@ -1,5 +1,6 @@
 #! cd .. && python3 -m tests.formatter_test
 
+# TODO: http://es6-features.org/#MethodProperties
 
 import unittest
 from tests.util import edit_distance
@@ -7,6 +8,7 @@ from tests.util import edit_distance
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.formatter import Formatter, isalphanum
+from daedalus.transform import TransformMinifyScope
 
 class FormatterUtilTestCase(unittest.TestCase):
 
@@ -821,6 +823,183 @@ class FormatterTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
+        self.assertEqual(expected, output)
+
+    def test_001_computed_property(self):
+
+        text = """
+            {[1 + 2]: 3}
+        """
+        expected = "{[1+2]:3}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_method_property(self):
+        text = """
+            {
+                add(a, b) {return a+b},
+            }
+        """
+        expected = "{[1+2]:3}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_unicode_regex(self):
+        text = """
+            x = /./u
+            "古い".match(x)
+            "\u53e4"==="\\u{53e4}"
+        """
+        expected = "x=/./u;\"古い\".match(x);\"\u53e4\"===\"\\u{53e4}\""
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_literals(self):
+        text = """
+            0b1010 === 0xA === 0o12
+        """
+        expected = "0b1010===0xA===0o12"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_assignment(self):
+        text = """
+            foo=1
+            bar=2
+            [foo,bar] = [bar,foo]
+        """
+        expected = "a=1;b=2;[a,b]=[b,a]"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        TransformMinifyScope().transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_object(self):
+        text = """
+            var {lhs, rhs} = getToken()
+        """
+        expected = "var{lhs,rhs}=getToken()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        #TransformMinifyScope().transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    #@unittest.skip("not supported")
+    def test_001_destructure_object(self):
+        text = """
+            var {lhs:x, rhs:y} = getToken()
+        """
+        expected = "var{'lhs':a,'rhs':b}=getToken()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    #@unittest.skip("not supported")
+    def test_001_destructure_object_deep(self):
+        text = """
+            var {lhs:{ op: x }, rhs:y} = getToken()
+        """
+        # equivalent to var a = tmp.lhs.op
+        expected = "var{'lhs':{'op':a},'rhs':b}=getToken()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_destructure_object_default(self):
+        text = """
+            var {a, b=1} = getToken()
+        """
+        expected = "var{a,b=1}=getToken()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_destructure_assignment_default(self):
+        text = """
+            var [a, b=1] = [0]
+        """
+        expected = "var[a,b=1]=[0]"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_function_destructure_list(self):
+        text = "function f([arg0, arg1]){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        expected = "function f([arg0,arg1]){}"
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_function_destructure_list_minify(self):
+        text = "function f([arg0, arg1]){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        TransformMinifyScope().transform(ast)
+        output = self.formatter.format(ast)
+        expected = "function f([arg0,arg1]){}"
+        self.assertEqual(expected, output)
+
+    def test_001_function_destructure_object(self):
+        text = "function f({arg0, arg1}){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        expected = "function f({arg0,arg1}){}"
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_function_destructure_object_minify(self):
+        text = "function f({arg0, arg1}){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        TransformMinifyScope().transform(ast)
+        output = self.formatter.format(ast)
+        expected = "function f([arg0:a,arg1:b]){}"
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_function_destructure_object_rename_minify(self):
+        text = "function f({arg0:n, arg1:v}){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        TransformMinifyScope().transform(ast)
+        output = self.formatter.format(ast)
+        expected = "function f([arg0:a,arg1:b]){}"
         self.assertEqual(expected, output)
 
 class FormatterStressTestCase(unittest.TestCase):

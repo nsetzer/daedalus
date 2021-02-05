@@ -7,7 +7,6 @@ from tests.util import edit_distance, parsecmp, TOKEN
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser as ParserBase, ParseError
 
-
 class Parser(ParserBase):
     def __init__(self):
         super(Parser, self).__init__()

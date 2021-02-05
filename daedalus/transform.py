@@ -1886,6 +1886,7 @@ class TransformMinifyScope(TransformAssignScope):
         scope = MinifyVariableScope(name, parentScope)
         scope.disable_warnings = self.disable_warnings
         return scope
+
 class TransformBaseV2(object):
     def __init__(self):
         super(TransformBaseV2, self).__init__()
