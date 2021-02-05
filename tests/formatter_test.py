@@ -906,6 +906,7 @@ class FormatterTestCase(unittest.TestCase):
         text = """
             var {lhs:x, rhs:y} = getToken()
         """
+        #TODO: single quotes are not required
         expected = "var{'lhs':a,'rhs':b}=getToken()"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
@@ -922,6 +923,7 @@ class FormatterTestCase(unittest.TestCase):
             var {lhs:{ op: x }, rhs:y} = getToken()
         """
         # equivalent to var a = tmp.lhs.op
+        #TODO: single quotes are not required
         expected = "var{'lhs':{'op':a},'rhs':b}=getToken()"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
