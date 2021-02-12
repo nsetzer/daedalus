@@ -629,6 +629,12 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_comma_2(self):
+        self._chkeq("let a=1, b=2, c=3", "let a=1,b=2,c=3")
+
+    def test_001_comma_3(self):
+        self._chkeq("let a=f(), b=a.b, c=a.c", "let a=f(),b=a.b,c=a.c")
+
     def test_001_trycatch_1(self):
 
         text = """
@@ -670,6 +676,7 @@ class FormatterTestCase(unittest.TestCase):
         output = self.formatter.format(ast)
 
         self.assertEqual(expected, output)
+
 
     def test_001_optional_chaining_attr(self):
         #self._chkeq("a ?. b", "a?.b")
@@ -837,16 +844,32 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    @unittest.skip("not supported")
     def test_001_method_property(self):
         text = """
             {
                 add(a, b) {return a+b},
             }
         """
-        expected = "{[1+2]:3}"
+        expected = "{add(a,b){return a+b}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_method_property_minify(self):
+        text = """
+            x = {
+                add(a, b) {return a+b},
+            }
+            x.add(1,2)
+        """
+        expected = "a={add(c,b){return c+b}};a.add(1,2)"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
         output = self.formatter.format(ast)
 
         self.assertEqual(expected, output)
@@ -901,7 +924,6 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    #@unittest.skip("not supported")
     def test_001_destructure_object(self):
         text = """
             var {lhs:x, rhs:y} = getToken()
@@ -917,14 +939,40 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    #@unittest.skip("not supported")
     def test_001_destructure_object_deep(self):
         text = """
             var {lhs:{ op: x }, rhs:y} = getToken()
         """
         # equivalent to var a = tmp.lhs.op
         #TODO: single quotes are not required
-        expected = "var{'lhs':{'op':a},'rhs':b}=getToken()"
+        expected = "var{lhs:{op:x},rhs:y}=getToken()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        #xform = TransformMinifyScope()
+        #xform.disable_warnings=True
+        #xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_object_default(self):
+        text = """
+            var {x, y=1} = getToken()
+        """
+        expected = "var{x,y=1}=getToken()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+
+    def test_001_destructure_object_default_minify(self):
+        text = """
+            var {x, y=1} = getToken()
+        """
+        # TODO: this may accidentally do the right thing
+        expected = "var a=getToken(),{b}=a,c=a?.y??1"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -934,14 +982,18 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    @unittest.skip("not supported")
-    def test_001_destructure_object_default(self):
+    def test_001_destructure_object_deep_minify(self):
         text = """
-            var {a, b=1} = getToken()
+            var {lhs:{ op=1 }, rhs:y} = getToken()
         """
-        expected = "var{a,b=1}=getToken()"
+        # equivalent to var a = tmp.lhs.op
+        #TODO: single quotes are not required
+        expected = "var a=getToken(),{'rhs':b}=a,c=a.lhs,d=c?.op??1"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
         output = self.formatter.format(ast)
 
         self.assertEqual(expected, output)

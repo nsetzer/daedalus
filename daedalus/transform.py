@@ -85,16 +85,18 @@ class TransformGrouping(TransformBase):
                     else:
                         child.type = Token.T_BLOCK
                 else:
-
                     ref = self._isObject(child)
                     if ref is not None:
+
+                        print(parent.type, parent.value)
+                        print(token.type, token.value)
+                        print(parent.toString(3))
                         raise ref
                     child.type = Token.T_OBJECT
 
     def _isObject(self, token):
         # test if a token is an object, this is only valid
         # if the object contents have not been flattened
-
         if token.type != Token.T_GROUPING or token.value != "{}":
             return TransformError(token, "expected grouping")
 
@@ -103,7 +105,8 @@ class TransformGrouping(TransformBase):
             # left-recursive drill down into the first non comma or colon
             # that is usually the first token after a missing comma
             child = token.children[1]
-            while child.type == Token.T_COMMA or (child.type == Token.T_BINARY and child.value == ':'):
+            while child.type == Token.T_COMMA or \
+              (child.type == Token.T_BINARY and child.value == ':'):
                 child = child.children[0]
             return TransformError(child, "malformed object. maybe a comma is missing?")
 
@@ -135,6 +138,7 @@ class TransformFlatten(TransformBase):
            token.type == Token.T_ARGLIST or \
            token.type == Token.T_LIST or \
            token.type == Token.T_UNPACK_SEQUENCE or \
+           token.type == Token.T_UNPACK_OBJECT or \
            token.type == Token.T_GROUPING or \
            token.type == Token.T_VAR:
 
@@ -151,7 +155,7 @@ class TransformFlatten(TransformBase):
                 else:
                     index += 1
 
-            if token.type == Token.T_OBJECT:
+            if token.type == Token.T_OBJECT or token.type == Token.T_UNPACK_OBJECT:
                 self._objectKeyFix(token)
 
     def _objectKeyFix(self, token):
@@ -1273,6 +1277,7 @@ class TransformAssignScope(object):
             Token.T_PYIMPORT: self.visit_pyimport,
             Token.T_EXPORT: self.visit_export,
             Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
+            Token.T_UNPACK_SEQUENCE: self.visit_unpack_object,
             Token.T_FOR: self.visit_for,
             Token.T_GET_ATTR: self.visit_get_attr,
 
@@ -1432,7 +1437,7 @@ class TransformAssignScope(object):
     def visit_function(self, flags, scope, token, parent):
 
         if isNamedFunction(token):
-            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE):
+            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE, Token.T_OBJECT):
                 # this should never happen
                 raise TransformError(parent, "visit function, parent node is not a block scope: %s>%s" % (parent.type, token.type))
 
@@ -1510,13 +1515,143 @@ class TransformAssignScope(object):
         # TODO: LHS can be more complicated that T_TEXT
         if token.value == "=":
 
-            self._push_finalize(scope, token, parent)
+            if token.children and token.children[0].type in (
+              Token.T_UNPACK_OBJECT, Token.T_UNPACK_SEQUENCE):
+                if token.children[0].type == Token.T_UNPACK_SEQUENCE:
+                    self._visit_assign_unpack_sequence_fix(flags, scope, token, parent)
+                else:
+                    self._visit_assign_unpack_object_fix(flags, scope, token, parent)
+            else:
+                self._push_finalize(scope, token, parent)
 
-            self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], token)
-            self._push_tokens(ST_VISIT, scope, [token.children[1]], token)
+                self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], token)
+                self._push_tokens(ST_VISIT, scope, [token.children[1]], token)
 
         else:
             self._push_children(scope, token, 0)
+
+    def _visit_assign_unpack_sequence_fix(self, flags, scope, token, parent):
+        self._push_finalize(scope, token, parent)
+
+        self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], token)
+        self._push_tokens(ST_VISIT, scope, [token.children[1]], token)
+
+
+    def _visit_assign_unpack_object_fix_scan(self, ident, tokens):
+
+        extra = []
+        nested = []
+        index = 0
+        while index < len(tokens):
+            child = tokens[index]
+            if child.type == Token.T_BINARY and child.value == ":" and \
+              child.children[1].type == Token.T_UNPACK_OBJECT:
+                nested.append((ident, ident + '$' + child.children[0].value,
+                                tokens.pop(index)))
+            elif child.type == Token.T_ASSIGN:
+                extra.append(tokens.pop(index))
+            else:
+                index += 1
+
+        return nested, extra
+
+    def _visit_assign_unpack_object_fix(self, flags, scope, token, parent):
+
+        """
+            {a: {b, c=1}, d=2} = rhs
+
+            $rhs = rhs,
+            d = $rhs.d ?? 2
+            $rhs$a = $rhs.a,
+            {b} = $rhs$a.b,
+            c = $rhs$a.c ?? 1,
+
+            $js$unpack$3$27=rhs,
+            d=$js$unpack$3$27?.d??2,
+            $js$unpack$3$27$a=$js$unpack$3$27.a,
+            {'b':b}=$js$unpack$3$27$a,
+            c=$js$unpack$3$27$a?.c??1
+
+        """
+        lhs, rhs = token.children
+
+        ln = token.line
+        co = token.index
+        ident = "$js$unpack$%d$%d" % (ln, co)
+
+        nested, extra = self._visit_assign_unpack_object_fix_scan(ident, lhs.children)
+
+        if not extra and not nested:
+            # execute the default behavior for unpacking
+            # e.g. let {x, y} = obj
+
+            self._push_finalize(scope, token, parent)
+            self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [token.children[0]], token)
+            self._push_tokens(ST_VISIT, scope, [token.children[1]], token)
+            return
+
+        else:
+            # transform in place
+            # e.g.
+            #   let {x, y=1} = obj
+            # becomes:
+            #   let $ = obj, {x} = $, y = $.y===undefined?1:$.y
+            #
+            token.type = Token.T_COMMA
+            token.value = ','
+            token.children = [Token(Token.T_ASSIGN, ln, co, "=",
+                [Token(Token.T_TEXT, ln, co, ident), rhs])]
+
+            if lhs.children:
+                p2 = Token(Token.T_ASSIGN, ln, co, "=",
+                    [lhs, Token(Token.T_TEXT, ln, co, ident)])
+                token.children.append(p2)
+
+            for child in extra:
+
+                tmpa = child.children[0].clone()
+                tmpb = Token(Token.T_BINARY, ln, co, "??",
+                    [Token(Token.T_GET_ATTR, ln, co, "?.",
+                        [Token(Token.T_TEXT, ln, co, ident),
+                         child.children[0].clone()]),
+                     child.children[1].clone()])
+
+                token.children.append(Token(Token.T_ASSIGN, ln, co, "=", [tmpa, tmpb]))
+
+            while nested:
+                ident1, ident2, child = nested.pop()
+                lhs, rhs = child.children
+
+                # for nested object assignments, get the nested
+                # object and assign to the temporary value
+                p1 = Token(Token.T_ASSIGN, ln, co, "=",
+                    [Token(Token.T_TEXT, ln, co, ident2),
+                     Token(Token.T_GET_ATTR, ln, co, ".",
+                        [Token(Token.T_TEXT, ln, co, ident1),
+                         Token(Token.T_TEXT, ln, co, lhs.value)])])
+                token.children.append(p1)
+
+                # check for recursion
+                _nested, _extra = self._visit_assign_unpack_object_fix_scan(ident2, rhs.children)
+                nested += _nested
+
+                if rhs.children:
+                    p2 = Token(Token.T_ASSIGN, ln, co, "=",
+                        [rhs, Token(Token.T_TEXT, ln, co, ident2)])
+                    token.children.append(p2)
+
+                for node in _extra:
+
+                    tmpa = node.children[0].clone()
+                    tmpb = Token(Token.T_BINARY, ln, co, "??",
+                        [Token(Token.T_GET_ATTR, ln, co, "?.",
+                            [Token(Token.T_TEXT, ln, co, ident2),
+                             node.children[0].clone()]),
+                         node.children[1].clone()])
+
+                    token.children.append(Token(Token.T_ASSIGN, ln, co, "=", [tmpa, tmpb]))
+
+            self.visit_default(flags, scope, token, parent)
 
     def visit_text(self, flags, scope, token, parent):
         # note: this only works because the parser implementation of
@@ -1541,6 +1676,7 @@ class TransformAssignScope(object):
 
             if child.type == Token.T_TEXT:
 
+                # TODO: replace repr with a js string escape
                 key = Token(Token.T_STRING, child.line, child.index, repr(child.value))
                 val = child
 
@@ -1562,7 +1698,7 @@ class TransformAssignScope(object):
         if token.value != ":":
             return
 
-        if not parent or parent.type != Token.T_OBJECT:
+        if not parent or parent.type not in (Token.T_OBJECT, Token.T_UNPACK_OBJECT):
             return
 
         # handle the case where :: {foo: 0}
@@ -1591,9 +1727,10 @@ class TransformAssignScope(object):
 
     def visit_unpack_sequence(self, flags, scope, token, parent):
         scflags = (flags & ST_SCOPE_MASK) >> 12
+        self._push_children(scope, token, flags)
 
-        #for child in token.children:
-        #    scope.store(child)
+    def visit_unpack_object(self, flags, scope, token, parent):
+        scflags = (flags & ST_SCOPE_MASK) >> 12
         self._push_children(scope, token, flags)
 
     def visit_for(self, flags, scope, token, parent):
@@ -2461,6 +2598,30 @@ def main_for():
     print(ast.toString(3))
     print(Formatter().format(ast))
 
+def main_unpack():
+    from .parser import Parser
+    from .formatter import Formatter
+    text = """
+
+        //{a: {b, c=1}, d=2} = rhs
+        var {lhs:{ op=1 }, rhs:y} = getToken()
+    """
+
+    tokens = Lexer().lex(text)
+    parser =  Parser()
+    parser.python = False
+    ast = parser.parse(tokens)
+
+    print(ast.toString(3))
+
+    tr = TransformMinifyScope()
+    # tr = TransformIdentityScope()
+    print(tr.transform(ast))
+
+    print(ast.toString(3))
+    print(Formatter().format(ast))
+    print("--")
+
 def main_cls():
     from .parser import Parser
     text = """
@@ -2480,4 +2641,4 @@ def main_cls():
     print(ast.toString(3))
 
 if __name__ == '__main__':
-    main_for()
+    main_unpack()

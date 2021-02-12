@@ -917,7 +917,13 @@ class Parser(ParserBase):
         # check if the LHS is assigning to a list, or a list declaration
         if lhs.type == Token.T_LIST:
             lhs.type = Token.T_UNPACK_SEQUENCE
-        if lhs.type == Token.T_VAR:
+            self._visit_assign_fix(lhs)
+
+        elif lhs.type == Token.T_GROUPING:
+            lhs.type = Token.T_UNPACK_OBJECT
+            self._visit_assign_fix(lhs)
+
+        elif lhs.type == Token.T_VAR:
             if lhs.children[0].type == Token.T_LIST:
                 lhs.children[0].type = Token.T_UNPACK_SEQUENCE
 
@@ -926,6 +932,20 @@ class Parser(ParserBase):
         token.type = Token.T_ASSIGN
 
         return self._offset - 1
+
+    def _visit_assign_fix(self, token):
+        tokens = [token]
+        while tokens:
+            tok = tokens.pop()
+
+            if tok.type == Token.T_LIST:
+                tok.type = Token.T_UNPACK_SEQUENCE
+            elif tok.type == Token.T_BINARY and tok.value == ":":
+                if tok.children[1].type == Token.T_GROUPING:
+                    tok.children[1].type = Token.T_UNPACK_OBJECT
+
+            tokens.extend(tok.children)
+
 
     def visit_lambda(self, parent, tokens, index, operators):
         """
@@ -969,6 +989,31 @@ class Parser(ParserBase):
         """
         token = tokens[index]
 
+        # --------------
+        # hack for function definitions inside of objects
+        # see visit class for the other half
+        if token.type == Token.T_FUNCTIONCALL and parent.type == Token.T_GROUPING:
+            idx = self.peek_token(tokens, token, index, 1)
+            if idx is not None and tokens[idx].type == Token.T_GROUPING:
+
+                rhs = self.consume(tokens, token, index, 1)
+
+                if rhs.type != Token.T_GROUPING:
+                    if self.python:
+                        tmp = Token(Token.T_BLOCK, rhs.line, rhs.index, '{}')
+                        tmp.children= [rhs]
+                        rhs = tmp
+                    else:
+                        self.warn(rhs, Parser.W_BLOCK_UNSAFE)
+                else:
+                    rhs.type = Token.T_BLOCK
+
+                token.type = Token.T_FUNCTION
+                token.children.append(rhs)
+                return 1
+
+        # --------------
+
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
            token.value not in operators:
             return 1
@@ -1002,6 +1047,7 @@ class Parser(ParserBase):
 
         if rhs:
             token.children.append(rhs)
+
         token.type = Token.T_COMMA
 
         return rv
@@ -1252,14 +1298,31 @@ class Parser(ParserBase):
                         tmp.children[0].type = Token.T_ATTR
                         tok.children.append(tmp)
 
+            elif child.type == Token.T_FUNCTION:
+                child.type = Token.T_METHOD
+
+                li = index - 1
+                if li >= 0:
+                    tok = rhs1.children[li]
+                    if tok.type in (Token.T_KEYWORD, Token.T_TEXT) and \
+                      tok.value in ('get', 'set', 'public', 'private', 'static'):
+                        rhs1.children.pop(li)
+                        offset -= 1
+                        child.value = tok.value
+                    else:
+                        child.value = ''
+                else:
+                    child.value = ''
+
             elif child.type == Token.T_FUNCTIONCALL:
+                #TODO: this should no longer be reached
+                #      when the comma hack is in place
+
                 # the child has type 'method'
                 # store meta data about the method in the value position
                 # the metadata will be get, set, public, private, static
                 # not all of those keywords are valid javascript
                 child.type = Token.T_METHOD
-
-
 
                 li = index - 1
                 if li >= 0:

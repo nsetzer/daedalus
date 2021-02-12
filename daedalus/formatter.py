@@ -225,7 +225,7 @@ class Formatter(object):
 
                 seq.append((depth, Token.T_NEWLINE, "\n"))
                 seq.append((depth, Token.T_SPECIAL, token.value[0]))
-            elif token.type == Token.T_OBJECT:
+            elif token.type == Token.T_OBJECT or token.type == Token.T_UNPACK_OBJECT:
                 seq.append((depth, Token.T_OBJECT, token.value[1]))
                 insert = False
                 for child in reversed(token.children):
@@ -294,14 +294,16 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
                 seq.append((depth, None, token.children[0]))
             elif token.type == Token.T_COMMA:
-                if len(token.children) == 2:
-                    seq.append((depth, None, token.children[1]))
-                    seq.append((depth, Token.T_SPECIAL, ","))
-                    seq.append((depth, None, token.children[0]))
-                elif len(token.children) == 0:
+                if len(token.children) == 0:
                     raise FormatError(token, "no children")
                 else:
-                    seq.append((depth, None, token.children[0]))
+                    first = True
+                    for child in reversed(token.children):
+                        if not first:
+                            seq.append((depth, Token.T_SPECIAL, ","))
+                        seq.append((depth, None, child))
+                        first = False
+
             elif token.type in (Token.T_TEXT, Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR, Token.T_FREE_VAR):
 
                 out.append((depth, token.type, token.value))
