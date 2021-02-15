@@ -343,6 +343,27 @@ class Formatter(object):
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
 
+            elif token.type == Token.T_OPTIONAL_CHAINING:
+                if len(token.children) == 2:
+                    lhs, rhs = token.children
+                    seq.append((depth, None, rhs))
+                    seq.append((depth, Token.T_SPECIAL, '?.'))
+                    seq.append((depth, None, lhs))
+                elif len(token.children) == 1 and token.children[0].type == Token.T_SUBSCR:
+                    child = token.children[0]
+                    seq.append((depth, Token.T_SPECIAL, "]"))
+                    for gc in reversed(child.children[1:]):
+                        seq.append((depth, None, gc))
+                    seq.append((depth, Token.T_SPECIAL, "["))
+                    seq.append((depth, Token.T_SPECIAL, '?.'))
+                    seq.append((depth, None, child.children[0]))
+                elif len(token.children) == 1 and token.children[0].type == Token.T_FUNCTIONCALL:
+                    child = token.children[0]
+                    seq.append((depth, None, child.children[1]))
+                    seq.append((depth, Token.T_SPECIAL, '?.'))
+                    seq.append((depth, None, child.children[0]))
+                else:
+                    raise FormatError(token, "not supported")
             elif token.type == Token.T_ATTR:
 
                 out.append((depth, token.type, token.value))
@@ -601,8 +622,7 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-    import {name} from 'module.js'
-    export name;
+    class C {static p = 123}
     """
 
     tokens = Lexer().lex(text1)

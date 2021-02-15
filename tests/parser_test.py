@@ -524,16 +524,38 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    @unittest.skip("not implemented")
-    def test_001_subscr_3(self):
+    def test_001_subscr_3a(self):
 
         text = "x?.[0]"
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = True
+
+        ast = parser.parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_SUBSCR', '',
-                TOKEN('T_TEXT', 'x'))
-        )
+            TOKEN('T_SUBSCR', '[]',
+                TOKEN('T_GROUPING', '()',
+                    TOKEN('T_BINARY', '||',
+                        TOKEN('T_GROUPING', '()',
+                            TOKEN('T_TEXT', 'x')),
+                        TOKEN('T_OBJECT', '{}'))),
+                TOKEN('T_NUMBER', '0')))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_subscr_3b(self):
+
+        text = "x?.[0]"
+        tokens = Lexer().lex(text)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = False
+
+        ast = parser.parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OPTIONAL_CHAINING', '?.',
+                TOKEN('T_SUBSCR', '[]',
+                    TOKEN('T_TEXT', 'x'),
+                    TOKEN('T_NUMBER', '0'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -569,6 +591,21 @@ class ParserBinOpTestCase(unittest.TestCase):
                     TOKEN('T_TEXT', 'd'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_destructure_assign_2(self):
+        text = """
+            var [x=[2][0]] = [];
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'var',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_UNPACK_SEQUENCE', '[]',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_TEXT', 'b'),
+                        TOKEN('T_TEXT', 'c')),
+                    TOKEN('T_TEXT', 'd'))))
 
 class ParserBinOpErrorTestCase(unittest.TestCase):
 

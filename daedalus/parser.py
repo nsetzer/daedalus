@@ -588,12 +588,16 @@ class Parser(ParserBase):
                 lhs = self.consume(tokens, token, index, -1)
                 n = 0
 
-                tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
-
-                tok1.children = [lhs, token]
-
-                token.type = Token.T_ARGLIST
-                tokens[index - 1] = tok1
+                if lhs.type == Token.T_TEXT and lhs.value == "catch":
+                    tok1 = Token(Token.T_CATCH, token.line, token.index, lhs.value)
+                    tok1.children = [token]
+                    token.type = Token.T_ARGLIST
+                    tokens[index - 1] = tok1
+                else:
+                    tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
+                    tok1.children = [lhs, token]
+                    token.type = Token.T_ARGLIST
+                    tokens[index - 1] = tok1
                 return self._offset
 
         elif token.type == Token.T_GROUPING and token.value == '[]':
@@ -917,11 +921,11 @@ class Parser(ParserBase):
         # check if the LHS is assigning to a list, or a list declaration
         if lhs.type == Token.T_LIST:
             lhs.type = Token.T_UNPACK_SEQUENCE
-            self._visit_assign_fix(lhs)
+            self._visit_assign_fix(token, lhs)
 
         elif lhs.type == Token.T_GROUPING:
             lhs.type = Token.T_UNPACK_OBJECT
-            self._visit_assign_fix(lhs)
+            self._visit_assign_fix(token, lhs)
 
         elif lhs.type == Token.T_VAR:
             if lhs.children[0].type == Token.T_LIST:
@@ -933,19 +937,38 @@ class Parser(ParserBase):
 
         return self._offset - 1
 
-    def _visit_assign_fix(self, token):
+    def _visit_assign_fix(self, parent, token):
         tokens = [token]
         while tokens:
             tok = tokens.pop()
 
-            if tok.type == Token.T_LIST:
-                tok.type = Token.T_UNPACK_SEQUENCE
-            elif tok.type == Token.T_BINARY and tok.value == ":":
-                if tok.children[1].type == Token.T_GROUPING:
-                    tok.children[1].type = Token.T_UNPACK_OBJECT
+            idx = 0
+            while idx < len(tok.children):
+                child = tok.children[idx]
+
+                # convert groupings that are children
+                # of a UNPACK_* into the corresponding UNPACK token
+                if tok.type == Token.T_GROUPING:
+                    if tok.value == "[]":
+                        tok.type = Token.T_UNPACK_SEQUENCE
+                    if tok.value == "{}":
+                        tok.type = Token.T_UNPACK_OBJECT
+
+                # ---
+                # replace comma or skip to next
+                if child.type == Token.T_COMMA:
+                    tok.children[idx:idx+1] = child.children
+                else:
+                    idx += 1
+
+            #if tok.type == Token.T_ASSIGN and tok.value == "=":
+            #    if tok.children[1].type == Token.T_LIST:
+            #        tok.type = Token.T_UNPACK_SEQUENCE
+            #elif tok.type == Token.T_BINARY and tok.value == ":":
+            #    if tok.children[1].type == Token.T_GROUPING:
+            #        tok.children[1].type = Token.T_UNPACK_OBJECT
 
             tokens.extend(tok.children)
-
 
     def visit_lambda(self, parent, tokens, index, operators):
         """
@@ -989,15 +1012,14 @@ class Parser(ParserBase):
         """
         token = tokens[index]
 
+
         # --------------
         # hack for function definitions inside of objects
         # see visit class for the other half
         if token.type == Token.T_FUNCTIONCALL and parent.type == Token.T_GROUPING:
             idx = self.peek_token(tokens, token, index, 1)
             if idx is not None and tokens[idx].type == Token.T_GROUPING:
-
                 rhs = self.consume(tokens, token, index, 1)
-
                 if rhs.type != Token.T_GROUPING:
                     if self.python:
                         tmp = Token(Token.T_BLOCK, rhs.line, rhs.index, '{}')
@@ -1007,7 +1029,6 @@ class Parser(ParserBase):
                         self.warn(rhs, Parser.W_BLOCK_UNSAFE)
                 else:
                     rhs.type = Token.T_BLOCK
-
                 token.type = Token.T_FUNCTION
                 token.children.append(rhs)
                 return 1
@@ -1176,7 +1197,7 @@ class Parser(ParserBase):
         elif token.value == 'while':
             self.collect_keyword_while(tokens, index)
 
-        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default"):
+        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default", "static"):
             pass
         elif token.value == 'in':
             # TODO: this may be consumed in a higher layer...
@@ -1947,24 +1968,14 @@ class Parser(ParserBase):
         token.children = [rhs]
         token.type = Token.T_TRY
 
-        i2 = self.peek_token(tokens, token, index, 1)
-        # consequence of making catch not a KEYWORD is that
-        # it gets processed as a function call
-        #while (i2 is not None and tokens[i2].type == Token.T_TEXT and tokens[i2].value == 'catch'):
-        while (i2 is not None and tokens[i2].type == Token.T_FUNCTIONCALL and tokens[i2].children[0].value == 'catch'):
-            # an unfortunate result is this is a function call catch(arglist)
-            # expectation is the arglist is an identifier
-            rhs1 = self.consume(tokens, token, index, 1)
-            # rhs1: the token 'catch'
-            # rhs2: the argument list
-            rhs1, rhs2 = rhs1.children
-            # rhs3: the catch block
-            rhs3 = self.consume_block(tokens, index)
+        i2 = self.peek_keyword(tokens, token, index, 1)
 
-            rhs1.children.append(rhs2)
-            rhs1.children.append(rhs3)
+        while (i2 is not None and tokens[i2].type == Token.T_CATCH):
+            rhs1 = self.consume(tokens, token, index, 1) # catch
+            rhs2 = self.consume_block(tokens, index)     # body
+
+            rhs1.children.append(rhs2) # block body
             token.children.append(rhs1)
-            rhs1.type = Token.T_CATCH
             i2 = self.peek_keyword(tokens, token, index, 1)
 
         if (i2 is not None and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'finally'):
@@ -2016,6 +2027,9 @@ def main():  # pragma: no cover
     text1 = "{[1 + 2]: 0}"
     text1 = "function f([arg0, arg1]){}"
     text1 = "function f({arg0:argA, arg1:argnB}){}"
+    text1 = "let {x, y=2} = {}"
+    text1 = "let [a, {b=1}] = {}"
+    text1 = "x?.[0]"
     print("="* 79)
     print(text1)
     print("="* 79)
