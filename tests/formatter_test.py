@@ -192,6 +192,19 @@ class FormatterTestCase(unittest.TestCase):
             x = '\\x00'
         """, "x='\\x00'")
 
+    def test_001_number_string_raw(self):
+        self._chkeq(""" String.raw`foo\\n` === "foo\\\\n" """,
+            'String.raw`foo\\n`==="foo\\\\n"')
+
+    def test_001_number_string_custom_format(self):
+        self._chkeq("""
+            let f=function() {return arguments}, a = {'b':{'c':f}}, x=0;
+            let b = a.b.c`x${x}y`;
+            // b[0] = [ "x", "y" ]
+            // b[1] = 0
+        """,
+        """let f=function(){return arguments},a={'b':{'c':f}},x=0;let b=a.b.c`x ${x}y`""")
+
     def test_001_expr_1(self):
 
         text = """
@@ -935,6 +948,34 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_function_defaults(self):
+        text = """
+            function f(x=1, y=2) {return x + y}
+        """
+        expected = "function a(c=1,b=2){return c+b}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_function_rest(self):
+        text = """
+            function f(x, y, ...z) {return [x,y,z]}
+        """
+        expected = "function a(d,c,...b){return[d,c,b]}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
     def test_001_destructure_assignment(self):
         text = """
             foo=1
@@ -944,7 +985,9 @@ class FormatterTestCase(unittest.TestCase):
         expected = "a=1;b=2;[a,b]=[b,a]"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        TransformMinifyScope().transform(ast)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
         output = self.formatter.format(ast)
 
         self.assertEqual(expected, output)
@@ -1009,7 +1052,7 @@ class FormatterTestCase(unittest.TestCase):
             var {x, y=1} = getToken()
         """
         # TODO: this may accidentally do the right thing
-        expected = "var a=getToken(),{b}=a,c=a?.y??1"
+        expected = "var a=getToken(),{x:b}=a,c=a?.y??1"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -1108,6 +1151,33 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_destructure_list(self):
+        text = "let [x, y, z] = [0,1,2]"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        expected = "let[x,y,z]=[0,1,2]"
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_list_empty(self):
+        text = "let [x, ,z] = [0,1,2]"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        expected = "let[x,,z]=[0,1,2]"
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_list_reverse(self):
+        text = """
+            let [a, b] = 0
+            [b, a] = [a, b]
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        expected = "let[a,b]=0;[b,a]=[a,b]"
+        self.assertEqual(expected, output)
+
     def test_001_function_destructure_list(self):
         text = "function f([arg0, arg1]){}"
         tokens = self.lexer.lex(text)
@@ -1116,14 +1186,15 @@ class FormatterTestCase(unittest.TestCase):
         expected = "function f([arg0,arg1]){}"
         self.assertEqual(expected, output)
 
-    @unittest.skip("not supported")
     def test_001_function_destructure_list_minify(self):
         text = "function f([arg0, arg1]){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        TransformMinifyScope().transform(ast)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
         output = self.formatter.format(ast)
-        expected = "function f([arg0,arg1]){}"
+        expected = "function a([b,c]){}"
         self.assertEqual(expected, output)
 
     def test_001_function_destructure_object(self):
@@ -1134,28 +1205,28 @@ class FormatterTestCase(unittest.TestCase):
         expected = "function f({arg0,arg1}){}"
         self.assertEqual(expected, output)
 
-    @unittest.skip("not supported")
     def test_001_function_destructure_object_minify(self):
         text = "function f({arg0, arg1}){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        TransformMinifyScope().transform(ast)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
         output = self.formatter.format(ast)
-        expected = "function f([arg0:a,arg1:b]){}"
+        expected = "function a({arg0:b,arg1:c}){}"
         self.assertEqual(expected, output)
 
-    @unittest.skip("not supported")
     def test_001_function_destructure_object_rename_minify(self):
         text = "function f({arg0:n, arg1:v}){}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
-        TransformMinifyScope().transform(ast)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
         output = self.formatter.format(ast)
-        expected = "function f([arg0:a,arg1:b]){}"
+        expected = "function a({arg0:b,arg1:c}){}"
         self.assertEqual(expected, output)
 
-
-    @unittest.skip("not supported")
     def test_fail_function_destructure_object_with_global(self):
         # with SC_NO_MINIFY introduced, this construct does not work
         # instead when minifying convert to:
@@ -1167,7 +1238,7 @@ class FormatterTestCase(unittest.TestCase):
         """
         # equivalent to var a = tmp.lhs.op
         #TODO: single quotes are not required
-        expected = "c=123;function a({b}){return c}"
+        expected = "b=123;function a({b:c}){return b}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -1176,6 +1247,158 @@ class FormatterTestCase(unittest.TestCase):
         output = self.formatter.format(ast)
 
         self.assertEqual(expected, output)
+
+    def test_001_destructure_sequence_lambda(self):
+        text = """
+            ([x,y]) => x + y
+        """
+        expected = "([a,b])=>a+b"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_object_lambda(self):
+        text = """
+            ({x,y}) => x + y
+        """
+        expected = "({x:a,y:b})=>a+b"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_object_default_lambda_v1(self):
+        text = """
+            ({x=1,y=2}) => x + y
+        """
+        expected = "(a)=>{let b=a,c=b?.x??1,d=b?.y??2;return c+d}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_object_default_lambda_v2(self):
+        text = """
+            ({x=1,y=2}) => {return x + y}
+        """
+        expected = "(a)=>{let b=a,c=b?.x??1,d=b?.y??2;return c+d}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_class_getter_setter(self):
+        text = """
+            class Rect {
+                constructor(w, h) {
+                    this.w = w;
+                    this.h = h;
+                }
+                get width() {return this.w}
+                set width(w) {this.w = w}
+            }
+
+        """
+        expected = "class A{constructor(b,a){this.w=b;this.h=a}get width(){return this.w}set width(a){this.w=a}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_object_with_function(self):
+        text = """
+            let obj = {
+                get_zero() {
+                    return 0
+                }
+            }
+        """
+        expected = "let a={get_zero(){return 0}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    @unittest.skip("not supported")
+    def test_001_computed_function_name_2(self):
+        text = """
+            let obj = {
+                ["get_zero"]() {
+                    return 0
+                }
+            }
+        """
+        expected = ""
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+
+    @unittest.skip("not supported")
+    def test_001_custom_iterator(self):
+
+        text = """
+            let iter = {
+                [Symbol.iterator]() {
+                    let done = false
+                    let value = -1
+                    return {
+                        next() {
+                            value += 1
+                            done = value+1 < 10
+                            return {done, value}
+                        }
+                    }
+                }
+            }
+
+            for (let v of iter) {
+                console.log(v)
+            }
+
+        """
+        expected = ""
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+
+
 
 class FormatterStressTestCase(unittest.TestCase):
 
@@ -1255,7 +1478,7 @@ class FormatterStressTestCase(unittest.TestCase):
         self.assertEqual(output, text)
 
     def test_002_deep_3(self):
-        # allternating attribute access with nested parthesis
+        # alternating attribute access with nested parenthesis
         # there is a significant slowdown for large N
         N = 500
         prefix = "(x["

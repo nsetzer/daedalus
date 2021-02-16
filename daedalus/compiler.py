@@ -1748,26 +1748,43 @@ def main():  # pragma: no cover
             //return s.area()
     """
 
+    text1 = """
+        x = () => {}
+        return x()
+    """
+
+    from daedalus.transform import TransformIdentityScope
+
+
     tokens = Lexer().lex(text1)
     parser = Parser()
     parser.python = True
     ast = parser.parse(tokens)
+
+    #xform = TransformMinifyScope()
+    xform = TransformIdentityScope()
+    xform.disable_warnings=True
+    xform.transform(ast)
+
     print(ast.toString(3))
 
-    interp = Compiler(flags=Compiler.CF_REPL)
+    #interp = Compiler(flags=Compiler.CF_REPL)
+    interp = Compiler()
 
     try:
         interp.compile(ast)
 
     except Exception as e:
-        print(e)
+        logging.exception(str(e))
         return
     finally:
         print(ast.toString(3))
 
     interp.dump()
 
-    print(interp.function_body())
+    result = interp.function_body()
+    print(result)
+    print(type(result))
 
 if __name__ == '__main__':  # pragma: no cover
     main()

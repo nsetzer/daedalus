@@ -87,7 +87,7 @@ class TransformGrouping(TransformBase):
                 else:
                     ref = self._isObject(child)
                     if ref is not None:
-
+                        print("\n%s:"%ref)
                         print(parent.type, parent.value)
                         print(token.type, token.value)
                         print(parent.toString(3))
@@ -118,6 +118,7 @@ class TransformGrouping(TransformBase):
         v = child.value
 
         if (t == Token.T_TEXT) or \
+           (t == Token.T_FUNCTION) or \
            (t == Token.T_SPREAD) or \
            (t == Token.T_BINARY and (v == ':')) or \
            (t == Token.T_COMMA):
@@ -1639,10 +1640,10 @@ class TransformAssignScope(object):
         )
 
         do_replace = False
+        #to_define = []
         stack = [(ident, lhs.clone())]
 
         # TODO: prune children of comma that are not used once the stack is empty
-
         while stack:
             # ident is a token representing the T_TEXT variable name
             # tok is the left hand side expression
@@ -1652,39 +1653,42 @@ class TransformAssignScope(object):
             # the expression will be re-written to support this minify
             ident, tok = stack.pop(0)
 
-            if tok.type == Token.T_UNPACK_SEQUENCE:
+            if tok.type in (Token.T_UNPACK_SEQUENCE, Token.T_LIST):
+                if tok.type == Token.T_LIST:
+                    sys.stderr.write("warning: line: %d column: %d: found LIST expected T_UNPACK_SEQUENCE" %(
+                        tok.line, tok.column))
 
                 # when unpacking sequences pull out objects and assign those
                 # indexes
                 nested = self._unpack_sequence_scan(ident.value, tok.children)
 
                 if tok.children:
-                    comma.children.append(self._h_assign(tok, ident))
+                    node = self._h_assign(tok, ident)
+                    comma.children.append(node)
 
                 for idx, placeholder, elem in nested:
-
                     stack.append((placeholder, elem))
-                    #name = "%s$%d" % (ident.value, idx)
-                    #rhs = self._h_get_index(ident, idx)
-                    #lhs = Token(Token.T_TEXT, ln, co, name)
-                    #comma.children.append(self._h_assign(lhs, rhs))
-                    #stack.append((lhs, elem))
-
-
-                # TODO: this form of unpacking is only needed for objects
-                #for idx, elem in enumerate(tok.children):
-                #    name = "%s$%d" % (ident.value, idx)
-                #    rhs = self._h_get_index(ident, idx)
-                #    lhs = Token(Token.T_TEXT, ln, co, name)
-                #    comma.children.append(self._h_assign(lhs, rhs))
-                #    stack.append((lhs, elem))
 
             # FIXME: should never be T_OBJECT
             elif tok.type in (Token.T_UNPACK_OBJECT, Token.T_OBJECT):
+                if tok.type == Token.T_OBJECT:
+                    sys.stderr.write("warning: line: %d column: %d: found OBJECT expected UNPACK_OBJECT" %(
+                        tok.line, tok.column))
+
                 nested, extra = self._unpack_object_scan(ident.value, tok.children)
                 if tok.children:
-                    comma.children.append(self._h_assign(tok, ident))
+                    node = self._h_assign(tok, ident)
+                    comma.children.append(node)
 
+                    for idx, child in enumerate(node.children[0].children):
+                        if child.type == Token.T_TEXT:
+                            tmp_a = Token(Token.T_ATTR, ln, co, child.value)
+                            tmp_b = Token(Token.T_TEXT, ln, co, child.value)
+                            node.children[0].children[idx] = Token(Token.T_BINARY, ln, co, ":", [tmp_a, tmp_b])
+                        elif child.type == Token.T_BINARY and child.value == ":":
+                            pass
+                        else:
+                            raise TransformError(child, "invalid token in object destructuring")
                 for src, dst, child in nested:
 
                     attr, obj = child.children
@@ -1702,7 +1706,41 @@ class TransformAssignScope(object):
 
         if do_replace:
             return comma
+
         return None
+
+    def _unpack_fix_defs(self, token):
+        # if _unpack_fix does not produce an interesting result
+        # the AST still needs to be transformed into a form which
+        # can be minified. make trivial modifications and return a reference
+        # to every variable token that is defined
+
+        to_define = []
+        stack = [token]
+
+        while stack:
+            token = stack.pop()
+
+            if token.type in (Token.T_UNPACK_SEQUENCE,):
+                for child in token.children:
+                    if child.type == Token.T_ASSIGN:
+                        to_define.append(child.children[0])
+                    else:
+                        to_define.append(child)
+            elif token.type in (Token.T_UNPACK_OBJECT,):
+                for idx, child in enumerate(token.children):
+                    if child.type == Token.T_TEXT:
+                        tmp_a = Token(Token.T_ATTR, token.line, token.index, child.value)
+                        tmp_b = Token(Token.T_TEXT, token.line, token.index, child.value)
+                        token.children[idx] = Token(Token.T_BINARY, token.line, token.index, ":", [tmp_a, tmp_b])
+                        to_define.append(tmp_b)
+                    elif child.type == Token.T_BINARY and child.value == ":":
+                        to_define.append(child.children[1])
+                    else:
+                        raise TransformError(child, "invalid token in object destructuring")
+
+            stack.extend(token.children)
+        return to_define
 
     def _visit_assign_unpack_fix(self, flags, scope, token, parent):
 
@@ -1965,6 +2003,7 @@ class TransformAssignScope(object):
             else:
                 self._handle_function(scope, defered.token, refs)
 
+    # TODO: remove
     def _handle_function_arg_seq(self, scope, next_scope, token):
         # function argument sequence destructuring
 
@@ -1981,6 +2020,7 @@ class TransformAssignScope(object):
             else:
                 raise TransformError(pair, "not supported for parameter matching")
 
+    # TODO: remove
     def _handle_function_arg_obj(self, scope, next_scope, token):
         # function argument object destructuring
         # identifiers are not minified because the identifier
@@ -2009,7 +2049,6 @@ class TransformAssignScope(object):
             else:
                 raise TransformError(pair, "not supported for parameter matching")
 
-
     def _handle_function(self, scope, token, refs):
 
         name = scope.name + "." + token.children[0].value
@@ -2022,29 +2061,58 @@ class TransformAssignScope(object):
 
         # define the arguments to the function in the next scope
 
+        block = token.children[2]
+        if block.type != Token.T_BLOCK:
+            # this line is required to fix lambdas:
+            # the block is only updated in the token
+            # if a non-trivial transform is used
+            if token.type == Token.T_LAMBDA:
+                block = Token(Token.T_RETURN, block.line, block.index, "return", [block])
+            block = Token(Token.T_BLOCK, block.line, block.index, "{}", [block])
 
         if token.children[1].type == Token.T_ARGLIST:
+            # the arglist may need to be modified to support unpacking objects and lists
+
             arglist = token.children[1].children
-            for child in reversed(arglist):
+            for index, child in reversed(list(enumerate(arglist))):
                 if child.type == Token.T_ASSIGN:
                     # tricky, the rhs is a variable in THIS scope
                     # while the lhs is a variable in the NEXT scope
                     lhs, rhs = child.children
-                    if lhs.type in (Token.T_LIST, Token.T_UNPACK_SEQUENCE):
-                        self._handle_function_arg_seq(scope, next_scope, lhs)
-                    elif lhs.type in (Token.T_OBJECT, Token.T_UNPACK_OBJECT):
-                        raise TransformError(lhs, "function destructure object not implemented")
-                        #self._handle_function_arg_obj(scope, next_scope, lhs)
+                    if lhs.type in (Token.T_LIST, Token.T_UNPACK_SEQUENCE, Token.T_OBJECT, Token.T_UNPACK_OBJECT, Token.T_GROUPING):
+                        ident = Token(Token.T_TEXT, child.line, child.index, "$js$arg$%d" % index)
+                        node = self._unpack_fix(lhs, ident)
+                        if node:
+                            token.children[2] = block
+                            node = Token(Token.T_VAR, child.line, child.index, "let", [node])
+                            next_scope.define(SC_FUNCTION, ident)
+                            child.children[0] = ident
+                            block.children.insert(0, node)
+                        else:
+                            defs = self._unpack_fix_defs(lhs)
+
+                            for tok in defs:
+                                next_scope.define(SC_FUNCTION, tok)
+
                     else:
                         next_scope.define(SC_FUNCTION, lhs)
                     # process the RHS as a default argument value
                     self._push_tokens(ST_VISIT, scope, [rhs], child)
-                elif child.type in (Token.T_LIST, Token.T_UNPACK_SEQUENCE):
-                    self._handle_function_arg_seq(scope, next_scope, child)
-                elif child.type in (Token.T_OBJECT, Token.T_UNPACK_OBJECT):
-                    raise TransformError(child, "function destructure object not implemented")
+                elif child.type in (Token.T_LIST, Token.T_UNPACK_SEQUENCE, Token.T_OBJECT, Token.T_UNPACK_OBJECT, Token.T_GROUPING):
+                    ident = Token(Token.T_TEXT, child.line, child.index, "$js$arg$%d" % index)
+                    node = self._unpack_fix(child, ident)
+                    if node:
+                        token.children[2] = block
+                        node = Token(Token.T_VAR, child.line, child.index, "let", [node])
+                        next_scope.define(SC_FUNCTION, ident)
+                        arglist[index] = ident
+                        block.children.insert(0, node)
+                    else:
+                        defs = self._unpack_fix_defs(child)
+                        for tok in defs:
+                            next_scope.define(SC_FUNCTION, tok)
 
-                    # self._handle_function_arg_obj(scope, next_scope, child)
+
                 elif child.type == Token.T_SPREAD:
                     tok, = child.children
                     next_scope.define(SC_FUNCTION, tok)
@@ -2750,17 +2818,28 @@ def main_unpack():
         //var [{x, y=3}, z] = [{'x':1,}];
         //var [x=[2][0]] = [];
 
+        //([x,y]) => x + y
         //function f([x,y]){return x + y}
         //function f({x,y}){return x + y}
+        //function f({x,y:z}){return x + z}
         //function f([x,y=1]=[]){}
-        //function f({method}){}
-        // function f({url, method='GET'}={}){return method}
+        //function f({x}){}
+        //function f({x=1,}={}){}
+        //function f({url, method='GET'}={}){return method}
 
         //x = 123;
         //function f({b}){return x}
 
         //let [{x1=1, y1=2}, {x2=3,y2=4}] = [{x1,y1}]
-        let [a,b,{d=1,}] = [1,2,{d}]
+        // let [a,b,{d=1,}] = [1,2,{d}]
+
+        //let [a, b] = 0
+        //[b, a] = [a, b]
+
+        //String.raw`foo\n` === "foo\\n"
+
+        foo`foo`
+
 
     """
 

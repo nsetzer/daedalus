@@ -589,14 +589,22 @@ class Parser(ParserBase):
                 n = 0
 
                 if lhs.type == Token.T_TEXT and lhs.value == "catch":
+                    # the syntax looks like a function call:
+                    #   catch(expr) {}
+                    # but catch is a keyword, produce a catch node instead
                     tok1 = Token(Token.T_CATCH, token.line, token.index, lhs.value)
                     tok1.children = [token]
                     token.type = Token.T_ARGLIST
                     tokens[index - 1] = tok1
                 else:
+                    # the syntax looks like a function call:
+                    #   expr(expr) {}
+                    # produce a function call node, without a body
+
                     tok1 = Token(Token.T_FUNCTIONCALL, token.line, token.index, "")
                     tok1.children = [lhs, token]
                     token.type = Token.T_ARGLIST
+
                     tokens[index - 1] = tok1
                 return self._offset
 
@@ -621,7 +629,7 @@ class Parser(ParserBase):
         elif token.type == Token.T_TEMPLATE_STRING:
 
             i1 = self.peek_token(tokens, token, index, -1)
-            if i1 is not None and tokens[i1].type == Token.T_TEXT:
+            if i1 is not None and tokens[i1].type in (Token.T_TEXT, Token.T_GET_ATTR):
 
                 lhs = self.consume(tokens, token, index, -1)
                 tok = Token(Token.T_TAGGED_TEMPLATE, token.line, token.index, '')
@@ -1001,6 +1009,12 @@ class Parser(ParserBase):
         if lhs.type == Token.T_GROUPING:
             lhs.type = Token.T_ARGLIST
 
+        for arg in lhs.children:
+            if arg.type == Token.T_LIST:
+                arg.type = Token.T_UNPACK_SEQUENCE
+            if arg.type == Token.T_GROUPING:
+                arg.type = Token.T_UNPACK_OBJECT
+
         return self._offset
 
     def visit_comma(self, parent, tokens, index, operators):
@@ -1041,6 +1055,9 @@ class Parser(ParserBase):
 
         rhs = None
         while index + 1 < len(tokens):
+            if tokens[index+1].type == Token.T_SPECIAL and tokens[index+1].value == ",":
+                rhs = Token(Token.T_EMPTY_TOKEN, token.line, token.index, "")
+                break
             tmp = tokens.pop(index + 1)
             if tmp.type != Token.T_NEWLINE:
                 rhs = tmp
@@ -1480,6 +1497,8 @@ class Parser(ParserBase):
                 node = node.children[0]
             elif node.type == Token.T_VAR:
                 node = node.children[0]
+                #if node.children[0].type == Token.T_COMMA:
+                #    break;
             elif node.type == Token.T_CLASS:
                 node = node.children[0]
             elif node.type == Token.T_FUNCTION:
@@ -1804,6 +1823,11 @@ class Parser(ParserBase):
             raise ParseError(token, "expected arglist")
 
         token.children[1].type = Token.T_ARGLIST
+        for arg in token.children[1].children:
+            if arg.type == Token.T_LIST:
+                arg.type = Token.T_UNPACK_SEQUENCE
+            if arg.type == Token.T_GROUPING:
+                arg.type = Token.T_UNPACK_OBJECT
 
         if body.type != Token.T_GROUPING:
             self._remove_special(tokens, index + 1)
@@ -2030,6 +2054,8 @@ def main():  # pragma: no cover
     text1 = "let {x, y=2} = {}"
     text1 = "let [a, {b=1}] = {}"
     text1 = "x?.[0]"
+    text1 = "f`x`"
+    text1 = "x.f`x`"
     print("="* 79)
     print(text1)
     print("="* 79)

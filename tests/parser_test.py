@@ -914,8 +914,22 @@ class ParserKeywordTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    @unittest.skip("not implemented")
+    @unittest.skip("not supported")
     def test_001_export_many(self):
+
+        # this is broken because the builder
+        # assumes a single export name will be available
+        # instead of :
+        #   T_EXPORT<name>
+        #      + T_TEXT<name>
+        #      + expression
+        # use a list format:
+        # T_EXPORT<>
+        #    + T_EXPORT_NAME<name>
+        #      + expression
+        #    + ...
+
+
 
         text = "export let v1, v2"
         tokens = Lexer().lex(text)
