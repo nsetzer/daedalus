@@ -872,13 +872,12 @@ class ParserKeywordTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_EXPORT', 'v1',
-                TOKEN('T_TEXT', 'v1'),
+            TOKEN('T_EXPORT', 'export',
                 TOKEN('T_VAR', 'const',
                     TOKEN('T_ASSIGN', '=',
                         TOKEN('T_TEXT', 'v1'),
-                        TOKEN('T_KEYWORD', 'null'))))
-        )
+                        TOKEN('T_KEYWORD', 'null'))),
+                TOKEN('T_TEXT', 'v1')))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -888,13 +887,12 @@ class ParserKeywordTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_EXPORT', 'a',
-                TOKEN('T_TEXT', 'a'),
+            TOKEN('T_EXPORT', 'export',
                 TOKEN('T_FUNCTION', 'function',
                     TOKEN('T_TEXT', 'a'),
                     TOKEN('T_ARGLIST', '()'),
-                    TOKEN('T_BLOCK', '{}')))
-        )
+                    TOKEN('T_BLOCK', '{}')),
+                TOKEN('T_TEXT', 'a')))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -904,37 +902,27 @@ class ParserKeywordTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_EXPORT', 'A',
-                TOKEN('T_TEXT', 'A'),
+            TOKEN('T_EXPORT', 'export',
                 TOKEN('T_CLASS', 'class',
                     TOKEN('T_TEXT', 'A'),
                     TOKEN('T_KEYWORD', 'extends'),
-                    TOKEN('T_CLASS_BLOCK', '{}')))
-        )
+                    TOKEN('T_CLASS_BLOCK', '{}')),
+                TOKEN('T_TEXT', 'A')))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    @unittest.skip("not supported")
     def test_001_export_many(self):
-
-        # this is broken because the builder
-        # assumes a single export name will be available
-        # instead of :
-        #   T_EXPORT<name>
-        #      + T_TEXT<name>
-        #      + expression
-        # use a list format:
-        # T_EXPORT<>
-        #    + T_EXPORT_NAME<name>
-        #      + expression
-        #    + ...
-
-
 
         text = "export let v1, v2"
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
-        expected = TOKEN('T_MODULE', '')
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_EXPORT', 'export',
+                TOKEN('T_VAR', 'let',
+                    TOKEN('T_TEXT', 'v1'),
+                    TOKEN('T_TEXT', 'v2')),
+                TOKEN('T_TEXT', 'v1'),
+                TOKEN('T_TEXT', 'v2')))
 
         self.assertFalse(parsecmp(expected, ast, False))
 

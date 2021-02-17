@@ -1344,7 +1344,6 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    @unittest.skip("not supported")
     def test_001_computed_function_name_2(self):
         text = """
             let obj = {
@@ -1353,7 +1352,7 @@ class FormatterTestCase(unittest.TestCase):
                 }
             }
         """
-        expected = ""
+        expected = 'let a={["get_zero"](){return 0}}'
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -1364,7 +1363,6 @@ class FormatterTestCase(unittest.TestCase):
         self.assertEqual(expected, output)
 
 
-    @unittest.skip("not supported")
     def test_001_custom_iterator(self):
 
         text = """
@@ -1387,7 +1385,7 @@ class FormatterTestCase(unittest.TestCase):
             }
 
         """
-        expected = ""
+        expected = """let a={[Symbol.iterator](){let c=false;let d=-1;return{next(){d+=1;c=d+1<10;return{'done':c,'value':d}}}}};for(let b of a){console.log(b)}"""
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()

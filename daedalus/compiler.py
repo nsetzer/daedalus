@@ -1055,9 +1055,10 @@ class Compiler(object):
 
     def _traverse_export(self, depth, state, token):
 
-        self.module_globals[token.value] = token.children[0].value
+        for child in token.children[1:]:
+            self.module_globals[token.value] = child.value
 
-        self._push(depth + 1, ST_TRAVERSE, token.children[1])
+        self._push(depth + 1, ST_TRAVERSE, token.children[0])
 
     def _traverse_var(self, depth, state, token):
         """assume that variables have been taken care of by now

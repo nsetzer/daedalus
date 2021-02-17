@@ -1738,6 +1738,8 @@ class TransformAssignScope(object):
                         to_define.append(child.children[1])
                     else:
                         raise TransformError(child, "invalid token in object destructuring")
+            else:
+                continue
 
             stack.extend(token.children)
         return to_define

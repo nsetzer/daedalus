@@ -1486,29 +1486,33 @@ class Parser(ParserBase):
 
         child = self.consume_keyword(tokens, token, index, 1)
 
-        node = child
-        while node:
+        exports = []
+
+        stack = [child]
+        while stack:
+
+            node = stack.pop(0)
+
             if node.type == Token.T_TEXT:
                 if not node.value:
                     raise ParseError(token, "unable to export anonymous entity")
-                token.value = node.value
-                break
+                exports.append(Token(Token.T_TEXT, child.line, child.index, node.value))
             elif node.type == Token.T_ASSIGN and node.value == "=":
-                node = node.children[0]
+                stack.append(node.children[0])
             elif node.type == Token.T_VAR:
-                node = node.children[0]
-                #if node.children[0].type == Token.T_COMMA:
-                #    break;
+                stack.append(node.children[0])
             elif node.type == Token.T_CLASS:
-                node = node.children[0]
+                stack.append(node.children[0])
             elif node.type == Token.T_FUNCTION:
-                node = node.children[0]
+                stack.append(node.children[0])
+            elif node.type == Token.T_COMMA:
+                stack.extend(node.children)
             else:
                 raise ParseError(node, "unable to export token")
 
         name = Token(Token.T_TEXT, child.line, child.index, token.value)
         token.type = kind
-        token.children = [name, child]
+        token.children = [child, ] + exports
 
     def _collect_keyword_import_get_name(self, module):
 
@@ -2056,6 +2060,8 @@ def main():  # pragma: no cover
     text1 = "x?.[0]"
     text1 = "f`x`"
     text1 = "x.f`x`"
+    text1 = "export let x=1,y=2"
+    text1 = "{[0](){}}"
     print("="* 79)
     print(text1)
     print("="* 79)

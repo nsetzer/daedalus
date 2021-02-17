@@ -267,6 +267,31 @@ class JsFile(object):
             if os.path.exists(platpath):
                 self.source_path = platpath
 
+    def _newBuildError(self, token, ex):
+        """
+            token: the token that was the source of the exception
+            ex: exception instance or string
+        """
+        if self.source:
+            source_lines = self.source.split("\n")
+            line_start = token.line - 3
+            line_end = min(token.line + 3, len(source_lines))
+            print(len(source_lines), line_start, line_end)
+            b_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(line_start, token.line)]
+            a_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(token.line, line_end)]
+
+            lines = b_lines + ["      " + " " * token.index + "^"] + a_lines
+        else:
+            lines = []
+
+        if isinstance(ex, BaseException):
+            org_msg = ex.original_message
+            msg = str(ex)
+        else:
+            org_msg = msg = str(ex)
+
+        return BuildError(self.source_path, token, lines, org_msg, msg)
+
     def getSource(self):
 
         with open(self.source_path, "r") as rf:
@@ -275,12 +300,12 @@ class JsFile(object):
     def load(self):
 
         t1 = time.time()
-        source = self.getSource()
-        self.size = len(source)
+        self.source = self.getSource()
+        self.size = len(self.source)
 
         error = None
         try:
-            tokens = Lexer().lex(source)
+            tokens = Lexer().lex(self.source)
             for token in tokens:
                 token.file = self.source_path
             parser = Parser()
@@ -291,14 +316,7 @@ class JsFile(object):
             tr1.transform(ast)
             self.styles = tr1.getStyles()
         except TokenError as e:
-            source_lines = source.split("\n")
-            line_start = e.token.line - 3
-            line_end = e.token.line + 3
-            b_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(line_start, e.token.line)]
-            a_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(e.token.line, line_end)]
-
-            lines = b_lines + ["      " + " " * e.token.index + "^"] + a_lines
-            error = BuildError(self.source_path, e.token, lines, e.original_message, str(e))
+            error = self._newBuildError(e.token, e)
 
         if error:
             raise error
@@ -345,26 +363,31 @@ class JsFile(object):
                 i += 1
 
             elif token.type == Token.T_EXPORT:
-                self.exports.append(token.value)
-                child = token.children[1]
+                for text in token.children[1:]:
+                    self.exports.append(text.value)
+                child = token.children[0]
                 # remove the token entirely if it does not have any side effects
                 # otherwise remove the export keyword
                 if child.type == Token.T_TEXT:
-                    ast.children.pop(0)
+                    ast.children.pop(i)
                 else:
-                    ast.children[i] = token.children[1]
+                    ast.children[i] = child
                     i += 1
 
             elif token.type == Token.T_EXPORT_DEFAULT:
-                self.default_export = token.value
-                self.exports.append(token.value)
-                child = token.children[1]
+
+                if len(token.children) > 2:
+                    raise self._newBuildError(token, "export default can only export a single name")
+
+                self.exports.append(token.children[1].value)
+                self.default_export = token.children[1].value
+                child = token.children[0]
                 # remove the token entirely if it does not have any side effects
                 # otherwise remove the export keyword
                 if child.type == Token.T_TEXT:
-                    ast.children.pop(0)
+                    ast.children.pop(i)
                 else:
-                    ast.children[i] = token.children[1]
+                    ast.children[i] = child
                     i += 1
 
             else:
@@ -668,7 +691,7 @@ class Builder(object):
             raise BuildError(jsm.index_js.path, None, [], "does not export any symbols")
 
         if len(jsm.module_exports) > 1:
-            sys.stderr.write("warning: root module exports more than one symbol")
+            sys.stderr.write("warning: root module exports more than one symbol\n")
 
         if standalone is False:
             order = self._sort_modules(jsm)
