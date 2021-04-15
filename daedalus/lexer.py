@@ -28,7 +28,8 @@ char_base = {'o': 8, 'x': 16, 'u': 16, 'U': 16}
 
 reserved_words = {
     # types
-    'boolean', 'byte', 'char', 'double', 'false', 'int', 'long', 'null', 'short', 'true',
+    'boolean', 'byte', 'char', 'double',  'int', 'long',  'short',
+    'false', 'true', 'null', 'undefined',
     # keywords
     'async', 'await', 'break', 'case',
     'class', 'const', 'continue', 'debugger', 'default',
@@ -46,7 +47,7 @@ reserved_words_extra = {
     'private', 'protected', 'public', 'native',
     'abstract', 'arguments', 'synchronized', 'from',
     'module', "pyimport", "catch",
-    "constexpr"
+    "constexpr",
 }
 
 # symbols for operators that have length 1

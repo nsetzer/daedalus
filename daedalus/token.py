@@ -30,8 +30,11 @@ class Token(object):
 
     T_SUBSCR = "T_SUBSCR"
     T_BLOCK = "T_BLOCK"
+    T_BLOCK_LABEL = "T_BLOCK_LABEL"
     T_LIST = "T_LIST"
     T_OBJECT = "T_OBJECT"
+    T_TUPLE = "T_TUPLE" # immutable list
+    T_RECORD = "T_RECORD" # immutable object
     T_PREFIX = "T_PREFIX"
     T_POSTFIX = "T_POSTFIX"
     T_BINARY = "T_BINARY"

@@ -87,9 +87,31 @@ class TransformGrouping(TransformBase):
                 else:
                     ref = self._isObject(child)
                     if ref is not None:
+                        # in some cases convert the invalid object
+                        # into a block label.
+                        if token.type == Token.T_BINARY and token.value == ":" and len(token.children) == 2:
+
+                            lhs, rhs = token.children
+
+                            if parent.type == Token.T_OBJECT:
+                                parent.type = Token.T_BLOCK
+
+                            if parent.type == Token.T_BLOCK or parent.type == Token.T_MODULE:
+                                if rhs.type == Token.T_GROUPING:
+                                    rhs.type = Token.T_BLOCK
+
+                                index = parent.children.index(token)
+                                parent.children.insert(index+1, rhs)
+
+                                token.type = Token.T_BLOCK_LABEL
+                                token.value = lhs.value
+                                token.children = []
+
+                                continue
+
                         print("\n%s:"%ref)
-                        print(parent.type, parent.value)
-                        print(token.type, token.value)
+                        print("parent", parent.type, parent.value)
+                        print("token", token.type, token.value)
                         print(parent.toString(3))
                         raise ref
                     child.type = Token.T_OBJECT
@@ -136,8 +158,10 @@ class TransformFlatten(TransformBase):
             raise TokenError(token, "invalid grouping node: " + token.value)
 
         if token.type == Token.T_OBJECT or \
+           token.type == Token.T_RECORD or \
            token.type == Token.T_ARGLIST or \
            token.type == Token.T_LIST or \
+           token.type == Token.T_TUPLE or \
            token.type == Token.T_UNPACK_SEQUENCE or \
            token.type == Token.T_UNPACK_OBJECT or \
            token.type == Token.T_GROUPING or \
@@ -156,7 +180,7 @@ class TransformFlatten(TransformBase):
                 else:
                     index += 1
 
-            if token.type == Token.T_OBJECT or token.type == Token.T_UNPACK_OBJECT:
+            if token.type in (Token.T_OBJECT, Token.T_UNPACK_OBJECT, Token.T_RECORD):
                 self._objectKeyFix(token)
 
     def _objectKeyFix(self, token):
@@ -350,7 +374,7 @@ class TransformExtractStyleSheet(TransformBase):
         if len(arglist.children) == 1:
             arg0 = arglist.children[0]
 
-            if arg0.type != Token.T_OBJECT:
+            if arg0.type not in (Token.T_OBJECT, Token.T_RECORD):
                 return False
 
             return self._extract_stylesheet(style_name, token, arg0)
@@ -459,7 +483,7 @@ class TransformExtractStyleSheet(TransformBase):
                     rhs_value = py_ast.literal_eval(rhs.value)
                 elif rhs.type == Token.T_NUMBER:
                     rhs_value = rhs.value
-                elif rhs.type == Token.T_OBJECT:
+                elif rhs.type == Token.T_OBJECT or rhs.type == Token.T_RECORD:
 
                     if lhs_value is not None:
                         obj.update(self._object2style_helper(prefix + lhs_value + "-", rhs))
@@ -1278,6 +1302,7 @@ class TransformAssignScope(object):
             Token.T_TEXT: self.visit_text,
             Token.T_VAR: self.visit_var,
             Token.T_OBJECT: self.visit_object,
+            Token.T_RECORD: self.visit_object,
             Token.T_BINARY: self.visit_binary,
             Token.T_PYIMPORT: self.visit_pyimport,
             Token.T_EXPORT: self.visit_export,
@@ -1818,7 +1843,7 @@ class TransformAssignScope(object):
         if token.value != ":":
             return
 
-        if not parent or parent.type not in (Token.T_OBJECT, Token.T_UNPACK_OBJECT):
+        if not parent or parent.type not in (Token.T_OBJECT, Token.T_UNPACK_OBJECT, Token.T_RECORD):
             return
 
         # handle the case where :: {foo: 0}
@@ -2838,10 +2863,7 @@ def main_unpack():
         //let [a, b] = 0
         //[b, a] = [a, b]
 
-        //String.raw`foo\n` === "foo\\n"
-
-        foo`foo`
-
+        ({x=1})=>({x,})
 
     """
 

@@ -54,7 +54,7 @@ def isctrlflow(child):
     returns true when there is no reason to place a semicolon
     after the production of the given token
     """
-    if child.type == Token.T_BLOCK:
+    if child.type == Token.T_BLOCK or child.type == Token.T_BLOCK_LABEL:
         return True
     elif child.type in (Token.T_BRANCH, Token.T_FOR_IN, Token.T_FOR_OF, Token.T_FOR):
         return True
@@ -234,7 +234,7 @@ class Formatter(object):
                     seq.append((depth + 1, None, child))
                     insert = True
                 seq.append((depth, Token.T_OBJECT, token.value[0]))
-            elif token.type in (Token.T_OBJECT, Token.T_LIST, Token.T_GROUPING, Token.T_ARGLIST):
+            elif token.type in (Token.T_OBJECT, Token.T_LIST, Token.T_TUPLE, Token.T_RECORD, Token.T_GROUPING, Token.T_ARGLIST):
                 # commas are implied between clauses
                 if len(token.value)!=2:
                     token.value = '[]'
@@ -246,7 +246,16 @@ class Formatter(object):
                         seq.append((depth, Token.T_SPECIAL, ","))
                     seq.append((depth + 1, None, child))
                     insert = True
-                seq.append((depth, Token.T_SPECIAL, token.value[0]))
+
+                if token.type in (Token.T_TUPLE, Token.T_RECORD):
+                    seq.append((depth, Token.T_SPECIAL, "#" + token.value[0]))
+                else:
+                    seq.append((depth, Token.T_SPECIAL, token.value[0]))
+            elif token.type == Token.T_BLOCK_LABEL:
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+                seq.append((depth, Token.T_SPECIAL, ":"))
+                seq.append((depth, Token.T_TEXT, token.value))
             elif token.type == Token.T_UNPACK_SEQUENCE:
                 # commas are implied between clauses
                 seq.append((depth, Token.T_SPECIAL, token.value[1]))
@@ -303,7 +312,6 @@ class Formatter(object):
                             seq.append((depth, Token.T_SPECIAL, ","))
                         seq.append((depth, None, child))
                         first = False
-
             elif token.type in (Token.T_TEXT, Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR, Token.T_FREE_VAR):
 
                 out.append((depth, token.type, token.value))
@@ -336,13 +344,11 @@ class Formatter(object):
             elif token.type == Token.T_KEYWORD:
 
                 out.append((depth, token.type, token.value))
-
             elif token.type == Token.T_STATIC_PROPERTY:
 
                 out.append((depth, token.type, token.value))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
-
             elif token.type == Token.T_OPTIONAL_CHAINING:
                 if len(token.children) == 2:
                     lhs, rhs = token.children
@@ -580,7 +586,13 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE:
 
+                # a break statement may be followed by an identifer
+                # other constructs and continue are support by accident
+                for child in reversed(token.children):
+                    seq.append((depth, child.type, child.value))
+
                 out.append((depth,token.type, token.value))
+
             elif token.type == Token.T_RETURN:
                 for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
@@ -607,6 +619,7 @@ class Formatter(object):
                 pass # compiler only
             else:
                 raise FormatError(token, "token not supported: %s" % token.type)
+
         return out
 
 def main():  # pragma: no cover
@@ -623,6 +636,14 @@ def main():  # pragma: no cover
 
     text1 = """
     class C {static p = 123}
+    """
+
+    text1 = """
+        ()=>{
+            ident: {
+                break ident;
+            }
+        }
     """
 
     tokens = Lexer().lex(text1)

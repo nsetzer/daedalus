@@ -716,7 +716,6 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-
     def test_001_optional_chaining_attr_a(self):
         self._chkeq("a ?. b", "((a)||{}).b")
 
@@ -1046,7 +1045,6 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-
     def test_001_destructure_object_default_minify(self):
         text = """
             var {x, y=1} = getToken()
@@ -1362,7 +1360,6 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-
     def test_001_custom_iterator(self):
 
         text = """
@@ -1395,8 +1392,39 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_tuple(self):
+        self._chkeq("""
+            x = #[1,,3]
+        """, "x=#[1,,3]")
 
+    def test_001_record(self):
+        self._chkeq("""
+            x = #{'x':1}
+        """, "x=#{'x':1}")
 
+    def test_001_labeled_block(self):
+        self._chkeq("""
+            ident: {
+                break ident;
+            }
+        """, "ident:{break ident}")
+
+    def test_001_labeled_block_2(self):
+        self._chkeq("""
+            ()=>{
+                ident: {
+                    break ident;
+                }
+            }
+        """, "()=>{ident:{break ident}}")
+
+    def test_001_labeled_block_3(self):
+        self._chkeq("""
+            label:
+            while (True) {
+                break label;
+            }
+        """, "label:while(True){break label}")
 
 class FormatterStressTestCase(unittest.TestCase):
 

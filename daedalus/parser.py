@@ -210,8 +210,7 @@ class Parser(ParserBase):
         R2L = -1
 
         self.precedence = [
-            # hash is a proposed feature for private members
-            #(R2L, self.visit_unary_prefix, ['#']),
+            (R2L, self.visit_mutable_prefix, ['#']),
             (L2R, self.visit_attr, ['.', "?."]),  # also: x[], x()
             (L2R, self.visit_new, []),
             (L2R, self.visit_unary_postfix, ['++', '--']),
@@ -244,7 +243,7 @@ class Parser(ParserBase):
             #(L2R, self.visit_binary, ["in", "of"]),
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
-            (L2R, self.visit_binary, [':']),
+            (L2R, self.visit_colon, [':']),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_keyword, []),
@@ -366,7 +365,7 @@ class Parser(ParserBase):
         self._offset is reset on ever call, and should be cached
         """
 
-        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "function*", "class", "catch")
+        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "function*", "class", "catch", "undefined")
         self._offset = 0
         index_tok1 = index + direction
         while 0 <= index_tok1 < len(tokens):
@@ -680,6 +679,28 @@ class Parser(ParserBase):
 
         return 1
 
+    def visit_mutable_prefix(self, parent, tokens, index, operators):
+
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL) or \
+           token.value not in operators:
+            return 1
+
+        i2 = self.peek_token(tokens, token, index, 1)
+
+        if i2 is not None:
+            next = tokens[i2]
+            if next.type == Token.T_GROUPING:
+                if next.value == "[]":
+                    next.type = Token.T_TUPLE
+                elif next.value == "{}":
+                    next.type = Token.T_RECORD
+                tokens.pop(index)
+                return 0
+
+        return 1
+
     def visit_unary_postfix(self, parent, tokens, index, operators):
         """
         handle postfix increment and decrement
@@ -874,6 +895,57 @@ class Parser(ParserBase):
         elif token.value == '||':
             token.type = Token.T_LOGICAL_OR
         else:
+            token.type = Token.T_BINARY
+
+        return self._offset
+
+    def visit_colon(self, parent, tokens, index, operators):
+        """
+        parse colon separated pairs,
+        in certain cases this can be parsed as a block label instead
+
+        in other cases the binary result may be transformed into
+        a block label if the object test transform fails later on.
+
+        produce:
+
+            T_BINARY<:>
+                <expr_lhs>
+                <expr_rhs>
+
+            T_BLOCK_LABEL
+                <ident>
+        """
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+
+        idx = self.peek_token(tokens, token, index, 1)
+        rhs = None
+        if idx is not None:
+            if tokens[idx].type == Token.T_KEYWORD:
+                try:
+                    rhs = self.consume(tokens, token, index, 1)
+                except ParseError:
+                    rhs = None
+
+                #if tokens[idx].value in 'null'
+                pass
+            else:
+                rhs = self.consume(tokens, token, index, 1)
+
+        lhs = self.consume(tokens, token, index, -1)
+
+        if rhs is None:
+            token.children = []
+            token.type = Token.T_BLOCK_LABEL
+            token.value = lhs.value
+        else:
+            token.children.append(lhs)
+            token.children.append(rhs)
             token.type = Token.T_BINARY
 
         return self._offset
@@ -1265,6 +1337,11 @@ class Parser(ParserBase):
     def collect_keyword_break(self, tokens, index):
         token = tokens[index]
         token.type = Token.T_BREAK
+
+        i1 = self.peek_token(tokens, token, index, 1)
+        if i1 is not None and tokens[i1].type == Token.T_TEXT:
+            rhs = self.consume(tokens, token, index, 1)
+            token.children = [rhs]
 
     def collect_keyword_continue(self, tokens, index):
         token = tokens[index]
@@ -2062,6 +2139,15 @@ def main():  # pragma: no cover
     text1 = "x.f`x`"
     text1 = "export let x=1,y=2"
     text1 = "{[0](){}}"
+    text1 = "let x = #[1,,3]"
+    text1 = "0xfor"
+    text1 = """
+    x = undefined
+        label:
+            while (True) {
+                break label;
+            }
+    """
     print("="* 79)
     print(text1)
     print("="* 79)
