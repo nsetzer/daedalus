@@ -517,8 +517,10 @@ export class DraggableList extends DomElement {
         if (!!this.attrs.draggingEle) {
             // previous drag did not complete. cancel that drag and ignore
             // this event
+            console.error("running drag cancel because previous did not finish")
             this.handleChildDragCancel();
-            return;
+
+            //return;
         }
 
         let evt = (event?.touches || event?.originalEvent?.touches)
@@ -526,8 +528,10 @@ export class DraggableList extends DomElement {
             event = evt[0]
         }
 
-        // TODO: function whic uses getDomNode() and reproduces the following
+        // TODO: function which uses getDomNode() and reproduces the following
         //       allow for a button within the element to begin the drag
+
+        console.error("begin drag")
 
         this.attrs.draggingEle = child.getDomNode();
         this.attrs.indexStart = childIndex(this.attrs.draggingEle)
@@ -615,8 +619,13 @@ export class DraggableList extends DomElement {
     }
 
     handleChildDragEnd(child, event) {
-        if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
-            return;
+        if (this.attrs.draggingEle && this.attrs.draggingEle===child.getDomNode()) {
+
+            // todo: update the model
+            // the children will need to be updated to reflect reality
+            const indexEnd = childIndex(this.attrs.draggingEle)
+            console.log(`end move ${this.attrs.indexStart} to ${indexEnd}`)
+            this.updateModel(this.attrs.indexStart, indexEnd)
         }
 
         this.handleChildDragCancel();
@@ -626,27 +635,47 @@ export class DraggableList extends DomElement {
         // Remove the placeholder
         this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
 
-        this.attrs.draggingEle.style.removeProperty('top');
-        this.attrs.draggingEle.style.removeProperty('left');
-        this.attrs.draggingEle.style.removeProperty('position');
-
-        // todo: update the model
-        // the children will need to be updated to reflect reality
-        const indexEnd = childIndex(this.attrs.draggingEle)
-
-        this.updateModel(this.attrs.indexStart, indexEnd)
+        if (this.attrs.draggingEle) {
+            this.attrs.draggingEle.style.removeProperty('top');
+            this.attrs.draggingEle.style.removeProperty('left');
+            this.attrs.draggingEle.style.removeProperty('position');
+        }
 
         this.attrs.x = null;
         this.attrs.y = null;
         this.attrs.draggingEle = null;
         this.attrs.isDraggingStarted = false;
+        this.attrs.placeholder = null;
+        this.attrs.indexStart = -1;
+        console.error("cancel")
     }
-
 
     updateModel(indexStart, indexEnd) {
         // no reason to call update() since the DOM is already correct
         // it is the virtual DOM that is out of date
         this.children.splice(indexEnd, 0, this.children.splice(indexStart, 1)[0]);
         //console.log(this.children.map(child => child.children[1].getText()))
+    }
+
+    debugString() {
+
+        let str = ""
+
+        if (this.attrs.isDraggingStarted) {
+            str += " dragging"
+        } else {
+            str += " not dragging"
+        }
+
+        if (this.attrs.draggingEle) {
+            str += 'elem'
+        }
+
+        if (this.attrs.x || this.attrs.y) {
+            str += ` x:${this.attrs.x}, y:${this.attrs.y}`
+        }
+
+        return str
+
     }
 }
