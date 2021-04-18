@@ -499,6 +499,7 @@ export class DraggableList extends DomElement {
             isDraggingStarted: false,
             indexStart: -1,
             lockX: true, // prevent moving in the x direction
+            swipeScrollTimer: null
         }
     }
 
@@ -531,8 +532,6 @@ export class DraggableList extends DomElement {
         // TODO: function which uses getDomNode() and reproduces the following
         //       allow for a button within the element to begin the drag
 
-        console.error("begin drag")
-
         this.attrs.draggingEle = child.getDomNode();
         this.attrs.indexStart = childIndex(this.attrs.draggingEle)
 
@@ -543,18 +542,7 @@ export class DraggableList extends DomElement {
         this.attrs.y = event.pageY - rect.top;
     }
 
-    handleChildDragMove(child, event) {
-        if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
-            return;
-        }
-
-        event.preventDefault()
-
-        let evt = (event?.touches || event?.originalEvent?.touches)
-        if (evt) {
-            event = evt[0]
-        }
-
+    handleChildDragMoveImpl(pageX, pageY) {
         const draggingRect = this.attrs.draggingEle.getBoundingClientRect();
 
         if (!this.attrs.isDraggingStarted) {
@@ -577,13 +565,14 @@ export class DraggableList extends DomElement {
         //the original equation, which does not support scrolling is
         //  let ypos = event.pageY - this.attrs.y
         // this fixed version may not allways work
-        let ypos = event.pageY - this.attrs.y + window.scrollY
+        //let ypos = pageY - this.attrs.y + window.scrollY
+        let ypos = pageY - (this.attrs.draggingEle.clientHeight/2)
         //if (ypos > top && ypos < bot) {}
         this.attrs.draggingEle.style.top = `${ypos}px`;
 
 
         if (!this.attrs.lockX) {
-            this.attrs.draggingEle.style.left = `${event.pageX - this.attrs.x}px`;
+            this.attrs.draggingEle.style.left = `${pageX - this.attrs.x}px`;
         }
 
         // The current order
@@ -618,6 +607,30 @@ export class DraggableList extends DomElement {
         }
     }
 
+    handleChildDragMove(child, event) {
+        if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
+            return;
+        }
+
+        event.preventDefault()
+
+        let evt = (event?.touches || event?.originalEvent?.touches)
+        if (evt) {
+            event = evt[0]
+        }
+
+        let x = Math.floor(event.pageX)
+        let y = Math.floor(event.pageY)
+
+        if (this.attrs._px !== x || this.attrs._py !== y) {
+            this.attrs._px = x
+            this.attrs._py = y
+            return this.handleChildDragMoveImpl(x, y)
+        }
+
+
+    }
+
     handleChildDragEnd(child, event) {
         if (this.attrs.draggingEle && this.attrs.draggingEle===child.getDomNode()) {
 
@@ -639,6 +652,11 @@ export class DraggableList extends DomElement {
             this.attrs.draggingEle.style.removeProperty('top');
             this.attrs.draggingEle.style.removeProperty('left');
             this.attrs.draggingEle.style.removeProperty('position');
+        }
+
+        if (this.attrs.swipeScrollTimer !== null){
+            clearInterval(this.attrs.swipeScrollTimer)
+            this.attrs.swipeScrollTimer = null
         }
 
         this.attrs.x = null;
