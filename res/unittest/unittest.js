@@ -1,6 +1,6 @@
 
 
-import daedalus
+import module daedalus
 
 const unit_tests = []
 
@@ -114,6 +114,7 @@ export class UnitTestRoot extends daedalus.DomElement {
                 nodes.forEach(node => {
                     pre.appendChild(new daedalus.TextElement(node))
                     pre.appendChild(new daedalus.DomElement("br", {}, []))
+
                 })
             }
         })

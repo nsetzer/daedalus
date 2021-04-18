@@ -217,7 +217,7 @@ class Parser(ParserBase):
             (R2L, self.visit_unary_prefix, ['!', '~', '+', '-', '++', '--']),
             (R2L, self.visit_prefix, ['typeof', 'void', 'delete', 'await']),
             (R2L, self.visit_binary, ['**']),
-            (L2R, self.visit_binary, ['*', '/', '%']),
+            (L2R, self.visit_math_mul, ['*', '/', '%']),
             (L2R, self.visit_binary, ['+', '-']),
             (L2R, self.visit_binary, ['<<', '>>', ">>>"]),
             #(L2R, self.visit_binary, ['<', '<=', ">", ">=", "in", "of", "instanceof"]),
@@ -864,14 +864,14 @@ class Parser(ParserBase):
         # special case for the in keyword which appears after a
         # variable definition, which is only legal inside a for loop
         # 'of' is not treated as a keyword and avoids this fate
-        if token.value == 'in':
-            i1 = self.peek_token(tokens, token, index, -1)
-            if i1 is not None:
-                i2 = self.peek_keyword(tokens, token, i1, -1)
-                if i2 is not None:
-                    tok2 = tokens[i2]
-                    if tok2.type == Token.T_KEYWORD and tok2.value in ('constexpr', 'const', 'let', 'var'):
-                        return 1
+        #if token.value == 'in':
+        #    i1 = self.peek_token(tokens, token, index, -1)
+        #    if i1 is not None:
+        #        i2 = self.peek_keyword(tokens, token, i1, -1)
+        #        if i2 is not None:
+        #            tok2 = tokens[i2]
+        #            if tok2.type == Token.T_KEYWORD and tok2.value in ('constexpr', 'const', 'let', 'var'):
+        #                return 1
 
         if token.value == '*':
             # for javascript style module imports
@@ -898,6 +898,43 @@ class Parser(ParserBase):
             token.type = Token.T_BINARY
 
         return self._offset
+
+    def visit_math_mul(self, parent, tokens, index, operators):
+        """
+        handle binary operators
+
+        produce:
+
+            T_BINARY
+                <expr_lhs>
+                <expr_rhs>
+        """
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+        if token.value == '*':
+            # for javascript style module imports
+            #   import * as alias from path
+            #   detect `import *` and skip
+            i1 = self.peek_keyword(tokens, token, index, -1)
+            if i1 is not None:
+                tok1 = tokens[i1]
+                if tok1.type == Token.T_KEYWORD and tok1.value == 'import':
+                    return 1
+
+        rhs = self.consume(tokens, token, index, 1)
+        lhs = self.consume(tokens, token, index, -1)
+        token.children.append(lhs)
+        token.children.append(rhs)
+
+
+        token.type = Token.T_BINARY
+
+        return self._offset
+
 
     def visit_colon(self, parent, tokens, index, operators):
         """

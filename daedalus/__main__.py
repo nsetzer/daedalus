@@ -4,6 +4,7 @@ import sys
 import argparse
 import logging
 import time
+import cProfile
 
 from .builder import Builder
 from .server import SampleServer
@@ -141,6 +142,36 @@ class BuildCLI(CLI):
 
         copy_staticdir(staticdir, outdir)
         copy_favicon(builder, outdir)
+
+class BuildProfileCLI(CLI):
+    """
+    compile a js and html file for production use
+    """
+
+    def register(self, parser):
+
+        subparser = parser.add_parser('build-profile',
+            help="run build with cProfile enabled")
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--onefile', action='store_true')
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('--static', type=str, default=None)
+        subparser.add_argument('index_js')
+        subparser.add_argument('out')
+
+    def execute(self, args):
+
+        cProfile.runctx(
+            "cli.execute(args)",
+            {"cli": BuildCLI(), "args": args},
+            {},
+            filename=None,
+            sort='cumtime')
+
 
 class ServeCLI(CLI):
 
@@ -313,6 +344,7 @@ class RunCLI(CLI):
 def register_parsers(parser):
 
     BuildCLI().register(parser)
+    BuildProfileCLI().register(parser)
     ServeCLI().register(parser)
     FormatCLI().register(parser)
     if enable_compiler:

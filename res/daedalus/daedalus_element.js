@@ -636,9 +636,8 @@ export class DraggableList extends DomElement {
 
             // todo: update the model
             // the children will need to be updated to reflect reality
-            const indexEnd = childIndex(this.attrs.draggingEle)
-            console.log(`end move ${this.attrs.indexStart} to ${indexEnd}`)
-            this.updateModel(this.attrs.indexStart, indexEnd)
+
+
         }
 
         this.handleChildDragCancel();
@@ -647,6 +646,10 @@ export class DraggableList extends DomElement {
     handleChildDragCancel() {
         // Remove the placeholder
         this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
+
+        const indexEnd = childIndex(this.attrs.draggingEle)
+        console.log(`end move ${this.attrs.indexStart} to ${indexEnd}`)
+        this.updateModel(this.attrs.indexStart, indexEnd)
 
         if (this.attrs.draggingEle) {
             this.attrs.draggingEle.style.removeProperty('top');

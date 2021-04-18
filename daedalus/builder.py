@@ -342,7 +342,8 @@ class JsFile(object):
                 if self.source_type != 2:
                     sys.stdout.write("warning: include found in file that is not a daedalus module\n")
 
-                self.imports[literal_eval(token.children[0].value)] = []
+                name = literal_eval(token.children[0].value)
+                self.imports[name] = []
 
                 ast.children.pop(0)
 
