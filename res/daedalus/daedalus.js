@@ -380,6 +380,7 @@ function createDomNode(fiber) {
             dom[key] = fiber.props[key];
         })
 
+    dom._fiber = fiber
     return dom
 }
 
@@ -394,6 +395,8 @@ function updateDomNode(fiber) {
         console.log("fiber does not contain a dom")
         return
     }
+
+    dom._fiber = fiber
 
     if (fiber.oldIndex != fiber.index && parentDom) {
         // TODO: this will fail if there is a move and a delete or insert

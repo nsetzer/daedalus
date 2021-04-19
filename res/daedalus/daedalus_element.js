@@ -423,6 +423,9 @@ function isAbove(nodeA, nodeB) {
 };
 
 function childIndex(node) {
+    if (node===null) {
+        return 0
+    }
     let count = 0;
     while( (node = node.previousSibling) != null ) {
       count++;
@@ -533,6 +536,7 @@ export class DraggableList extends DomElement {
         //       allow for a button within the element to begin the drag
 
         this.attrs.draggingEle = child.getDomNode();
+        this.attrs.draggingChild = child
         this.attrs.indexStart = childIndex(this.attrs.draggingEle)
 
         if (this.attrs.indexStart < 0) {
@@ -604,12 +608,14 @@ export class DraggableList extends DomElement {
             // prevEle              -> placeholder
             // draggingEle          -> draggingEle
             // placeholder          -> prevEle
-            const a = childIndex(prevEle)
-            const b = childIndex(this.attrs.draggingEle)
-            const c = childIndex(this.attrs.placeholder)
+
             swap(this.attrs.placeholder, this.attrs.draggingEle);
             swap(this.attrs.placeholder, prevEle);
-            console.error(`swap prev ${a} ${b} ${c}`)
+
+            const a = childIndex(prevEle) - 1
+            const b = childIndex(this.attrs.draggingEle)
+            prevEle._fiber.element.setIndex(a)
+            this.attrs.draggingEle._fiber.element.setIndex(b)
         }
 
         // The dragging element is below the next element
@@ -619,12 +625,14 @@ export class DraggableList extends DomElement {
             // draggingEle          -> nextEle
             // placeholder          -> placeholder
             // nextEle              -> draggingEle
-            const a = childIndex(prevEle)
-            const b = childIndex(this.attrs.draggingEle)
-            const c = childIndex(this.attrs.placeholder)
+
             swap(nextEle, this.attrs.placeholder);
             swap(nextEle, this.attrs.draggingEle);
-            console.error(`swap next ${a} ${b} ${c}`)
+
+            const a = childIndex(nextEle)
+            const b = childIndex(this.attrs.draggingEle)
+            nextEle._fiber.element.setIndex(a)
+            this.attrs.draggingEle._fiber.element.setIndex(b)
         }
     }
 
