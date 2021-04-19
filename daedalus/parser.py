@@ -899,6 +899,42 @@ class Parser(ParserBase):
 
         return self._offset
 
+    def visit_in_of(self, parent, tokens, index, operators):
+        """
+        handle binary operators
+
+        produce:
+
+            T_BINARY
+                <expr_lhs>
+                <expr_rhs>
+        """
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+        # special case for the in keyword which appears after a
+        # variable definition, which is only legal inside a for loop
+        # 'of' is not treated as a keyword and avoids this fate
+        if token.value == 'in':
+            i1 = self.peek_token(tokens, token, index, -1)
+            if i1 is not None:
+                i2 = self.peek_keyword(tokens, token, i1, -1)
+                if i2 is not None:
+                    tok2 = tokens[i2]
+                    if tok2.type == Token.T_KEYWORD and tok2.value in ('constexpr', 'const', 'let', 'var'):
+                        return 1
+
+        rhs = self.consume(tokens, token, index, 1)
+        lhs = self.consume(tokens, token, index, -1)
+        token.children.append(lhs)
+        token.children.append(rhs)
+        token.type = Token.T_BINARY
+
+        return self._offset
+
     def visit_math_mul(self, parent, tokens, index, operators):
         """
         handle binary operators
@@ -995,7 +1031,7 @@ class Parser(ParserBase):
         collect binary operators Right-To-Left
         """
         if tokens[index].type == 'T_KEYWORD' and (tokens[index].value == 'in' or tokens[index].value == 'of'):
-            return self.visit_binary(parent, tokens, index, ['in', 'of'])
+            return self.visit_in_of(parent, tokens, index, ['in', 'of'])
         elif tokens[index].type == 'T_SPECIAL' and tokens[index].value == '?':
             return self.visit_ternary(parent, tokens, index, ['?'])
         elif tokens[index].type == 'T_SPECIAL' and tokens[index].value == '=>':

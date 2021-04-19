@@ -535,6 +535,15 @@ export class DraggableList extends DomElement {
         this.attrs.draggingEle = child.getDomNode();
         this.attrs.indexStart = childIndex(this.attrs.draggingEle)
 
+        if (this.attrs.indexStart < 0) {
+            console.error("drag begin failed for child")
+            this.attrs.draggingEle = null
+            this.attrs.indexStart = -1
+            return
+        } else {
+            console.log("initiate drag at index " + this.attrs.indexStart)
+        }
+
         // Calculate the mouse position
         const rect = this.attrs.draggingEle.getBoundingClientRect();
         this.attrs.x = event.clientX - rect.left;
@@ -544,6 +553,11 @@ export class DraggableList extends DomElement {
 
     handleChildDragMoveImpl(pageX, pageY) {
         const draggingRect = this.attrs.draggingEle.getBoundingClientRect();
+
+        if (this.attrs.indexStart < 0) {
+            console.error("drag move failed for child")
+            return
+        }
 
         if (!this.attrs.isDraggingStarted) {
             this.attrs.isDraggingStarted = true;
@@ -590,20 +604,27 @@ export class DraggableList extends DomElement {
             // prevEle              -> placeholder
             // draggingEle          -> draggingEle
             // placeholder          -> prevEle
+            const a = childIndex(prevEle)
+            const b = childIndex(this.attrs.draggingEle)
+            const c = childIndex(this.attrs.placeholder)
             swap(this.attrs.placeholder, this.attrs.draggingEle);
             swap(this.attrs.placeholder, prevEle);
-            return;
+            console.error(`swap prev ${a} ${b} ${c}`)
         }
 
         // The dragging element is below the next element
         // User moves the dragging element to the bottom
-        if (nextEle && isAbove(nextEle, this.attrs.draggingEle)) {
+        else if (nextEle && isAbove(nextEle, this.attrs.draggingEle)) {
             // The current order    -> The new order
             // draggingEle          -> nextEle
             // placeholder          -> placeholder
             // nextEle              -> draggingEle
+            const a = childIndex(prevEle)
+            const b = childIndex(this.attrs.draggingEle)
+            const c = childIndex(this.attrs.placeholder)
             swap(nextEle, this.attrs.placeholder);
             swap(nextEle, this.attrs.draggingEle);
+            console.error(`swap next ${a} ${b} ${c}`)
         }
     }
 
@@ -632,24 +653,23 @@ export class DraggableList extends DomElement {
     }
 
     handleChildDragEnd(child, event) {
-        if (this.attrs.draggingEle && this.attrs.draggingEle===child.getDomNode()) {
-
-            // todo: update the model
-            // the children will need to be updated to reflect reality
-
-
-        }
+        //if (this.attrs.draggingEle && this.attrs.draggingEle===child.getDomNode()) {
+        //    // todo: update the model
+        //    // the children will need to be updated to reflect reality
+        //}
 
         this.handleChildDragCancel();
     }
 
-    handleChildDragCancel() {
+    handleChildDragCancel(doUpdate=true) {
         // Remove the placeholder
         this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
 
         const indexEnd = childIndex(this.attrs.draggingEle)
         console.log(`end move ${this.attrs.indexStart} to ${indexEnd}`)
-        this.updateModel(this.attrs.indexStart, indexEnd)
+        if (this.attrs.indexStart >= 0 && this.attrs.indexStart !== indexEnd) {
+            this.updateModel(this.attrs.indexStart, indexEnd)
+        }
 
         if (this.attrs.draggingEle) {
             this.attrs.draggingEle.style.removeProperty('top');
