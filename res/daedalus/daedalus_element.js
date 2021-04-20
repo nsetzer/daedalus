@@ -419,7 +419,10 @@ function isAbove(nodeA, nodeB) {
     const rectA = nodeA.getBoundingClientRect();
     const rectB = nodeB.getBoundingClientRect();
 
-    return (rectA.top + rectA.height / 2 < rectB.top + rectB.height / 2);
+    const a = rectA.top + rectA.height / 2;
+    const b = rectB.top + rectB.height / 2;
+
+    return a < b;
 };
 
 function childIndex(node) {
@@ -544,8 +547,6 @@ export class DraggableList extends DomElement {
             this.attrs.draggingEle = null
             this.attrs.indexStart = -1
             return
-        } else {
-            console.log("initiate drag at index " + this.attrs.indexStart)
         }
 
         // Calculate the mouse position
@@ -571,7 +572,8 @@ export class DraggableList extends DomElement {
             this.attrs.placeholder = document.createElement('div');
             this.attrs.placeholder.classList.add(this.attrs.placeholderClassName);
             this.attrs.draggingEle.parentNode.insertBefore(this.attrs.placeholder, this.attrs.draggingEle.nextSibling);
-            this.attrs.placeholder.style.height = `${draggingRect.height}px`;
+            //this.attrs.placeholder.style.height = `${draggingRect.height}px`;
+            this.attrs.placeholder.style.height = `${this.attrs.draggingEle.clientHeight}px`;
         }
 
         this.attrs.draggingEle.style.position = 'absolute';
@@ -656,8 +658,6 @@ export class DraggableList extends DomElement {
             this.attrs._py = y
             return this.handleChildDragMoveImpl(x, y)
         }
-
-
     }
 
     handleChildDragEnd(child, event) {
@@ -674,7 +674,6 @@ export class DraggableList extends DomElement {
         this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
 
         const indexEnd = childIndex(this.attrs.draggingEle)
-        console.log(`end move ${this.attrs.indexStart} to ${indexEnd}`)
         if (this.attrs.indexStart >= 0 && this.attrs.indexStart !== indexEnd) {
             this.updateModel(this.attrs.indexStart, indexEnd)
         }
