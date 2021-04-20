@@ -519,7 +519,7 @@ export class DraggableList extends DomElement {
      */
     handleChildDragBegin(child, event) {
 
-        event.preventDefault()
+        //event.preventDefault()
 
         if (!!this.attrs.draggingEle) {
             // previous drag did not complete. cancel that drag and ignore
@@ -554,6 +554,10 @@ export class DraggableList extends DomElement {
         this.attrs.x = event.clientX - rect.left;
         //this.attrs.y = event.clientY - rect.top;
         this.attrs.y = event.pageY - rect.top;
+        this.attrs.eventSource = child
+        console.log("set event source")
+
+        //event.stopPropagation()
     }
 
     handleChildDragMoveImpl(pageX, pageY) {
@@ -638,6 +642,57 @@ export class DraggableList extends DomElement {
         }
     }
 
+    _handleAutoScroll(dy) {
+
+        const rate = 15
+
+        const step = dy = rate * dy
+
+        let _y = window.pageYOffset;
+        window.scrollBy(0, step);
+
+        if (_y != window.pageYOffset) {
+
+            let total_step = window.pageYOffset - _y
+
+            this.attrs.y += total_step
+            this.attrs.autoScrollY += total_step
+
+            this.handleChildDragMoveImpl(
+                this.attrs.autoScrollX,
+                this.attrs.autoScrollY);
+        }
+    }
+
+    _handleChildDragAutoScroll(evt) {
+        let node = this.getDomNode()
+        let top = Math.floor(window.pageYOffset) //+ node.offsetTop
+        let bot = Math.floor(top + window.innerHeight - node.offsetTop)
+        let y = Math.floor(evt.pageY - node.offsetTop)
+        let h = this.attrs.draggingEle.clientHeight
+
+        if (y < top + h*2) {
+            this.attrs.autoScrollX = Math.floor(evt.pageX)
+            this.attrs.autoScrollY = Math.floor(evt.pageY)
+            if (this.attrs.swipeScrollTimer === null) {
+                this.attrs.swipeScrollTimer = setInterval(()=>{
+                    this._handleAutoScroll(-1)}, 33)
+            }
+
+        } else if (y > bot - h*2) {
+            this.attrs.autoScrollX = Math.floor(evt.pageX)
+            this.attrs.autoScrollY = Math.floor(evt.pageY)
+            if (this.attrs.swipeScrollTimer === null) {
+                this.attrs.swipeScrollTimer = setInterval(()=>{
+                    this._handleAutoScroll(1)}, 33)
+            }
+        } else if (this.attrs.swipeScrollTimer !== null) {
+            clearInterval(this.attrs.swipeScrollTimer)
+            this.attrs.swipeScrollTimer = null
+        }
+    }
+
+
     handleChildDragMove(child, event) {
         if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
             return;
@@ -649,6 +704,8 @@ export class DraggableList extends DomElement {
         if (evt) {
             event = evt[0]
         }
+
+        this._handleChildDragAutoScroll(event)
 
         let x = Math.floor(event.pageX)
         let y = Math.floor(event.pageY)
