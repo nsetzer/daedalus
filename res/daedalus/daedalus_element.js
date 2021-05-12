@@ -358,7 +358,6 @@ export class TextInputElement extends DomElement {
 
         if (event.key == "Enter") {
             if (this.attrs.submit_callback) {
-                console.log("enter: " + this.getText())
                 this.attrs.submit_callback(this.getText())
             }
         }
@@ -505,7 +504,7 @@ export class DraggableList extends DomElement {
             isDraggingStarted: false,
             indexStart: -1,
             lockX: true, // prevent moving in the x direction
-            swipeScrollTimer: null
+            swipeScrollTimer: null,
         }
     }
 
@@ -553,14 +552,14 @@ export class DraggableList extends DomElement {
         const rect = this.attrs.draggingEle.getBoundingClientRect();
         this.attrs.x = event.clientX - rect.left;
         //this.attrs.y = event.clientY - rect.top;
-        this.attrs.y = event.pageY - rect.top;
+        this.attrs.y = event.pageY + window.scrollY//- rect.top ;
         this.attrs.eventSource = child
-        console.log("set event source")
-
-        //event.stopPropagation()
     }
 
     handleChildDragMoveImpl(pageX, pageY) {
+        const rect = this.attrs.draggingEle.parentNode.getBoundingClientRect();
+        pageY -= rect.top + window.scrollY
+
         const draggingRect = this.attrs.draggingEle.getBoundingClientRect();
 
         if (this.attrs.indexStart < 0) {
@@ -646,7 +645,7 @@ export class DraggableList extends DomElement {
 
         const rate = 15
 
-        const step = dy = rate * dy
+        const step = rate * dy
 
         let _y = window.pageYOffset;
         window.scrollBy(0, step);
@@ -665,13 +664,15 @@ export class DraggableList extends DomElement {
     }
 
     _handleChildDragAutoScroll(evt) {
-        let node = this.getDomNode()
-        let top = Math.floor(window.pageYOffset) //+ node.offsetTop
-        let bot = Math.floor(top + window.innerHeight - node.offsetTop)
-        let y = Math.floor(evt.pageY - node.offsetTop)
-        let h = this.attrs.draggingEle.clientHeight
+        const _rect = this.attrs.draggingEle.parentNode.getBoundingClientRect();
 
-        if (y < top + h*2) {
+        let node = this.getDomNode()
+        const lstTop = window.scrollY + _rect.top
+        let top = window.scrollY + _rect.top
+        let bot = top + window.innerHeight - lstTop
+        let y = Math.floor(evt.pageY  - node.offsetTop - window.scrollY)
+        let h = this.attrs.draggingEle.clientHeight
+        if (y < top + h) {
             this.attrs.autoScrollX = Math.floor(evt.pageX)
             this.attrs.autoScrollY = Math.floor(evt.pageY)
             if (this.attrs.swipeScrollTimer === null) {
@@ -752,7 +753,7 @@ export class DraggableList extends DomElement {
         this.attrs.isDraggingStarted = false;
         this.attrs.placeholder = null;
         this.attrs.indexStart = -1;
-        console.error("cancel")
+        console.error("drag cancel")
     }
 
     updateModel(indexStart, indexEnd) {
