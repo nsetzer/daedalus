@@ -1,4 +1,5 @@
 
+import ast as pyast
 
 class TokenError(Exception):
     def __init__(self, token, message):
@@ -7,6 +8,65 @@ class TokenError(Exception):
         super(TokenError, self).__init__(message)
 
         self.token = token
+
+def ast2json_obj(ast):
+
+    obj = {}
+
+    for pair in ast.children:
+
+        if pair.type == Token.T_BINARY and pair.value == ':':
+            lhs, rhs = pair.children
+
+            if lhs.type == Token.T_STRING:
+                key = pyast.literal_eval(lhs.value)
+            else:
+                raise ValueError("%s:%s" % (lhs.type, lhs.value))
+
+            val = ast2json(rhs)
+
+            obj[key] = val
+
+        else:
+            raise ValueError("%s:%s" % (pair.type, pair.value))
+
+    return obj
+
+def ast2json_seq(ast):
+    seq = []
+    for val in ast.children:
+        seq.append(ast2json(val))
+    return seq
+
+def ast2json(ast):
+
+    if ast.type == Token.T_OBJECT:
+        return ast2json_obj(ast)
+    elif ast.type == Token.T_LIST:
+        return ast2json_seq(ast)
+    elif ast.type == Token.T_STRING:
+        return pyast.literal_eval(ast.value)
+    elif ast.type == Token.T_NUMBER:
+        return pyast.literal_eval(ast.value)
+    elif ast.type == Token.T_PREFIX:
+        if ast.value == "-" and ast.children and ast.children[0].type == Token.T_NUMBER:
+            val = ast2json(ast.children[0])
+            return -val
+        else:
+            raise ValueError("%s:%s" % (ast.type, ast.value))
+    elif ast.type == Token.T_KEYWORD:
+        if ast.value == 'true':
+            return True
+        elif ast.value == 'false':
+            return False
+        elif ast.value == 'null':
+            return None
+        elif ast.value == 'undefined':
+            return None
+        else:
+            raise ValueError("%s:%s" % (ast.type, ast.value))
+    else:
+        raise ValueError("%s:%s" % (ast.type, ast.value))
 
 class Token(object):
 
@@ -229,5 +289,7 @@ class Token(object):
         return root
 
 
+    def toJson(self):
 
+        return ast2json(self)
 
