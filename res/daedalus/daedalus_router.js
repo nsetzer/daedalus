@@ -221,7 +221,7 @@ export class Router {
 
             if (this.current_location !== location) {
                 this.setMatch(match)
-                element.updateState({match: match})
+                element.updateState({match: match}) // TODO: remove
             }
 
             this.current_index = index

@@ -17,7 +17,7 @@ export function Signal(element, name) {
     console.log("signal create:" + event_name)
 
     if (!!element) {
-        element.signals.push(signal)
+        element._$signals.push(signal)
     }
 
     return signal
@@ -35,6 +35,23 @@ function generateElementId() {
     return name + "-" + (element_uid++)
 }
 
+/**
+    a minimal element is:
+        - type
+        - props
+        - children
+    other reserved keys include:
+        - state     // deprecated
+        - attrs     // deprecated, private keys now use a prefix _$
+                    // a seperate namespace for user defined keys is
+                    // no longer required
+        - on*       : event callbacks
+    daedalus private keys begin with '_$'
+        - _$signals // deprecated
+        - _$slots   // deprecated
+        - _$fiber
+        - _$dirty
+*/
 export class DomElement {
     constructor(type="div", props=undefined, children=undefined) {
         if (type===undefined) {
@@ -42,25 +59,18 @@ export class DomElement {
             throw `DomElement type is undefined. super called with ${arguments.length} arguments`
         }
         this.type = type;
-        if (props===undefined) {
-            this.props = {};
-        } else {
-            this.props = props;
-        }
+        this.props = props??{};
+        this.children = children??[]
         if (this.props.id===undefined){
             this.props.id = this.constructor.name + generateElementId()
         }
-        if (children===undefined) {
-            this.children = []
-        } else {
-            this.children = children // optional , undefined
-        }
-        this.signals = []
-        this.slots = []
-        this.dirty = true // whether a change has been queued to re-render
+
+        this._$signals = []
+        this._$slots = []
+        this._$dirty = true // whether a change has been queued to re-render
         this.state = {} // element data that effects rendering
         this.attrs = {}  // like state, but does not effect rendering
-        this._fiber = null
+        this._$fiber = null
 
         Object.getOwnPropertyNames(this.__proto__)
             .filter(key => key.startsWith("on"))
@@ -106,7 +116,14 @@ export class DomElement {
         this.props = newProps;
     }
 
-    appendChild(childElement) {
+    appendChild(childElement, ...args) {
+        // two calling conventions
+        // this.appendChild(new DomElement("div"))
+        // this.appendChild(DomElement, "div"))
+
+        if (args.length > 0) {
+            childElement = new childElement(...args)
+        }
 
         if (!childElement || !childElement.type) {
             throw "invalid child";
@@ -128,7 +145,6 @@ export class DomElement {
         if (!childElement || !childElement.type) {
             throw "invalid child";
         }
-
 
         if (index < 0) {
             // -1 is append at end
@@ -153,17 +169,20 @@ export class DomElement {
         return childElement
     }
 
-    removeChild(childElement) {
-        if (!childElement || !childElement.type) {
-            throw "invalid child";
-        }
-        const index = this.children.indexOf(childElement)
+    removeChildAtIndex(index) {
         if (index >= 0) {
             this.children.splice(index, 1)
             this.update()
         } else {
             console.error("child not in list")
         }
+    }
+
+    removeChild(childElement) {
+        if (!childElement || !childElement.type) {
+            throw "invalid child";
+        }
+        this.removeChildAtIndex(this.children.indexOf(childElement))
     }
 
     removeChildren() {
@@ -223,7 +242,7 @@ export class DomElement {
         console.log("signal connect:" + signal._event_name, callback)
         const ref = {element: this, signal: signal, callback: callback};
         signal._slots.push(ref)
-        this.slots.push(ref)
+        this._$slots.push(ref)
     }
 
     disconnect(signal) {
@@ -231,11 +250,11 @@ export class DomElement {
     }
 
     getDomNode() {
-        return this._fiber && this._fiber.dom
+        return this._$fiber && this._$fiber.dom
     }
 
     isMounted() {
-        return this._fiber !== null
+        return this._$fiber !== null
     }
 }
 
@@ -538,6 +557,11 @@ export class DraggableList extends DomElement {
         //       allow for a button within the element to begin the drag
 
         this.attrs.draggingEle = child.getDomNode();
+
+        if (!this.attrs.draggingEle) {
+            console.error("no element set for drag")
+            return false;
+        }
         this.attrs.draggingChild = child
         this.attrs.indexStart = childIndex(this.attrs.draggingEle)
 
@@ -545,7 +569,7 @@ export class DraggableList extends DomElement {
             console.error("drag begin failed for child")
             this.attrs.draggingEle = null
             this.attrs.indexStart = -1
-            return
+            return false;
         }
 
         // Calculate the mouse position
@@ -554,6 +578,11 @@ export class DraggableList extends DomElement {
         //this.attrs.y = event.clientY - rect.top;
         this.attrs.y = event.pageY + window.scrollY//- rect.top ;
         this.attrs.eventSource = child
+
+        event.preventDefault()
+        event.stopPropagation()
+
+        return true;
     }
 
     handleChildDragMoveImpl(pageX, pageY) {
@@ -564,7 +593,7 @@ export class DraggableList extends DomElement {
 
         if (this.attrs.indexStart < 0) {
             console.error("drag move failed for child")
-            return
+            return false;
         }
 
         if (!this.attrs.isDraggingStarted) {
@@ -619,8 +648,8 @@ export class DraggableList extends DomElement {
 
             const a = childIndex(prevEle) - 1
             const b = childIndex(this.attrs.draggingEle)
-            prevEle._fiber.element.setIndex(a)
-            this.attrs.draggingEle._fiber.element.setIndex(b)
+            prevEle._$fiber.element.setIndex(a)
+            this.attrs.draggingEle._$fiber.element.setIndex(b)
         }
 
         // The dragging element is below the next element
@@ -636,9 +665,12 @@ export class DraggableList extends DomElement {
 
             const a = childIndex(nextEle)
             const b = childIndex(this.attrs.draggingEle)
-            nextEle._fiber.element.setIndex(a)
-            this.attrs.draggingEle._fiber.element.setIndex(b)
+            nextEle._$fiber.element.setIndex(a)
+            this.attrs.draggingEle._$fiber.element.setIndex(b)
         }
+        //event.stopPropagation()
+
+        return true;
     }
 
     _handleAutoScroll(dy) {
@@ -693,10 +725,13 @@ export class DraggableList extends DomElement {
         }
     }
 
-
     handleChildDragMove(child, event) {
-        if (!this.attrs.draggingEle || this.attrs.draggingEle!==child.getDomNode()) {
-            return;
+        if (!this.attrs.draggingEle) {
+            return false;
+        }
+
+        if (this.attrs.draggingEle!==child.getDomNode()) {
+            return false;
         }
 
         event.preventDefault()
@@ -714,6 +749,8 @@ export class DraggableList extends DomElement {
         if (this.attrs._px !== x || this.attrs._py !== y) {
             this.attrs._px = x
             this.attrs._py = y
+            event.stopPropagation()
+
             return this.handleChildDragMoveImpl(x, y)
         }
     }
@@ -724,10 +761,11 @@ export class DraggableList extends DomElement {
         //    // the children will need to be updated to reflect reality
         //}
 
-        this.handleChildDragCancel();
+        return this.handleChildDragCancel();
     }
 
     handleChildDragCancel(doUpdate=true) {
+        // Note: touch end and touch cancel events do not have pageX or pageY attributes
         // Remove the placeholder
         this.attrs.placeholder && this.attrs.placeholder.parentNode.removeChild(this.attrs.placeholder);
 
@@ -747,13 +785,14 @@ export class DraggableList extends DomElement {
             this.attrs.swipeScrollTimer = null
         }
 
+        const success = this.attrs.draggingEle !== null
         this.attrs.x = null;
         this.attrs.y = null;
         this.attrs.draggingEle = null;
         this.attrs.isDraggingStarted = false;
         this.attrs.placeholder = null;
         this.attrs.indexStart = -1;
-        console.error("drag cancel")
+        return success;
     }
 
     updateModel(indexStart, indexEnd) {

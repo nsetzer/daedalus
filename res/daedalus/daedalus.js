@@ -39,8 +39,8 @@ export function render_update(element) {
     // (an update has already been queued)
     // do not update the element if it does not have a fiber
     // (it has not been mounted and there is nothing to update)
-    if (!element.dirty && element._fiber !== null) {
-        element.dirty = true
+    if (!element._$dirty && element._$fiber !== null) {
+        element._$dirty = true
         const fiber = {
             effect: 'UPDATE',
             children: [element],
@@ -193,7 +193,7 @@ function reconcileChildren(parentFiber) {
                 console.error(`${parentFiber.element.props.id}: undefined child element at index ${index} `);
                 return;
             }
-            const oldFiber = element._fiber;
+            const oldFiber = element._$fiber;
 
             // unset the delete flag for this child fiber
             //#if (oldFiber) {
@@ -211,7 +211,7 @@ function reconcileChildren(parentFiber) {
             let effect;
 
             if (!!oldFiber) {
-                if (oldIndex == index && element.dirty === false) {
+                if (oldIndex == index && element._$dirty === false) {
                     // effect = 'NONE';
                     // Experiment: with nothing to do exit early
                     // Require any children to have called update()
@@ -224,7 +224,7 @@ function reconcileChildren(parentFiber) {
             }
 
             // mark as clean, work to update DOM is done later.
-            element.dirty = false;
+            element._$dirty = false;
 
             const newFiber = {
                 type: element.type,
@@ -235,7 +235,7 @@ function reconcileChildren(parentFiber) {
                 parent: (parentFiber.partial && oldFiber)? oldFiber.parent : parentFiber,
                 alternate: oldFiber,
                 dom: oldFiber ? oldFiber.dom : null,
-                signals: element.signals,
+                signals: element._$signals,
                 element: element,
                 index: index,
                 oldIndex: oldIndex
@@ -258,7 +258,7 @@ function reconcileChildren(parentFiber) {
                 newFiber.props.className = newFiber.props.className.join(' ')
             }
 
-            element._fiber = newFiber
+            element._$fiber = newFiber
             parentFiber._fibers.push(newFiber)
 
             prev.next = newFiber;
@@ -276,7 +276,7 @@ function reconcileChildren(parentFiber) {
     if (!!oldParentFiber) {
         oldParentFiber.children.forEach(child => {
             if (child._delete) {
-                deletions.push(child._fiber);
+                deletions.push(child._$fiber);
             }
         })
     }
@@ -377,10 +377,16 @@ function createDomNode(fiber) {
         .filter(isProp)
         .forEach(key => {
             //console.log("create-prop: " + key + " = " + fiber.props[key])
-            dom[key] = fiber.props[key];
+            const propValue = fiber.props[key];
+            if (propValue===null) {
+                delete dom[key];
+            } else {
+                dom[key] = propValue;
+            }
+
         })
 
-    dom._fiber = fiber
+    dom._$fiber = fiber // allow access to the virtual dom element
     return dom
 }
 
@@ -396,7 +402,7 @@ function updateDomNode(fiber) {
         return
     }
 
-    dom._fiber = fiber
+    dom._$fiber = fiber // allow access to the virtual dom element
 
     if (fiber.oldIndex != fiber.index && parentDom) {
         // TODO: this will fail if there is a move and a delete or insert
@@ -460,7 +466,7 @@ function _removeDomNode_elementFixUp(element) {
     }
 
     element.children.forEach(child => {
-        child._fiber = null;
+        child._$fiber = null;
         _removeDomNode_elementFixUp(child);
 
     })
@@ -495,7 +501,7 @@ function removeDomNode(fiber) {
     }
 
     fiber.dom = null
-    fiber.element._fiber = null
+    fiber.element._$fiber = null
     fiber.alternate = null
     _removeDomNode_elementFixUp(fiber.element)
     // TODO: check for connected signals/slots and disconnect
