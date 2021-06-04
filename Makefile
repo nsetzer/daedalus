@@ -20,7 +20,7 @@ test:
 .PHONY: cover
 cover:
 	coverage run -m tests
-	coverage html --omit "venv/*,*_test.py,tests/*"
+	coverage html --omit "*/venv/*,*_test.py,tests/*"
 	@#open htmlcov/index.html
 	@printf "%-60s %10s\n" $(shell grep pc_cov ./htmlcov/*.html | sed 's/<span.*">//' | sed 's=</span>==') | sort -V
 

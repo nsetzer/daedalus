@@ -333,7 +333,7 @@ class Parser(ParserBase):
                 break
             elif tok1.type == Token.T_NEWLINE:
                 j += direction
-            elif tok1.type == Token.T_KEYWORD and tok1.value not in ("true", "false", "null", "this", "new", "function", "function*", "class"):
+            elif tok1.type == Token.T_KEYWORD and tok1.value not in ("true", "false", "null", "undefined", "this", "new", "function", "function*", "class"):
                 break
             else:
                 return j
@@ -1010,7 +1010,7 @@ class Parser(ParserBase):
             else:
                 rhs = self.consume(tokens, token, index, 1)
 
-        lhs = self.consume(tokens, token, index, -1)
+        lhs = self.consume_keyword(tokens, token, index, -1)
 
         if rhs is None:
             token.children = []
@@ -1878,6 +1878,7 @@ class Parser(ParserBase):
 
             for (expr; expr; expr) expr
             for (expr1) expr
+            for await (expr1) expr
             where expr1 is one of:
                 [const] property in object
                 [const] item of iterable
@@ -1903,7 +1904,18 @@ class Parser(ParserBase):
         """
         token = tokens[index]
 
-        rhs1 = self.consume(tokens, token, index, 1)
+        flag_await = False
+        idx1 = self.peek_keyword(tokens, token, index, 1)
+        rhs1 = None
+        if idx1 is not None:
+            rhs = tokens[idx1]
+            if rhs.type == Token.T_PREFIX and rhs.value == 'await':
+                self.consume_keyword(tokens, token, index, 1)
+                rhs1 = rhs.children[0]
+                flag_await = True
+
+        if rhs1 is None:
+            rhs1 = self.consume(tokens, token, index, 1)
 
         if rhs1.type != Token.T_GROUPING:
             raise ParseError(token, "expected grouping")
@@ -1925,7 +1937,10 @@ class Parser(ParserBase):
         elif len(rhs1.children) > 1 and rhs1.children[1].value == "of" and rhs1.children[1].type == Token.T_TEXT:
             token.children.append(rhs1.children[0])
             token.children.append(rhs1.children[2])
-            token.type = Token.T_FOR_OF
+            if flag_await:
+                token.type = Token.T_FOR_AWAIT_OF
+            else:
+                token.type = Token.T_FOR_OF
 
         elif len(rhs1.children) > 1 and rhs1.children[1].value == "in" and rhs1.children[1].type == Token.T_KEYWORD:
             token.children.append(rhs1.children[0])
@@ -2202,25 +2217,9 @@ def main():  # pragma: no cover
     text1 = "import module foo.bar"
     text1 = "from module foo import {bar}"
     text1 = "if (true) {x=1;} + 1"
-    text1 = "{[1 + 2]: 0}"
-    text1 = "function f([arg0, arg1]){}"
-    text1 = "function f({arg0:argA, arg1:argnB}){}"
-    text1 = "let {x, y=2} = {}"
-    text1 = "let [a, {b=1}] = {}"
     text1 = "x?.[0]"
-    text1 = "f`x`"
-    text1 = "x.f`x`"
     text1 = "export let x=1,y=2"
-    text1 = "{[0](){}}"
-    text1 = "let x = #[1,,3]"
     text1 = "0xfor"
-    text1 = """
-    x = undefined
-        label:
-            while (True) {
-                break label;
-            }
-    """
     print("="* 79)
     print(text1)
     print("="* 79)

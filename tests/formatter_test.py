@@ -83,6 +83,10 @@ class FormatterTestCase(unittest.TestCase):
             x = /ab+c/g
         """, "x=/ab+c/g")
 
+    def test_001_grouping_hard(self):
+        self._chkeq("{[0](){}}",
+            "{[0](){}}")
+
     def test_001_escape_newline(self):
         self._chkeq("""
            x = a \
@@ -204,6 +208,22 @@ class FormatterTestCase(unittest.TestCase):
             // b[1] = 0
         """,
         """let f=function(){return arguments},a={'b':{'c':f}},x=0;let b=a.b.c`x ${x}y`""")
+
+    def test_001_object_compute_key(self):
+        text = "{[1 + 2]: 0}"
+        expected = '{[1+2]:0}'
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        self.assertEqual(expected, output)
+
+    def test_001_multiline_string(self):
+        text = """const x = `a\n   b\n   c\n`"""
+        expected = 'const x=`a\n   b\n   c\n`'
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        self.assertEqual(expected, output)
 
     def test_001_expr_1(self):
 
@@ -403,6 +423,18 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_return_undefined(self):
+
+        text = """
+            return undefined;
+        """
+        expected = "return undefined"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
     def test_001_ternary_1(self):
 
         text = """
@@ -525,6 +557,20 @@ class FormatterTestCase(unittest.TestCase):
             for (const item of iterable) {}
         """
         expected = "for(const item of iterable){}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_for_await(self):
+
+        text = """
+            for await (const ret of delays) {
+              print("for loop await "+ret)
+            }
+        """
+        expected = "for await(const ret of delays){print(\"for loop await \"+ret)}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
@@ -828,6 +874,11 @@ class FormatterTestCase(unittest.TestCase):
             myTag`width: ${width}px`
         """, 'myTag`width: ${width}px`')
 
+    def test_001_tagged_template_attr(self):
+        self._chkeq("""
+            x.y`width: ${width}px`
+        """, 'x.y`width: ${width}px`')
+
     def test_001_for_var_comma(self):
         self._chkeq("""
             for (let x=1,y=2,z=3; x<y,y<z; --x,z++) {}
@@ -1062,6 +1113,22 @@ class FormatterTestCase(unittest.TestCase):
 
     def test_001_destructure_object_deep_minify(self):
         text = """
+            let [a, {b=1}] = getToken()
+        """
+        # equivalent to var a = tmp.lhs.op
+        #TODO: single quotes are not required
+        expected = "let a=getToken(),[b,c]=a,d=c?.b??1"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_destructure_object_deep_minify_2(self):
+        text = """
             var {lhs:{ op=1 }, rhs:y} = getToken()
         """
         # equivalent to var a = tmp.lhs.op
@@ -1203,6 +1270,18 @@ class FormatterTestCase(unittest.TestCase):
         expected = "function f({arg0,arg1}){}"
         self.assertEqual(expected, output)
 
+    def test_001_function_destructure_object_2(self):
+        text = """
+            function greet({name = "john", age = 42} = {}){
+              print(name + " " +age)
+            }
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+        expected = "function greet({name=\"john\",age=42}={}){print(name+\" \"+age)}"
+        self.assertEqual(expected, output)
+
     def test_001_function_destructure_object_minify(self):
         text = "function f({arg0, arg1}){}"
         tokens = self.lexer.lex(text)
@@ -1333,6 +1412,24 @@ class FormatterTestCase(unittest.TestCase):
             }
         """
         expected = "let a={get_zero(){return 0}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_object_with_function_long(self):
+        text = """
+            let x = {
+              long: function() {
+                return
+              }
+            }
+        """
+        expected = "let a={long:function(){return}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()

@@ -116,14 +116,10 @@ export class DomElement {
         this.props = newProps;
     }
 
-    appendChild(childElement, ...args) {
+    appendChild(childElement) {
         // two calling conventions
         // this.appendChild(new DomElement("div"))
         // this.appendChild(DomElement, "div"))
-
-        if (args.length > 0) {
-            childElement = new childElement(...args)
-        }
 
         if (!childElement || !childElement.type) {
             throw "invalid child";
@@ -548,6 +544,7 @@ export class DraggableList extends DomElement {
             //return;
         }
 
+        let org_event = event
         let evt = (event?.touches || event?.originalEvent?.touches)
         if (evt) {
             event = evt[0]
@@ -579,8 +576,9 @@ export class DraggableList extends DomElement {
         this.attrs.y = event.pageY + window.scrollY//- rect.top ;
         this.attrs.eventSource = child
 
-        event.preventDefault()
-        event.stopPropagation()
+        //console.log(org_event)
+        //org_event.stopPropagation?.()
+        //org_event.preventDefault?.()
 
         return true;
     }
@@ -668,7 +666,6 @@ export class DraggableList extends DomElement {
             nextEle._$fiber.element.setIndex(a)
             this.attrs.draggingEle._$fiber.element.setIndex(b)
         }
-        //event.stopPropagation()
 
         return true;
     }
@@ -734,7 +731,7 @@ export class DraggableList extends DomElement {
             return false;
         }
 
-        event.preventDefault()
+        let org_event = event
 
         let evt = (event?.touches || event?.originalEvent?.touches)
         if (evt) {
@@ -749,7 +746,9 @@ export class DraggableList extends DomElement {
         if (this.attrs._px !== x || this.attrs._py !== y) {
             this.attrs._px = x
             this.attrs._py = y
-            event.stopPropagation()
+
+            //org_event.stopPropagation?.()
+            //org_event.preventDefault?.()
 
             return this.handleChildDragMoveImpl(x, y)
         }

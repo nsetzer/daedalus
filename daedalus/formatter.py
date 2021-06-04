@@ -56,7 +56,7 @@ def isctrlflow(child):
     """
     if child.type == Token.T_BLOCK or child.type == Token.T_BLOCK_LABEL:
         return True
-    elif child.type in (Token.T_BRANCH, Token.T_FOR_IN, Token.T_FOR_OF, Token.T_FOR):
+    elif child.type in (Token.T_BRANCH, Token.T_FOR_IN, Token.T_FOR_OF, Token.T_FOR_AWAIT_OF, Token.T_FOR):
         return True
     elif child.type in (Token.T_SWITCH, Token.T_WHILE, Token.T_FINALLY):
         if (child.children[-1].type == Token.T_BLOCK):
@@ -556,6 +556,18 @@ class Formatter(object):
                 seq.append((depth, None, varexpr))
                 seq.append((depth, Token.T_SPECIAL, '('))
                 seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_FOR_AWAIT_OF:
+                varexpr, iterable, block = token.children
+                if not isctrlflow(block):
+                    seq.append((depth, Token.T_SPECIAL, ";"))
+                seq.append((depth, None, block))
+                seq.append((depth, Token.T_SPECIAL, ')'))
+                seq.append((depth, None, iterable))
+                seq.append((depth, Token.T_KEYWORD, 'of'))
+                seq.append((depth, None, varexpr))
+                seq.append((depth, Token.T_SPECIAL, '('))
+                seq.append((depth, Token.T_KEYWORD, 'await'))
+                seq.append((depth, token.type, token.value))
             elif token.type == Token.T_DOWHILE:
                 seq.append((depth, None, token.children[1]))
                 if self.pretty_print:
@@ -646,6 +658,11 @@ def main():  # pragma: no cover
         }
     """
 
+    text1 = """
+        for await (x of y) {
+            print(x)
+        }
+    """
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 

@@ -124,6 +124,7 @@ class Token(object):
     T_FINALLY = "T_FINALLY"
     T_FOR = "T_FOR"
     T_FOR_OF = "T_FOR_OF"
+    T_FOR_AWAIT_OF = "T_FOR_AWAIT_OF"
     T_FOR_IN = "T_FOR_IN"
     T_NEW = "T_NEW"
     T_RETURN = "T_RETURN"

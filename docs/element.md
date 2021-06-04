@@ -38,7 +38,9 @@ Every element has a list of children, which contains other elements. The childre
 of an element are rendered in the order of the list.
 
 - `appendChild(elem)` - Append a new child to this element
+- `insertChild(index, elem)` - insert a child at a specified index
 - `removeChild(elem)` - remove the child from this element
+- `removeChildAtIndex(index)` - remove a child given by the index from this element
 - `replaceChild(elem1, elem2)` - replace a child element with another element
 - `removeChildren()` - remove all children from this element
 

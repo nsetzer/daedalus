@@ -357,6 +357,7 @@ class TransformExtractStyleSheet(TransformBase):
             if child.type == Token.T_TEXT and child.value == 'StyleSheet':
                 rv = self._extract(token, parent)
                 if not rv:
+                    print(token)
                     sys.stderr.write("warning: failed to convert style sheet\n")
 
     def _extract(self, token, parent):
@@ -456,10 +457,15 @@ class TransformExtractStyleSheet(TransformBase):
 
         obj = self._object2style_helper("", token)
         # insert items in the order they were found in the document
-        arr = ["  %s: %s;" % (k, v) for k, v in obj.items()]
-        body = "\n".join(arr)
-        return "%s {\n%s\n}" % (selector, body)
-
+        minify = True
+        if not minify:
+            arr = ["  %s: %s;" % (k, v) for k, v in obj.items()]
+            body = "\n".join(arr)
+            return "%s {\n%s\n}" % (selector, body)
+        else:
+            arr = ["%s:%s" % (k, v) for k, v in obj.items()]
+            body = ";".join(arr)
+            return "%s {%s}" % (selector, body)
     def _object2style_helper(self, prefix, token):
         """compiles a javascript AST of an Object into a style sheet
         using the same rules as daedalus.StyleSheet
@@ -670,6 +676,8 @@ class VariableScope(object):
         self.all_identifiers = set()
 
         self.defered_functions = []
+
+        self.disable_warnings = False
 
     def _getRef(self, label):
         """
@@ -898,6 +906,7 @@ class VariableScope(object):
                     file = "???"
                     line = 0
                     index = 0
+
                 sys.stderr.write("variable defined but never used: %s\n  %s:%s col %s\n" % (key, file, line, index))
 
     def popBlockScope(self):
@@ -1275,10 +1284,6 @@ class TransformAssignScope(object):
 
     def __init__(self):
         super(TransformAssignScope, self).__init__()
-
-        # discover the variable scope if a mode friendly
-        # to python (true) or javascript (false)
-        self.python = True
 
         self.global_scope = None
 
@@ -2229,8 +2234,6 @@ class TransformIdentityScope(TransformAssignScope):
     def __init__(self):
         super(TransformIdentityScope, self).__init__()
 
-        self.python = False
-
     def newScope(self, name, parentScope=None):
         scope = IdentityScope(name, parentScope)
         scope.disable_warnings = self.disable_warnings
@@ -2252,8 +2255,6 @@ class TransformMinifyScope(TransformAssignScope):
     """
     def __init__(self):
         super(TransformMinifyScope, self).__init__()
-
-        self.python = False
 
     def newScope(self, name, parentScope=None):
         scope = MinifyVariableScope(name, parentScope)
@@ -2534,7 +2535,6 @@ class TransformClassToFunction(TransformBaseV2):
         #if self.mode==2:
         #    token.children.append(closure)
 
-
 class TransformBaseV3(object):
     def __init__(self):
         super(TransformBaseV3, self).__init__()
@@ -2707,6 +2707,71 @@ class TransformConstEval(TransformBaseV3):
                 token.value = repr(lv + rv)
                 token.children = []
 
+def getModuleImportExport(ast, warn_include=False):
+    imports = {}
+    module_imports = {}
+    exports = []
+    i = 0
+    while i < len(ast.children):
+        token = ast.children[i]
+
+        if token.type == Token.T_INCLUDE:
+            if warn_include:
+                sys.stdout.write("warning: include found in file that is not a daedalus module\n")
+
+            name = py_ast.literal_eval(token.children[0].value)
+            imports[name] = []
+
+            ast.children.pop(0)
+
+        elif token.type == Token.T_IMPORT_MODULE:
+
+            fromlist = []
+            for child in token.children[0].children:
+                if child.type == Token.T_TEXT:
+                    # import name from module
+                    fromlist.append((child.value, child.value))
+                else:
+                    # import name from module and rename
+                    fromlist.append((child.children[0].value, child.children[1].value))
+
+            ast.children.pop(0)
+
+            module_imports[token.value] = dict(fromlist)
+
+        elif token.type == Token.T_IMPORT:
+            i += 1
+
+        elif token.type == Token.T_EXPORT:
+            for text in token.children[1:]:
+                exports.append(text.value)
+            child = token.children[0]
+            # remove the token entirely if it does not have any side effects
+            # otherwise remove the export keyword
+            if child.type == Token.T_TEXT:
+                ast.children.pop(i)
+            else:
+                ast.children[i] = child
+                i += 1
+
+        elif token.type == Token.T_EXPORT_DEFAULT:
+
+            exports.append(token.children[1].value)
+            default_export = token.children[1].value
+            child = token.children[0]
+            # remove the token entirely if it does not have any side effects
+            # otherwise remove the export keyword
+            if child.type == Token.T_TEXT:
+                ast.children.pop(i)
+            else:
+                ast.children[i] = child
+                i += 1
+
+        else:
+            i += 1
+
+    return ast, imports, module_imports, exports
+
 def main_css():
 
     from .parser import Parser
@@ -2803,7 +2868,6 @@ def main_var2():
 
     tokens = Lexer().lex(text)
     parser =  Parser()
-    parser.python = False
     ast = parser.parse(tokens)
 
     tr = TransformMinifyScope()
@@ -2824,7 +2888,6 @@ def main_for():
 
     tokens = Lexer().lex(text)
     parser =  Parser()
-    parser.python = False
     ast = parser.parse(tokens)
 
     tr = TransformMinifyScope()
@@ -2869,7 +2932,6 @@ def main_unpack():
 
     tokens = Lexer().lex(text)
     parser =  Parser()
-    parser.python = False
     ast = parser.parse(tokens)
 
     print(ast.toString(3))
@@ -2901,5 +2963,93 @@ def main_cls():
 
     print(ast.toString(3))
 
+def main_unused():
+
+    # prune dead code:
+    #  use identity transform to detect load count of identifiers
+    #  prune unused variables, functions, classes
+    #  repeat until nothing is removed
+    from .parser import Parser
+    from .formatter import Formatter
+
+    text = """
+
+        let x=0;
+        let y=0; // unused
+
+        function f() {
+            return x;
+        }
+
+        function g() { // unused
+            return x;
+        }
+
+        function h() {
+            return f()
+        }
+
+        // todo:
+        let i() { // unused
+            return g()
+        }
+
+        h()
+
+    """
+
+
+    tokens = Lexer().lex(text)
+    parser =  Parser()
+    ast = parser.parse(tokens)
+
+
+
+        #print(ast.toString(1))
+
+    for i in range(1):
+
+
+        # TODO: be able to run an ast multiple times through the transform
+        #tr = TransformMinifyScope()
+        tr = TransformIdentityScope()
+        tr.transform(ast)
+
+        candidates = set()
+        for lbl, _ in tr.globals.items():
+            ref = tr.global_scope._getRef(lbl)
+            if ref.load_count == 0:
+                #candidates[lbl] = ref
+                candidates.add(ref.token)
+                print(lbl, ref, ref.load_count)
+
+        def fscan(node):
+            if node in candidates:
+                return True
+            for child in node.children:
+                if fscan(child):
+                    return True
+            return False
+
+        i=0;
+        while i < len(ast.children):
+            node = ast.children[i]
+
+            if fscan(node):
+                print("pop", i)
+                ast.children.pop(i)
+            else:
+                i += 1
+
+    # level 2 transform:
+    #  compare imports and exports across multiple files and modules
+    #  for imports and module imports which do not import names
+    #  this will have to scan for all GET_ATTR tokens to decide which
+    #  names are used and update the reference load count accordingly
+    # - this can also be used to detect names that are used and not exported
+    # ast, imports, module_imports, exports = getModuleImportExport(ast)
+
+    print(ast.toString(1))
+
 if __name__ == '__main__':
-    main_unpack()
+    main_unused()

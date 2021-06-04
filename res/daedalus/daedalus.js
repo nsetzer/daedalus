@@ -6,6 +6,16 @@ include './daedalus_router.js'
 include './daedalus_fileapi.js'
 include './daedalus_platform.js'
 
+//---safarai
+if (window.requestIdleCallback===undefined) {
+    window.requestIdleCallback = (callback, options) => {
+        //options.timeout : timeout in milliseconds
+        // the maximum amount of time to delay before calling callback
+        setTimeout(()=>{callback()}, 0);
+    }
+}
+//---
+
 let workstack = [];
 let deletions = [];
 let deletions_removed = new Set();

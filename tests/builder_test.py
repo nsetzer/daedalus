@@ -127,6 +127,7 @@ class BuilderTestTestCase(unittest.TestCase):
 
         static_data = {"daedalus": {"env": {}}}
         builder = Builder([], static_data, platform=None)
+        builder.disable_warnings = True
         css, js, html = builder.build(path, minify=True, onefile=True)
 
         #print(css)

@@ -7,7 +7,7 @@ import json
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser
 from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
-    TransformConstEval
+    TransformConstEval, getModuleImportExport
 from .formatter import Formatter
 from ast import literal_eval
 
@@ -331,68 +331,13 @@ class JsFile(object):
             sys.stderr.write("%10d %.2f %s\n" % (len(source), t2 - t1, self.source_path))
 
     def _get_imports_exports(self, ast):
-        self.imports = {}
-        self.module_imports = {}
-        self.exports = []
-        i = 0
-        while i < len(ast.children):
-            token = ast.children[i]
 
-            if token.type == Token.T_INCLUDE:
-                if self.source_type != 2:
-                    sys.stdout.write("warning: include found in file that is not a daedalus module\n")
+        ast, imports, module_imports, exports = getModuleImportExport(ast, self.source_type != 2)
 
-                name = literal_eval(token.children[0].value)
-                self.imports[name] = []
+        self.imports = imports
+        self.module_imports = module_imports
+        self.exports = exports
 
-                ast.children.pop(0)
-
-            elif token.type == Token.T_IMPORT_MODULE: # and not self.python:
-
-                fromlist = []
-                for child in token.children[0].children:
-                    if child.type == Token.T_TEXT:
-                        fromlist.append((child.value, child.value))
-                    else:
-                        fromlist.append((child.children[0].value, child.children[1].value))
-
-                ast.children.pop(0)
-
-                self.module_imports[token.value] = dict(fromlist)
-
-            elif token.type == Token.T_IMPORT:
-                i += 1
-
-            elif token.type == Token.T_EXPORT:
-                for text in token.children[1:]:
-                    self.exports.append(text.value)
-                child = token.children[0]
-                # remove the token entirely if it does not have any side effects
-                # otherwise remove the export keyword
-                if child.type == Token.T_TEXT:
-                    ast.children.pop(i)
-                else:
-                    ast.children[i] = child
-                    i += 1
-
-            elif token.type == Token.T_EXPORT_DEFAULT:
-
-                if len(token.children) > 2:
-                    raise self._newBuildError(token, "export default can only export a single name")
-
-                self.exports.append(token.children[1].value)
-                self.default_export = token.children[1].value
-                child = token.children[0]
-                # remove the token entirely if it does not have any side effects
-                # otherwise remove the export keyword
-                if child.type == Token.T_TEXT:
-                    ast.children.pop(i)
-                else:
-                    ast.children[i] = child
-                    i += 1
-
-            else:
-                i += 1
         return ast
 
     def reload(self):
@@ -546,6 +491,7 @@ class Builder(object):
         self.modules = {}
         self.source_types = {}
         self.quiet = True
+        self.disable_warnings = False
 
         if static_data is None:
             static_data = {}
@@ -737,7 +683,9 @@ class Builder(object):
 
             if minify:
                 ast = Token.deepCopy(ast)
-                self.globals = TransformMinifyScope().transform(ast)
+                xform = TransformMinifyScope()
+                xform.disable_warnings = self.disable_warnings
+                self.globals = xform.transform(ast)
 
             formatter = Formatter(opts={'minify': minify})
             js = formatter.format(ast)

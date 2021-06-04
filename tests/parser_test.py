@@ -46,6 +46,20 @@ class ParserTestCase(unittest.TestCase):
             text = "["
             Parser().parse(Lexer().lex(text))
 
+    def test_001_hard(self):
+
+        text = """{[0](){}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_LIST', '[]',
+                        TOKEN('T_NUMBER', '0')),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}'))))
+        self.assertFalse(parsecmp(expected, ast, False))
+
 class ParserUnaryOpTestCase(unittest.TestCase):
 
     def test_001_unary_prefix(self):
