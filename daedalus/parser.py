@@ -1660,9 +1660,12 @@ class Parser(ParserBase):
             else:
                 raise ParseError(node, "unable to export token")
 
-        name = Token(Token.T_TEXT, child.line, child.index, token.value)
+        #name = Token(Token.T_TEXT, child.line, child.index, token.value)
         token.type = kind
         token.children = [child, ] + exports
+
+        if token.type == Token.T_EXPORT_DEFAULT and len(token.children) > 2:
+            raise ParseError(token, "export default can only export a single name")
 
     def _collect_keyword_import_get_name(self, module):
 

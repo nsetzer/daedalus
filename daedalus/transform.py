@@ -845,16 +845,20 @@ class VariableScope(object):
 
                 if not ref.isGlobal():
                     token.type = Token.T_FREE_VAR
-
                     # here the identity is used to handle the special
                     # case where the same variable name could be used
                     # with different meanings in the same block context
+
+                    # TODO: changed for VM: use label not identity
                     identity = ref.short_name()
+
+                    identity = ref.label
                     #print("define", identity, ref.long_name())
                     scope.defineCellVar(identity, ref)
                     for scope2 in scopes[:-1]:
                         scope2.defineFreeVar(identity, ref)
                     self.freevars[identity] = ref
+                    print("transform._load_store", identity, ref.name, ref.label)
 
         token.value = ref.identity()
         if token.type == Token.T_TEXT:
@@ -1315,6 +1319,7 @@ class TransformAssignScope(object):
             Token.T_UNPACK_OBJECT: self.visit_unpack_object,
             Token.T_FOR: self.visit_for,
             Token.T_GET_ATTR: self.visit_get_attr,
+            Token.T_CATCH: self.visit_catch,
 
             # method and class are added, but when compiling a
             # python module we assume a transform has already been
@@ -1339,6 +1344,7 @@ class TransformAssignScope(object):
             Token.T_ASYNC_ANONYMOUS_GENERATOR: self.finalize_function,
 
             Token.T_FOR: self.finalize_block,
+            Token.T_CATCH: self.finalize_block,
 
             Token.T_LAMBDA: self.finalize_function,
 
@@ -1913,6 +1919,26 @@ class TransformAssignScope(object):
         self.seq.append((ST_VISIT, scope, rhs, token))
         self.seq.append((ST_VISIT, scope, lhs, token))
 
+    def visit_catch(self, flags, scope, token, parent):
+
+        # the extra block scope, and finalize, allows for declaring
+        # variables inside of a catch arg list
+        arglist, body = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in for loop body")
+
+        scope.pushBlockScope()
+        self._push_finalize(scope, token, parent)
+
+        self._push_children(scope, body, flags)
+
+        # arglist is always a parenthetical block with one text child
+        # define that text node in the new block
+        if arglist.children:
+            scope.define(ST_BLOCK, arglist.children[0])
+
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
@@ -2001,12 +2027,15 @@ class TransformAssignScope(object):
 
         refs = scope.popBlockScope()
 
-        # if self.python
-        for ref in refs.values():
-            tok = Token(Token.T_DELETE_VAR, token.line, token.index, ref.identity())
-            tok.ref = ref
-            tok.ref_attr = 8
-            token.children.append(tok)
+        # delete variables in the reverse order that they were defined
+        # in this scope
+        if refs:
+            for ref in reversed(refs.values()):
+                tok = Token(Token.T_DELETE_VAR, token.line, token.index, "")
+                tok.ref = ref
+                tok.ref_attr = 8
+                tok.children.append(ref.token.clone())
+                token.children.append(tok)
 
     # -------------------------------------------------------------------------
 
@@ -2726,7 +2755,7 @@ def getModuleImportExport(ast, warn_include=False):
 
         elif token.type == Token.T_IMPORT_MODULE:
 
-            fromlist = []
+            fromlist = [] # list of (import_name, target_name)
             for child in token.children[0].children:
                 if child.type == Token.T_TEXT:
                     # import name from module
@@ -2755,7 +2784,7 @@ def getModuleImportExport(ast, warn_include=False):
                 i += 1
 
         elif token.type == Token.T_EXPORT_DEFAULT:
-
+            # there can only be one child after the default export
             exports.append(token.children[1].value)
             default_export = token.children[1].value
             child = token.children[0]
@@ -2972,7 +3001,7 @@ def main_unused():
     from .parser import Parser
     from .formatter import Formatter
 
-    text = """
+    mod1_text = """
 
         let x=0;
         let y=0; // unused
@@ -2985,19 +3014,36 @@ def main_unused():
             return x;
         }
 
-        function h() {
+        export function h() {
             return f()
         }
 
         // todo:
-        let i() { // unused
-            return g()
-        }
+        //function i() { // unused
+        //    return g()
+        //}
 
         h()
 
     """
 
+    mod2_text = """
+        include './mod1.js'
+        import module daedalus
+        export x = h()
+    """
+
+    mod2_text = """
+        function f() {
+            try {
+                throw "str"
+            } catch (ex) {
+                console.log(ex)
+            }
+        }
+    """
+
+    text = mod2_text
 
     tokens = Lexer().lex(text)
     parser =  Parser()
@@ -3006,6 +3052,17 @@ def main_unused():
 
 
         #print(ast.toString(1))
+    # level 2 transform:
+    #  compare imports and exports across multiple files and modules
+    #  for imports and module imports which do not import names
+    #  this will have to scan for all GET_ATTR tokens to decide which
+    #  names are used and update the reference load count accordingly
+    # - this can also be used to detect names that are used and not exported\
+    print(ast.toString(1))
+    ast, imports, module_imports, exports = getModuleImportExport(ast)
+    print(imports)
+    print(module_imports)
+    print(exports)
 
     for i in range(1):
 
@@ -3018,10 +3075,14 @@ def main_unused():
         candidates = set()
         for lbl, _ in tr.globals.items():
             ref = tr.global_scope._getRef(lbl)
-            if ref.load_count == 0:
-                #candidates[lbl] = ref
-                candidates.add(ref.token)
-                print(lbl, ref, ref.load_count)
+            if ref:
+                if ref.load_count == 0:
+                    #candidates[lbl] = ref
+                    candidates.add(ref.token)
+                    print(lbl, ref, ref.load_count)
+            else:
+                ref = tr.global_scope.gscope[lbl]
+                print("global:", lbl, ref)
 
         def fscan(node):
             if node in candidates:
@@ -3041,13 +3102,7 @@ def main_unused():
             else:
                 i += 1
 
-    # level 2 transform:
-    #  compare imports and exports across multiple files and modules
-    #  for imports and module imports which do not import names
-    #  this will have to scan for all GET_ATTR tokens to decide which
-    #  names are used and update the reference load count accordingly
-    # - this can also be used to detect names that are used and not exported
-    # ast, imports, module_imports, exports = getModuleImportExport(ast)
+
 
     print(ast.toString(1))
 

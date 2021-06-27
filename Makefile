@@ -13,14 +13,14 @@ endif
 .PHONY: test
 test:
 	coverage run -m tests.$(RUN_ARGS)_test
-	coverage html --omit "venv/*,tests/*"
+	coverage html --omit "*venv*,tests/*"
 	@#open htmlcov/index.html
 	@printf "%-60s %10s\n" $(shell grep pc_cov ./htmlcov/*.html | sed 's/<span.*">//' | sed 's=</span>==') | sort -V
 
 .PHONY: cover
 cover:
 	coverage run -m tests
-	coverage html --omit "*/venv/*,*_test.py,tests/*"
+	coverage html --omit "*venv*,*_test.py,tests/*"
 	@#open htmlcov/index.html
 	@printf "%-60s %10s\n" $(shell grep pc_cov ./htmlcov/*.html | sed 's/<span.*">//' | sed 's=</span>==') | sort -V
 

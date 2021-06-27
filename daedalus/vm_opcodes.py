@@ -147,72 +147,82 @@ class ResultType(object):
 
 class ctrl(IntEnum):
     NOP =            0x00, 0  # NOP
-    BLOCK =          0x01, 0  #
-    LOOP =           0x02, 0  #        ; start of loop construct
-    IF =             0x03, 1  #        ; conditional jump
-    ELSE =           0x04, 1  #        ; unconditional jump
-    END =            0x05, 0  #        ; end of a block, loop, if
-    TRY =            0x06, 1
-    THROW =          0x07, 0
-    CATCH =          0x09, 0
-    FINALLY =        0x0A, 0
-    JUMP =           0x0B, 1  #        ; unconditional jump
-    RETURN =         0x0C, 1  # numargs;
-    CALL    =        0x0D, 1
-    CALL_EX =        0x0E, 1
+    #BLOCK =          0x01, 0  #
+    LOOP =           0x01, 0  #        ; start of loop construct
+    IF =             0x02, 1  #        ; conditional jump
+    ELSE =           0x03, 1  #        ; unconditional jump
+    END =            0x04, 0  #        ; end of a block, loop, if
+    JUMP =           0x05, 1  #        ; unconditional jump
+    RETURN =         0x06, 1  # numargs;
+    TRY =            0x07, 0
+    CATCH =          0x08, 0
+    FINALLY =        0x09, 0
+    TRYEND =         0x0A, 0
+    THROW =          0x0B, 0
+
+    CALL    =        0x0C, 1
+    CALL_EX =        0x0D, 1
+
+    _RESERVED =        0x0E, 0
+    _RESERVED =        0x0F, 0
+    _RESERVED =        0x10, 0
+    _RESERVED =        0x11, 0
+
+class stack(IntEnum):
+    ROT2 = 0x12
+    ROT3 = 0x13
+    ROT4 = 0x14
+    DUP  = 0x15
+    POP  = 0x16
 
 class localvar(IntEnum):
-    GET    = 0x10, 1  # varindex
-    SET    = 0x11, 1  # varindex
-    DELETE = 0x12, 1  # varindex
+    GET    = 0x17, 1  # varindex
+    SET    = 0x18, 1  # varindex
+    DELETE = 0x19, 1  # varindex
 
 class globalvar(IntEnum):
-    GET    = 0x13, 1  # globalindex
-    SET    = 0x14, 1  # globalindex
-    DELETE = 0x15, 1  # globalindex
+    GET    = 0x1A, 1  # globalindex
+    SET    = 0x1B, 1  # globalindex
+    DELETE = 0x1C, 1  # globalindex
 
 class cellvar(IntEnum):
-    GET    =  0x16, 1  # cellindex
-    SET    =  0x17, 1  # cellindex
-    DELETE =  0x18, 1  # cellindex
+    LOAD_REF      =  0x20, 1  # cellindex
+    STORE_REF     =  0x21, 1  # cellindex
+    LOAD_DEREF    =  0x22, 1  # cellindex
+    STORE_DEREF   =  0x23, 1  # cellindex
+    DELETE_DEREF  =  0x24, 1  # cellindex
+
 
 class const(IntEnum):
 
     INT       = 0x77, 1  # signed leb 128
     FLOAT32   = 0x78, 1  # 4 byte float
-    FLOAT64   = 0x79, 1  # 8 byte float
-    STRING    = 0x7A, 1  # dataindex
-    BYTES     = 0x7B, 1  # dataindex
-    TRUE      = 0x7C, 0
-    FALSE     = 0x7D, 0
+    FLOAT64   = 0x7A, 1  # 8 byte float
+    STRING    = 0x7B, 1  # dataindex
+    BYTES     = 0x7C, 1  # dataindex
+    BOOL      = 0x7D, 0
     UNDEFINED = 0x7E, 0
     NULL      = 0x7F, 0
 
-class comp(IntEnum):
-    LT = 0x21
-    LE = 0x22
-    EQ = 0x23
-    NE = 0x24
-    GE = 0x25
-    GT = 0x26
-    TEQ = 0x27
-    TNE = 0x28
 
-class stack(IntEnum):
-    ROT2 = 0x2A
-    ROT3 = 0x2B
-    ROT4 = 0x2C
-    DUP  = 0x2D
-    POP  = 0x2E
+class comp(IntEnum):
+    LT  = 0x31
+    LE  = 0x32
+    EQ  = 0x33
+    NE  = 0x34
+    GE  = 0x35
+    GT  = 0x36
+    TEQ = 0x37
+    TNE = 0x38
 
 class math(IntEnum):
-  POSITIVE     = 0x30  # TOS = +TOS
-  NEGATIVE     = 0x31  # TOS = -TOS
-  BITWISE_NOT  = 0x33  # TOS = ~TOS
+  POSITIVE     = 0x39  # TOS = +TOS
+  NEGATIVE     = 0x3A  # TOS = -TOS
+  BITWISE_NOT  = 0x3B  # TOS = ~TOS
 
-  AND          = 0x3A  # TOS = TOS1 && TOS2
-  OR           = 0x3B  # TOS = TOS1 || TOS2
-  NOT          = 0x3C  # TOS = !TOS1
+  AND          = 0x3C  # TOS = TOS1 && TOS2
+  OR           = 0x3D  # TOS = TOS1 || TOS2
+  NOT          = 0x3E  # TOS = !TOS1
 
   ADD          = 0x40  # TOS = TOS1 + TOS2
   SUB          = 0x41  # TOS = TOS1 - TOS2
@@ -225,7 +235,6 @@ class math(IntEnum):
   BITWISE_XOR  = 0x48  # TOS = TOS1 ^ TOS2
   SHIFTL       = 0x49  # TOS = TOS1 << TOS2
   SHIFTR       = 0x4A  # TOS = TOS1 >> TOS2
-  POPCNT       = 0x4B  # TOS = count 1's in TOS
 
 
 class obj(IntEnum):
@@ -246,14 +255,7 @@ class obj(IntEnum):
     # fnidx, argcount
     # arg is number of function arguments
     # default values are popped from the stack
-    CREATE_FUNCTION = 0x6D, 2
-
-
-    # fnidx, argcount
-    # TOS is a dictionary of kwargs
-    #  followed by N positional arguments
-    CREATE_FUNCTION_KWARG = 0x6E, 2
-
+    CREATE_FUNCTION = 0x6D, 1
 
     CREATE_CLASS    = 0x6F
 

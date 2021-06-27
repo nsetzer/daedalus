@@ -71,11 +71,13 @@ class JsObject(object):
             self.prototype = prototype
 
     def __repr__(self):
-        return "<JsObject()>"
+        # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
+        s = ",".join([str(s) for s in self.data.keys()])
+        return "<JsObject(%s)>" % s
 
     def _hasAttr(self, name):
-        #if isinstance(name, JsString):
-        #    name = name.value
+        if isinstance(name, JsString):
+            name = name.value
         return name in self.data
 
     def getAttr(self, name):
@@ -115,7 +117,6 @@ class JsObject(object):
     def delIndex(self, index):
         del self.data[index]
 
-
 class PyProp(object):
     def __init__(self, target, func):
         super(PyProp, self).__init__()
@@ -149,7 +150,6 @@ class JsArray(JsObject):
         return self.getAttr(index)
 
     def setIndex(self, index, value):
-        print('setIndex', index, value)
         if isinstance(index, int):
             self.array[index] = value
         else:
@@ -270,13 +270,20 @@ JsArray.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.ar
 JsUndefined.instance = JsUndefined()
 
 class VmInstruction(object):
-    __slots__ = ['opcode', 'args', 'target']
+    __slots__ = ['opcode', 'args', 'target', 'line', 'index']
 
-    def __init__(self, opcode, *args, target=None):
+    def __init__(self, opcode, *args, target=None, token=None):
         super(VmInstruction, self).__init__()
         self.opcode = opcode
         self.args = args
         self.target = target
+
+        if token is not None:
+            self.line = token.line
+            self.index = token.index
+        else:
+            self.line = 0
+            self.index = 0
 
     def __repr__(self):
         if self.args:
@@ -345,12 +352,13 @@ class VmFunctionDef(object):
         self.arglabels = []
 
 class JsFunction(object):
-    def __init__(self, module, fndef, args, kwargs):
+    def __init__(self, module, fndef, args, kwargs, bind_target):
         super(JsFunction, self).__init__()
         self.module = module
         self.fndef = fndef
         self.args = args
         self.kwargs = kwargs
+        self.bind_target = bind_target
 
     def __repr__(self):
 
@@ -360,6 +368,7 @@ class JsFunction(object):
 class VmModule(object):
     def __init__(self):
         super(VmModule, self).__init__()
+        self.path = None
 
     def dump(self):
 
@@ -368,13 +377,14 @@ class VmModule(object):
             print("--- %3d ---" % idx)
             print("globals:", " ".join(fn.globals.names))
             print("locals :", " ".join(fn.local_names))
+            print("cell   :", " ".join(fn.cell_names))
             print("args   :", " ".join(fn.arglabels))
             for idx, instr in enumerate(fn.instrs):
                 if instr.opcode in (opcodes.globalvar.GET, opcodes.globalvar.SET, opcodes.globalvar.DELETE):
                     print("%4d (%s %s)" % (idx, instr.opcode, self.globals.names[instr.args[0]]))
                 elif instr.opcode in (opcodes.localvar.GET, opcodes.localvar.SET, opcodes.localvar.DELETE):
                     print("%4d (%s %s)" % (idx, instr.opcode, fn.local_names[instr.args[0]]))
-                elif instr.opcode in (opcodes.cellvar.GET, opcodes.cellvar.SET, opcodes.cellvar.DELETE):
+                elif instr.opcode in (opcodes.cellvar.LOAD_REF, opcodes.cellvar.STORE_REF, opcodes.cellvar.LOAD_DEREF, opcodes.cellvar.STORE_DEREF, opcodes.cellvar.DELETE_DEREF):
                     print("%4d (%s %s)" % (idx, instr.opcode, fn.cell_names[instr.args[0]]))
                 elif instr.opcode == opcodes.obj.GET_ATTR:
                     print("%4d (%s %s)" % (idx, instr.opcode, fn.local_names[instr.args[0]]))
@@ -425,12 +435,16 @@ class VmCompiler(object):
             Token.T_ATTR: self._visit_attr,
             Token.T_KEYWORD: self._visit_keyword,
             Token.T_FUNCTION: self._visit_function,
+            Token.T_LAMBDA: self._visit_lambda,
             Token.T_RETURN: self._visit_return,
             Token.T_FUNCTIONCALL: self._visit_functioncall,
             Token.T_TRY: self._visit_try,
             Token.T_CATCH: self._visit_catch,
             Token.T_FINALLY: self._visit_finally,
             Token.T_THROW: self._visit_throw,
+            Token.T_DELETE_VAR: self._visit_delete_var,
+            Token.T_FREE_VAR: self._visit_free_var,
+            Token.T_CELL_VAR: self._visit_cell_var,
         }
 
         self.compile_actions = {
@@ -438,9 +452,10 @@ class VmCompiler(object):
 
         self.functions = []
 
-    def compile(self, ast):
+    def compile(self, ast, path=None):
 
         self.module = VmModule()
+        self.module.path = path
         self.module.globals = VmGlobals()
         self.module.functions = [VmFunctionDef(ast, self.module.globals)]
 
@@ -503,8 +518,8 @@ class VmCompiler(object):
         if len(token.children) == 2:
             arglist, branch_true = token.children
 
-            instr1 = VmInstruction(opcodes.ctrl.END)
-            instr2 = VmInstruction(opcodes.ctrl.IF)
+            instr1 = VmInstruction(opcodes.ctrl.END, token=token)
+            instr2 = VmInstruction(opcodes.ctrl.IF, token=token)
 
             self.fn_jumps[instr1] = [instr2]  # target, list[source]
 
@@ -516,9 +531,9 @@ class VmCompiler(object):
         elif len(token.children) == 3:
             arglist, branch_true, branch_false = token.children
 
-            instr1 = VmInstruction(opcodes.ctrl.END)
-            instr2 = VmInstruction(opcodes.ctrl.ELSE)
-            instr3 = VmInstruction(opcodes.ctrl.IF)
+            instr1 = VmInstruction(opcodes.ctrl.END, token=token)
+            instr2 = VmInstruction(opcodes.ctrl.ELSE, token=token)
+            instr3 = VmInstruction(opcodes.ctrl.IF, token=token)
 
             self.fn_jumps[instr1] = [instr2]  # target, list[source]
             self.fn_jumps[instr2] = [instr3]  # target, list[source]
@@ -536,10 +551,10 @@ class VmCompiler(object):
     def _visit_while(self, depth, state, token):
         arglist, block = token.children
 
-        instr1 = VmInstruction(opcodes.ctrl.END)
-        instr2 = VmInstruction(opcodes.ctrl.JUMP)
-        instr3 = VmInstruction(opcodes.ctrl.IF)
-        instr4 = VmInstruction(opcodes.ctrl.LOOP)
+        instr1 = VmInstruction(opcodes.ctrl.END, token=token)
+        instr2 = VmInstruction(opcodes.ctrl.JUMP, token=token)
+        instr3 = VmInstruction(opcodes.ctrl.IF, token=token)
+        instr4 = VmInstruction(opcodes.ctrl.LOOP, token=token)
 
         self.fn_jumps[instr1] = [instr3]  # target, list[source]
         self.fn_jumps[instr4] = [instr2]  # target, list[source]
@@ -556,12 +571,12 @@ class VmCompiler(object):
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr4)
 
     def _visit_break(self, depth, state, token):
-        instr0 = VmInstruction(opcodes.ctrl.JUMP)
+        instr0 = VmInstruction(opcodes.ctrl.JUMP, token=token)
         self.fn_jumps[self.target_break[-1]].append(instr0)
         self._push_instruction(instr0)
 
     def _visit_continue(self, depth, state, token):
-        instr0 = VmInstruction(opcodes.ctrl.JUMP)
+        instr0 = VmInstruction(opcodes.ctrl.JUMP, token=token)
         self.fn_jumps[self.target_continue[-1]].append(instr0)
         self._push_instruction(instr0)
 
@@ -572,8 +587,8 @@ class VmCompiler(object):
             raise NotImplementedError()
         else:
             nprops = len(token.children)
-
-            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, nprops))
+            instr = VmInstruction(opcodes.obj.CREATE_OBJECT, nprops, token=token)
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
 
             for child in reversed(token.children):
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, child)
@@ -584,8 +599,8 @@ class VmCompiler(object):
             raise NotImplementedError()
         else:
             nprops = len(token.children)
-
-            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_ARRAY, nprops))
+            instr = VmInstruction(opcodes.obj.CREATE_ARRAY, nprops, token=token)
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
 
             for child in reversed(token.children):
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, child)
@@ -610,7 +625,7 @@ class VmCompiler(object):
         else:
             opcode = opcodes.obj.GET_INDEX
 
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, token=token))
         self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[0])
         self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[1])
 
@@ -629,7 +644,7 @@ class VmCompiler(object):
         else:
             opcode = opcodes.obj.GET_ATTR
 
-        self._push_instruction(VmInstruction(opcode, index))
+        self._push_instruction(VmInstruction(opcode, index, token=token))
 
     def _visit_arglist(self, depth, state, token):
 
@@ -651,17 +666,64 @@ class VmCompiler(object):
     def _visit_var(self, depth, state, token):
 
         for child in reversed(token.children):
-            self._push_token(depth, VmCompiler.C_VISIT, child)
+
+            if child.type == Token.T_ASSIGN:
+                #self._push_token(depth, VmCompiler.C_VISIT, child)
+                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, child.children[0])
+                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, child.children[1])
+
+            else:
+                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, token.children[0])
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.UNDEFINED, token=token))
+
+        # for const and let, implement block scoping by saving the current value of
+        # the variable to the stack. later, DELETE_VAR can pop the old value
+        # TODO: order of operations
+
+        if token.value == "const" or token.value == "let":
+
+            for child in reversed(token.children):
+
+                if child.type == Token.T_ASSIGN:
+                    var = child.children[0]
+                else:
+                    var = child
+
+                if var.type == Token.T_LOCAL_VAR:
+
+                    # if already defined, save the current value on the stack
+                    if var.value in self.fn.local_names:
+                        opcode, index = self._token2index(var, True)
+                        print("push", token.value, "local", var.value)
+                        self._push_token(depth, VmCompiler.C_INSTRUCTION,
+                            VmInstruction(opcode, index, token=token))
+
+
+                elif var.type == Token.T_GLOBAL_VAR:
+
+                    # if already defined, save the current value on the stack
+                    if var.value in self.fn.globals.names:
+                        opcode, index = self._token2index(var, True)
+                        print("push", token.value, "global", var.value)
+                        self._push_token(depth, VmCompiler.C_INSTRUCTION,
+                            VmInstruction(opcode, index, token=token))
+                else:
+                    raise VmCompileError(var, "illegal variable def")
+
+    def _visit_delete_var(self, depth, state, token):
+        print("pop",token.value)
+        child = token.children[0]
+        opcode, index = self._token2index(child, False)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=child))
 
     def _visit_binary(self, depth, state, token):
 
-        flag0 = VmCompiler.C_VISIT
-        if token.value == "=":
-            flag0 |= VmCompiler.C_STORE
-        else:
-            flag0 |= VmCompiler.C_LOAD
-
-        flag1 = VmCompiler.C_VISIT
+        #flag0 = VmCompiler.C_VISIT
+        #if token.value == "=":
+        #    flag0 |= VmCompiler.C_STORE
+        #else:
+        #    flag0 |= VmCompiler.C_LOAD
+        #flag1 = VmCompiler.C_VISIT
 
         if token.value == ":":
             pass
@@ -669,7 +731,7 @@ class VmCompiler(object):
             opcode = binop.get(token.value, None)
             if opcode is None:
                 raise VmCompileError(token, "illegal binary operator")
-            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode))
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, token=token))
 
         self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[1])
         self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[0])
@@ -679,7 +741,7 @@ class VmCompiler(object):
         if token.value == "=":
 
             if state & VmCompiler.C_LOAD:
-                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.DUP))
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.DUP, token=token))
 
             self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, token.children[0])
             self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[1])
@@ -688,11 +750,12 @@ class VmCompiler(object):
 
             if token.value in binop_store:
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_STORE, token.children[0])
-                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(binop_store[token.value]))
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(binop_store[token.value], token=token))
 
             lhs, rhs = token.children
             if lhs.type == Token.T_GET_ATTR:
-                raise NotImplementedError()
+                self._push_token(depth, VmCompiler.C_VISIT, token.children[1])
+                self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
             elif lhs.type == Token.T_SUBSCR:
                 raise NotImplementedError()
             else:
@@ -700,16 +763,25 @@ class VmCompiler(object):
                 self._push_token(depth, VmCompiler.C_VISIT, token.children[1])
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
 
+    def _visit_free_var(self, depth, state, token):
+
+        opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
+
+        self._push_instruction(VmInstruction(opcode, index, token=token))
+
+    def _visit_cell_var(self, depth, state, token):
+
+        opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
+
+        self._push_instruction(VmInstruction(opcode, index, token=token))
+
     def _visit_text(self, depth, state, token):
 
         opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
 
-        self._push_instruction(VmInstruction(opcode, index))
+        self._push_instruction(VmInstruction(opcode, index, token=token))
 
-    def _visit_string(self, depth, state, token):
-
-        value = JsString(pyast.literal_eval(token.value))
-
+    def _build_instr_string(self, state, token, value):
         index = -1
         try:
             index = self.fn.globals.constdata.index(value)
@@ -721,22 +793,30 @@ class VmCompiler(object):
         if index == -1:
             raise VmCompileError(token, "unable to load undefined string")
 
-        self._push_instruction(VmInstruction(opcodes.const.STRING, index))
+        return VmInstruction(opcodes.const.STRING, index, token=token)
+
+    def _visit_string(self, depth, state, token):
+
+        value = JsString(pyast.literal_eval(token.value))
+        self._push_instruction(self._build_instr_string(state, token, value))
 
     def _visit_number(self, depth, state, token):
 
-        self._push_instruction(VmInstruction(opcodes.const.INT, int(token.value)))
+        self._push_instruction(VmInstruction(opcodes.const.INT, int(token.value), token=token))
 
     def _visit_keyword(self, depth, state, token):
 
         if token.value == "true":
-            self._push_instruction(VmInstruction(opcodes.const.TRUE))
+            self._push_instruction(VmInstruction(opcodes.const.BOOL, 1, token=token))
         elif token.value == "false":
-            self._push_instruction(VmInstruction(opcodes.const.FALSE))
+            self._push_instruction(VmInstruction(opcodes.const.BOOL, 0, token=token))
         elif token.value == "null":
-            self._push_instruction(VmInstruction(opcodes.const.NULL))
+            self._push_instruction(VmInstruction(opcodes.const.NULL, token=token))
         elif token.value == "undefined":
-            self._push_instruction(VmInstruction(opcodes.const.UNDEFINED))
+            self._push_instruction(VmInstruction(opcodes.const.UNDEFINED, token=token))
+        elif token.value == "this":
+            opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
+            self._push_instruction(VmInstruction(opcode, index, token=token))
         else:
             raise VmCompileError(token, "not implemented")
 
@@ -748,9 +828,18 @@ class VmCompiler(object):
         closure = token.children[3]
 
         opcode, index = self._token2index(name, False)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
 
         self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block, closure, autobind=False)
+
+    def _visit_lambda(self, depth, state, token):
+
+        name = token.children[0]
+        arglist = token.children[1]
+        block = token.children[2]
+        closure = token.children[3]
+
+        self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block, closure, autobind=True)
 
     def _visit_functioncall(self, depth, state, token):
 
@@ -760,15 +849,38 @@ class VmCompiler(object):
             raise NotImplementedError()
         else:
             if state & VmCompiler.C_LOAD == 0:
-                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP))
-            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.CALL, len(expr_args.children)))
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
 
             flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
-            self._push_token(depth, flag0, expr_args)
+
+            allow_positional = True
+            pos_count = 0
+            kwarg_count = 0
+
+
+            seq = []
+            for child in reversed(expr_args.children):
+                if child.type == Token.T_ASSIGN:
+                    allow_positional = False
+
+                    seq.append((depth, flag0, child.children[1]))
+                    seq.append((depth, VmCompiler.C_INSTRUCTION, self._build_instr_string(flag0, token, child.children[0].value)))
+                    kwarg_count += 1
+                elif allow_positional:
+                    pos_count += 1
+                    seq.append((depth, flag0, child))
+                else:
+                    raise VmCompileError(child, "syntax error: pos after kwarg")
+
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.CALL, pos_count, token=token))
+            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, kwarg_count, token=token))
+            self.seq.extend(seq)
+
+            flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
             self._push_token(depth, flag0, expr_call)
 
     def _visit_return(self, depth, state, token):
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.RETURN, len(token.children)))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.RETURN, len(token.children), token=token))
         flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
         for child in reversed(token.children):
             self._push_token(depth, flag0, child)
@@ -778,43 +890,67 @@ class VmCompiler(object):
 
         count = len(token.children)
 
+        instr_e = VmInstruction(opcodes.ctrl.TRYEND, token=token)
+        instr_jf = VmInstruction(opcodes.ctrl.JUMP, token=token)
+        instr_f = VmInstruction(opcodes.ctrl.FINALLY, token=token)
+        instr_c = VmInstruction(opcodes.ctrl.CATCH, token=token)
+        instr_t = VmInstruction(opcodes.ctrl.TRY, token=token)
+        instr_if = VmInstruction(opcodes.const.INT, token=token)
+        instr_ic = VmInstruction(opcodes.const.INT, token=token)
+
+        self.fn_jumps[instr_f] = [instr_jf]  # target, list[source]
+        self.fn_jumps[instr_c] = []  # target, list[source]
+
         block = None
         catch = None
         final = None
-        if count >= 1:
-            block = token.children[0]
-        if count >= 2:
+        tryarg = 0
+
+        block = token.children[0]
+
+        if count == 2:
+            if token.children[1].type == Token.T_CATCH:
+                catch = token.children[1]
+            else:
+                final = token.children[1]
+
+        elif count == 3:
             catch = token.children[1]
-        if count == 3:
             final = token.children[2]
 
-        instr_jf = VmInstruction(opcodes.ctrl.JUMP)
-        instr_f = VmInstruction(opcodes.ctrl.FINALLY)
-        instr_c = VmInstruction(opcodes.ctrl.CATCH)
-        instr_t = VmInstruction(opcodes.ctrl.TRY)
-        instr_e = VmInstruction(opcodes.ctrl.END)
-        #instr_b = VmInstruction(opcodes.ctrl.BLOCK)
+        if catch is None and final is None:
+            pass
+        elif catch is None:
+            self.fn_jumps[instr_f].append(instr_ic)
+            self.fn_jumps[instr_f].append(instr_if)
+        elif final is None:
+            self.fn_jumps[instr_c].append(instr_ic)
+            self.fn_jumps[instr_c].append(instr_if)
+        else:
+            self.fn_jumps[instr_c].append(instr_ic)
+            self.fn_jumps[instr_f].append(instr_if)
 
-        self.fn_jumps[instr_f] = [instr_jf]  # target, list[source]
-        self.fn_jumps[instr_c] = [instr_t]  # target, list[source]
 
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
 
-        if final:
+        if final is not None:
             self._push_token(depth, flag0, final)
 
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_f)
 
-        if catch:
+        if catch is not None:
             self._push_token(depth, flag0, catch)
 
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_c)
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_jf)
 
-        if block:
+        if block is not None:
             self._push_token(depth, flag0, block)
 
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_t)
+
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_if)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_ic)
 
         #self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_b)
 
@@ -825,17 +961,10 @@ class VmCompiler(object):
 
         flag0 = VmCompiler.C_VISIT
 
-        if len(token.children) == 2:
-            arglist, block = token.children
-
-            self._push_token(depth, flag0, block)
-            self._push_token(depth, flag0|VmCompiler.C_STORE, arglist.children[0])
-
-        if len(token.children) == 1:
-            block = token.children[0]
-
-            self._push_token(depth, flag0, block)
-            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP))
+        # TODO: third child deletes block variables
+        arglist, block, _ = token.children
+        self._push_token(depth, flag0, block)
+        self._push_token(depth, flag0|VmCompiler.C_STORE, arglist.children[0])
 
     def _visit_finally(self, depth, state, token):
 
@@ -844,7 +973,7 @@ class VmCompiler(object):
             self._push_token(depth, flag0, child)
 
     def _visit_throw(self, depth, state, token):
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.THROW))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.THROW, token=token))
         flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
         for child in reversed(token.children):
             self._push_token(depth, flag0, child)
@@ -879,17 +1008,55 @@ class VmCompiler(object):
                 else:
                     raise CompileError(arg, "unexpected argument")
 
-        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, len(arglabels)))
+        cellvars = []
+
+        if closure and closure.children:
+
+            for child in closure.children:
+
+                if child.type == Token.T_FREE_VAR:
+                    # argument is always a local variable, make a reference to it
+                    #_, index = self._token2index(child, True)
+                    index = self.fn.local_names.index(child.value)
+                    cellvars.append(child.value)
+                    self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.cellvar.LOAD_REF, index, token=token))
+
+                elif child.type == Token.T_CELL_VAR:
+                    pass
+                else:
+                    raise VmCompileError(child, "expected cell or free var")
+
+            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_TUPLE, len(closure.children), token=token))
+
+        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
+
+        if autobind:
+            #this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+            #opcode, index = self._token2index(this, True)
+            #self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=this))
+            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.BOOL, 1, token=token))
+        else:
+            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.BOOL, 0, token=token))
+
+        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, 0, token=token))
+
+        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.INT, len(arglabels), token=token))
 
         for arglabel, argdefault in reversed(list(zip(arglabels, argdefaults))):
 
             if argdefault is None:
-                self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.UNDEFINED))
+                self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.UNDEFINED, token=token))
             else:
                 self._push_token(0, VmCompiler.C_VISIT|VmCompiler.C_LOAD, argdefault)
 
-        fndef.local_names = arglabels
-        fndef.arglabels = arglabels
+
+        fndef.local_names = list(arglabels)
+        fndef.arglabels = list(arglabels)
+
+
+        for cellvar in closure.children:
+            cellvars.append(cellvar.value)
+        fndef.cell_names = cellvars
 
     def _token2index(self, token, load):
 
@@ -917,9 +1084,10 @@ class VmCompiler(object):
                     index = len(self.fn.local_names)
                     self.fn.local_names.append(name)
 
-        elif token.type == Token.T_FREE_VAR or token.type == Token.T_CELL_VAR:
+        elif token.type == Token.T_FREE_VAR:
             name = token.value
             enum = opcodes.cellvar
+            #print("_token2index", token.type, bool(load), name, self.fn.cell_names)
 
             try:
                 index = self.fn.cell_names.index(name)
@@ -927,6 +1095,44 @@ class VmCompiler(object):
                 if not load:
                     index = len(self.fn.cell_names)
                     self.fn.cell_names.append(name)
+
+            if index == -1:
+                raise VmCompileError(token, "unable to load undefined identifier")
+
+            if load:
+                return enum.LOAD_DEREF, index
+            else:
+                return enum.STORE_DEREF, index
+
+        elif token.type == Token.T_CELL_VAR:
+            name = token.value
+            enum = opcodes.cellvar
+            #print("_token2index", token.type, load, name, self.fn.cell_names)
+
+            try:
+                index = self.fn.cell_names.index(name)
+            except ValueError:
+                if not load:
+                    index = len(self.fn.cell_names)
+                    self.fn.cell_names.append(name)
+
+            if index == -1:
+                raise VmCompileError(token, "unable to load undefined identifier")
+
+            if load:
+                return enum.LOAD_REF, index
+            else:
+                return enum.STORE_REF, index
+
+        elif token.type == Token.T_KEYWORD and token.value in ("this",):
+            name = token.value
+            enum = opcodes.localvar
+
+            try:
+                index = self.fn.local_names.index(name)
+            except ValueError:
+                index = len(self.fn.local_names)
+                self.fn.local_names.append(name)
 
         if index == -1:
             raise VmCompileError(token, "unable to load undefined identifier")
@@ -943,30 +1149,44 @@ class VmCompiler(object):
         self.fn.instrs.append(instr)
 
 class VmStackFrame(object):
-    def __init__(self, module, fndef, locals=None, cells=None):
+    def __init__(self, module, fndef, locals):
         super(VmStackFrame, self).__init__()
         self.fndef = fndef
         self.module = module
-        self.locals = {} if locals is None else locals
+        self.locals = locals
         self.local_names = fndef.local_names
         self.globals = fndef.globals
-        self.cells = {} if cells is None else cells
+        #self.cells = {} if cells is None else cells
         self.blocks = []
         self.stack = []
         self.sp = 0
 
-class VmBlock(object):
-    def __init__(self, ip, instr):
-        super(VmBlock, self).__init__()
-        self.ip = ip
-        self.instr = instr
-
 class VmTryBlock(object):
-    def __init__(self, ip, instr):
+    def __init__(self, catch_ip, finally_ip):
         super(VmTryBlock, self).__init__()
+        self.catch_ip = catch_ip
+        self.finally_ip = finally_ip
+        self.flag_catch = False
+        self.flag_finally = False
+
+    def target(self):
+        # returns the target instruction pointer when an exception is thrown
+        # the first time an exception is thrown in a block, go to the
+        # catch block. an exception thrown inside the catch handler will
+        # instead jump to the finally block
+        if self.flag_catch:
+            return self.finally_ip
+        else:
+            return self.catch_ip
+
+class VmExceptionContext(object):
+    def __init__(self, ip, fndef, value, other):
+        super(VmExceptionContext, self).__init__()
         self.ip = ip
-        self.instr = instr
-        self.exception = None
+        self.fndef = fndef
+        self.value = value
+        self.handled = False
+        self.other = other  # previous exception
 
 binary_op = {
     opcodes.math.ADD: operator.__add__,
@@ -988,6 +1208,9 @@ binary_op = {
     opcodes.comp.GE: operator.__ge__,
     opcodes.comp.GT: operator.__gt__,
 
+    opcodes.comp.TEQ: operator.__eq__,
+    opcodes.comp.TNE: operator.__ne__,
+
     opcodes.math.AND: lambda a, b: (a and b),
     opcodes.math.OR: lambda a, b: (a or b),
 
@@ -1002,37 +1225,43 @@ unary_op = {
 
 }
 
-def _get_exception_frame(frames, index):
-
-    j = index
-    while j >= 0:
-        frame = frames[j]
-        i = len(frame.blocks)
-        while i > 0:
-            i -= 1
-            block = frame.blocks[i]
-            if isinstance(block, VmTryBlock):
-                return j, i
-        j -= 1
-    return 0, 0
-
 class VmRuntime(object):
     def __init__(self):
         super(VmRuntime, self).__init__()
 
         self.stack_frames = []
+        self.exception = None
 
         self.enable_diag = False
 
     def init(self, module):
 
-        self.stack_frames = [VmStackFrame(module, module.functions[0])]
+        locals = JsObject()
+        locals.setAttr("this", JsUndefined.instance)
+        self.stack_frames = [VmStackFrame(module, module.functions[0], locals)]
 
         g = self.stack_frames[-1].globals
 
         console = lambda: None
         console.log = print
         g.values['console'] = console
+
+    def _unwind(self):
+
+        while self.stack_frames:
+            frame = self.stack_frames[-1]
+            # if this frame has an exception handler
+            if frame.blocks:
+                block = frame.blocks[-1]
+                # if the finally block has not yet been entered
+                if not block.flag_finally:
+                    return frame, block
+                else:
+                    frame.blocks.pop()
+            else:
+                self.stack_frames.pop()
+
+        return None, None
 
     def run(self):
 
@@ -1050,7 +1279,6 @@ class VmRuntime(object):
             if instr.opcode == opcodes.ctrl.NOP:
                 pass
             elif instr.opcode == opcodes.ctrl.IF:
-                frame.blocks.append(VmBlock(frame.sp, instr))
                 tos = frame.stack.pop()
                 # TODO: check if 'falsey'
                 if not tos:
@@ -1058,12 +1286,10 @@ class VmRuntime(object):
                     continue
             elif instr.opcode == opcodes.ctrl.END:
 
-                block_ = frame.blocks.pop()
-                # if this is a tryblock, with an active exception
-                # find the next exception handler
+                pass
             elif instr.opcode == opcodes.ctrl.LOOP:
 
-                frame.blocks.append(VmBlock(frame.sp, instr))
+                pass
             elif instr.opcode == opcodes.ctrl.ELSE:
                 frame.sp += instr.args[0]
                 continue
@@ -1071,21 +1297,23 @@ class VmRuntime(object):
                 frame.sp += instr.args[0]
                 continue
             elif instr.opcode == opcodes.ctrl.CALL:
+
+                kwargs = frame.stack.pop()
+
                 argc = instr.args[0]
                 args = []
                 for i in range(argc):
                     args.insert(0, frame.stack.pop())
                 func = frame.stack.pop()
 
-                # TODO: get dict from TOS for given kwargs
-                #kwargs = dict(func.kwargs)
-                #kwargs.update(stack_kwargs)
-                kwargs = {}
-
-                #print("call", func, args, kwargs)
-
                 if isinstance(func, JsFunction):
-                    posargs = {}
+                    posargs = kwargs #JsObject()
+
+                    if func.bind_target:
+                        posargs.setAttr("this", func.bind_target)
+                    else:
+                        posargs.setAttr("this", posargs)
+
                     for i, lbl in enumerate(func.fndef.arglabels):
 
                         if i < len(args):
@@ -1093,22 +1321,23 @@ class VmRuntime(object):
                         else:
                             val = func.args[i] # default value
 
-                        posargs[lbl] = val
+                        if not posargs._hasAttr(lbl):
+                            posargs.setAttr(lbl, val)
 
                     # TODO: rest parameters
                     rest = []
                     if len(args) > len(func.fndef.arglabels):
                         rest = args[len(func.fndef.arglabels):]
 
-                    new_frame = VmStackFrame(func.module, func.fndef)
-                    new_frame.locals = posargs
+                    new_frame = VmStackFrame(func.module, func.fndef, posargs)
+
                     self.stack_frames.append(new_frame)
                     frame.sp += 1
                     frame = self.stack_frames[-1]
                     instrs = frame.fndef.instrs
                     continue
                 else:
-                    frame.stack.append(func(*args, **kwargs))
+                    frame.stack.append(func(*args))
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
                 if frame.stack:
@@ -1123,15 +1352,65 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     frame.stack.append(rv)
                     continue
+            elif instr.opcode == opcodes.ctrl.TRY:
+
+                tgtif = (frame.sp + frame.stack.pop() - 1)
+                #assert frame.fndef.instrs[tgtif].opcode == opcodes.ctrl.FINALLY
+
+                tgtic = (frame.sp + frame.stack.pop() - 2)
+                #assert frame.fndef.instrs[tgtic].opcode == opcodes.ctrl.CATCH
+
+                frame.blocks.append(VmTryBlock(tgtic, tgtif))
+            elif instr.opcode == opcodes.ctrl.TRYEND:
+                frame.blocks.pop()
+
+                if self.exception:
+                    if self.exception.handled:
+                        self.exception = None
+                    else:
+                        frame_, block = self._unwind()
+                        if frame_ is None:
+                            print("unhandled exception")
+                            break
+                        else:
+                            frame = frame_
+                            instrs = frame.fndef.instrs
+                            frame.sp = block.target()
+                            continue
+            elif instr.opcode == opcodes.ctrl.CATCH:
+
+                if self.exception is None:
+                    raise RunTimeError("no exception")
+
+                frame.stack.append(self.exception.value)
+                self.exception.handled = True
+                frame.blocks[-1].flag_catch = True
+            elif instr.opcode == opcodes.ctrl.FINALLY:
+
+                frame.blocks[-1].flag_finally = True
+            elif instr.opcode == opcodes.ctrl.THROW:
+
+                # TODO: if throw is in side of a catch block... jump to finally instead
+                self.exception = VmExceptionContext(frame.sp, frame.fndef, frame.stack.pop(), self.exception)
+
+                frame_, block = self._unwind()
+                if frame is None:
+                    print("unhandled exception")
+                    break
+                else:
+                    frame = frame_
+                    instrs = frame.fndef.instrs
+                    frame.sp = block.target()
+                    continue
             elif instr.opcode == opcodes.localvar.SET:
                 name = frame.local_names[instr.args[0]]
-                frame.locals[name] = frame.stack.pop()
+                frame.locals.setAttr(name, frame.stack.pop())
             elif instr.opcode == opcodes.localvar.GET:
                 name = frame.local_names[instr.args[0]]
-                frame.stack.append(frame.locals[name])
+                frame.stack.append(frame.locals.getAttr(name))
             elif instr.opcode == opcodes.localvar.DELETE:
                 name = frame.local_names[instr.args[0]]
-                del frame.locals[name]
+                frame.locals.delAttr(name)
             elif instr.opcode == opcodes.globalvar.SET:
                 name = frame.globals.names[instr.args[0]]
                 frame.globals.values[name] = frame.stack.pop()
@@ -1141,37 +1420,12 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.globalvar.DELETE:
                 name = frame.globals.names[instr.args[0]]
                 del frame.globals.values[name]
-            elif instr.opcode == opcodes.cellvar.SET:
-
-                raise NotImplementedError()
-            elif instr.opcode == opcodes.cellvar.GET:
-
-                raise NotImplementedError()
-            elif instr.opcode == opcodes.cellvar.DELETE:
-
-                raise NotImplementedError()
-            elif instr.opcode == opcodes.ctrl.TRY:
-
-                frame.blocks.append(VmTryBlock(frame.sp, instr))
-            elif instr.opcode == opcodes.ctrl.CATCH:
-
-                pass
-            elif instr.opcode == opcodes.ctrl.FINALLY:
-
-                pass
-            elif instr.opcode == opcodes.ctrl.THROW:
-
-                fidx_, bidx_ = _get_exception_frame(self.stack_frames, len(self.stack_frames)-1)
-
-                if fidx_ == 0 and bidx_ == 0:
-                    print("unhandled exception")
-                else:
-                    frame_ = self.stack_frames[fidx_]
-                    block_ = frame_.blocks[bidx_]
-                    print(frame_)
-                    print(block_)
-
-
+            #elif instr.opcode == opcodes.cellvar.SET:
+            #    raise NotImplementedError()
+            #elif instr.opcode == opcodes.cellvar.GET:
+            #    raise NotImplementedError()
+            #elif instr.opcode == opcodes.cellvar.DELETE:
+            #    raise NotImplementedError()
             elif instr.opcode == opcodes.stack.ROT2:
                 top1 = frame.stack.pop()
                 top2 = frame.stack.pop()
@@ -1207,6 +1461,8 @@ class VmRuntime(object):
                 obj = frame.stack.pop()
                 if isinstance(obj, JsObject):
                     val = obj.getAttr(name)
+                elif isinstance(obj, int):
+                    val = lambda x: hex(obj)
                 else:
                     val = getattr(obj, name)
 
@@ -1230,7 +1486,6 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.obj.GET_INDEX:
                 obj = frame.stack.pop()
                 index = frame.stack.pop()
-                print("GET_INDEX", obj, index)
                 if isinstance(obj, JsObject):
                     val = obj.getIndex(index)
                 else:
@@ -1242,7 +1497,6 @@ class VmRuntime(object):
                 obj = frame.stack.pop()
                 index = frame.stack.pop()
                 val = frame.stack.pop()
-                print("SET_INDEX", obj, index, val)
                 if isinstance(obj, JsObject):
                     obj.setIndex(index, val)
                 else:
@@ -1256,17 +1510,24 @@ class VmRuntime(object):
                     del obj[index]
             elif instr.opcode == opcodes.obj.CREATE_FUNCTION:
 
-                fnidx, argc = instr.args
+                fnidx = instr.args[0]
+
+                bind = frame.stack.pop()
+                kwargs = frame.stack.pop()
+                argc = frame.stack.pop()
+
+                if bind:
+                    bind_target = frame.locals
+                else:
+                    bind_target = None
+                # print("Create function (this)", frame.locals)
 
                 args = []
                 for i in range(argc):
                     args.insert(0, frame.stack.pop())
 
-                fn = JsFunction(frame.module, frame.module.functions[fnidx], args, {})
+                fn = JsFunction(frame.module, frame.module.functions[fnidx], args, kwargs, bind_target)
                 frame.stack.append(fn)
-            elif instr.opcode == opcodes.obj.CREATE_FUNCTION_KWARG:
-
-                raise NotImplementedError()
             elif instr.opcode == opcodes.obj.CREATE_OBJECT:
 
                 args = []
@@ -1287,6 +1548,12 @@ class VmRuntime(object):
                     args.append(val)
 
                 frame.stack.append(JsArray(args))
+            elif instr.opcode == opcodes.obj.CREATE_TUPLE:
+
+                raise NotImplementedError()
+            elif instr.opcode == opcodes.obj.CREATE_SET:
+
+                raise NotImplementedError()
             elif instr.opcode in unary_op:
                 rhs = frame.stack.pop()
                 frame.stack.append(unary_op[instr.opcode](lhs, rhs))
@@ -1295,10 +1562,28 @@ class VmRuntime(object):
                 lhs = frame.stack.pop()
                 #print(binary_op[instr.opcode], lhs, rhs)
                 frame.stack.append(binary_op[instr.opcode](lhs, rhs))
-            elif instr.opcode == opcodes.const.STRING:
-                frame.stack.append(frame.globals.constdata[instr.args[0]])
             elif instr.opcode == opcodes.const.INT:
+
                 frame.stack.append(instr.args[0])
+            elif instr.opcode == opcodes.const.FLOAT32:
+
+                frame.stack.append(instr.args[0])
+            elif instr.opcode == opcodes.const.FLOAT64:
+
+                frame.stack.append(instr.args[0])
+            elif instr.opcode == opcodes.const.STRING:
+
+                frame.stack.append(frame.globals.constdata[instr.args[0]])
+            elif instr.opcode == opcodes.const.BYTES:
+
+                raise NotImplementedError()
+            elif instr.opcode == opcodes.const.BOOL:
+                if instr.args[0]:
+                    frame.stack.append(True)
+                else:
+                    frame.stack.append(False)
+            elif instr.opcode == opcodes.const.NULL:
+                frame.stack.append(None)
             elif instr.opcode == opcodes.const.UNDEFINED:
                 frame.stack.append(JsUndefined.instance)
 
@@ -1306,6 +1591,16 @@ class VmRuntime(object):
                 raise Exception("%r" % instr)
 
             frame.sp += 1
+
+            if frame.sp >= len(frame.fndef.instrs):
+                self.stack_frames.pop()
+                if len(self.stack_frames) == 0:
+                    break
+
+                frame = self.stack_frames[-1]
+                instrs = frame.fndef.instrs
+                frame.stack.append(None)
+                continue
 
         return return_value, frame.globals
 
@@ -1342,18 +1637,128 @@ def main():
 
     """
 
+
+
+
+
     text1 = """
 
-        try {
+        let g = 0;
+
+        function fn_throw() {
             throw "error"
-        } catch (ex) {
-            console.log(ex)
-        } finally {
-            console.log("done")
         }
+
+        function fn_try_finally() {
+            try {
+                fn_throw()
+            } finally {
+                // unhandled exception
+                g |= 1
+            }
+        }
+
+        function fn_try_catch_finally() {
+            try {
+                fn_throw()
+            } catch (ex) {
+                g |= 2
+            } finally {
+                g |= 4
+            }
+        }
+
+        function fn_try_catch_finally_2() {
+            try {
+                fn_try_finally()
+            } catch (ex) {
+                g |= 8
+            } finally {
+                g |= 16
+            }
+        }
+
+        //g = 0
+        //fn_try_finally()
+        //console.log("1:", g)
+
+        //g = 0
+        //fn_try_catch_finally()
+        //console.log("2:", g)
+
+        g = 0
+        fn_try_catch_finally_2()
+        console.log("3:", g.toString(16))
+
+    """
+
+
+
+    text1 = """
+
+    function g() {
+        var x = 1;
+        {
+            var x = 2;
+        }
+        return x;
+    }
+    result=g() // 2
+    """
+
+    text1 = """
+
+    function f() {
+        let x = 1;
+        {
+            let x = 2;
+        }
+        return x;
+    }
+    result=f() // 1
+    """
+
+    text1 = """
+
+    function f() {
+        const x = 1;
+        {
+            const x = 2;
+        }
+        return x;
+    }
+    result=f() // 1
+    """
+
+    text1 = """
+
+    let x = 4
+    let y = 5
+    let z = 6
+
+    {
+        let z=10, x=12
+        let y=11
+    }
 
 
     """
+
+    text1 = """
+
+    function f() {
+        x = 5;
+        return () => {this.x+=1; return this.x};
+    }
+    g1 = f()
+    g2 = f()
+
+    r1 = g1()
+    r2 = g2()
+    r3 = g1()
+    r4 = g2()
+    """
+
 
     tokens = Lexer().lex(text1)
     parser = Parser()
@@ -1365,13 +1770,20 @@ def main():
     xform.transform(ast)
     print(ast.toString(1))
 
+
     compiler = VmCompiler()
     module = compiler.compile(ast)
+    print("="*60)
     module.dump()
 
+    print("="*60)
+
     runtime = VmRuntime()
+    runtime.enable_diag = True
     runtime.init(module)
-    runtime.run()
+    rv, globals = runtime.run()
+    print("return value", rv)
+    print("globals", globals.values)
 
 
 
