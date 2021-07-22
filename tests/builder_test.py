@@ -130,10 +130,6 @@ class BuilderTestTestCase(unittest.TestCase):
         builder.disable_warnings = True
         css, js, html = builder.build(path, minify=True, onefile=True)
 
-        #print(css)
-        #print(js)
-        #print(html)
-
         return
 def main():
     unittest.main()

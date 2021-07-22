@@ -1,3 +1,4 @@
+#! cd .. && python3 -m tests.consteval_test
 
 import unittest
 from tests.util import edit_distance, parsecmp, TOKEN
@@ -149,7 +150,8 @@ class ConstEvalTestCase(unittest.TestCase):
                             TOKEN('T_ASSIGN', '=',
                                 TOKEN('T_LOCAL_VAR', 'x'),
                                 TOKEN('T_NUMBER', '7'))),
-                        TOKEN('T_DELETE_VAR', 'x')),
+                        TOKEN('T_DELETE_VAR', '',
+                            TOKEN('T_LOCAL_VAR', 'x'))),
                     TOKEN('T_BLOCK', '{}',
                         TOKEN('T_VAR', 'let',
                             TOKEN('T_LOCAL_VAR', 'x')),
@@ -159,8 +161,10 @@ class ConstEvalTestCase(unittest.TestCase):
                                 TOKEN('T_BINARY', '+',
                                     TOKEN('T_LOCAL_VAR', 'x'),
                                     TOKEN('T_NUMBER', '1')))),
-                        TOKEN('T_DELETE_VAR', 'x'),
-                        TOKEN('T_DELETE_VAR', 'y'))),
+                        TOKEN('T_DELETE_VAR', '',
+                            TOKEN('T_LOCAL_VAR', 'y')),
+                        TOKEN('T_DELETE_VAR', '',
+                            TOKEN('T_LOCAL_VAR', 'x')))),
                 TOKEN('T_CLOSURE', '')))
 
         self.assertFalse(parsecmp(expected, ast, False))

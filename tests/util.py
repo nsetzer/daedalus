@@ -1,6 +1,7 @@
 #! cd .. && python -m tests.util
 from daedalus.lexer import Token
 import time, math
+
 def edit_distance(hyp, ref, eq=None):
     """
     given: two sequences hyp and ref (str, list, or bytes)
@@ -14,9 +15,12 @@ def edit_distance(hyp, ref, eq=None):
     if len(ref) == 0:
         return [(elem, None) for elem in hyp], 0, 0, len(hyp), 0
 
+    if eq is None:
+        eq = lambda a, b: a == b
+
     e = [0, ] * (len(hyp) * len(ref))
     s = lambda i, j: i * len(ref) + j
-    d = lambda i, j: 0 if hyp[i] == ref[j] else 1
+    d = lambda i, j: 0 if eq(hyp[i], ref[j]) else 1
     E = lambda i, j: e[s(i, j)]
 
     e[s(0, 0)] = d(0, 0)
@@ -41,23 +45,32 @@ def edit_distance(hyp, ref, eq=None):
     seq = []
     cor = sub = del_ = ins = 0
     while i > 0 and j > 0:
-        _a, _b, _c, _d = E(i, j), E(i - 1, j), E(i, j - 1), E(i - 1, j - 1)
+        _a = E(i, j)            # current cost
+        _b = E(i - 1, j)        # cost of insertion
+        _c = E(i, j - 1)        # cost of deletion
+        _d = E(i - 1, j - 1)    # cost of a substitution
+
+
 
         if _d <= _a and _d < _b and _d < _c:
             seq.append((hyp[i], ref[j]))
             if eq(hyp[i], ref[j]):
                 cor += 1
+                #print(abs(_d - _a), abs(_b - _a), abs(_a - _a), "cor")
             else:
                 sub += 1
+                #print(abs(_d - _a), abs(_b - _a), abs(_a - _a), "sub")
             i, j = i - 1, j - 1
         elif _b <= _c:
             seq.append((hyp[i], None))
             i = i - 1
             ins += 1
+            #print(abs(_d - _a), abs(_b - _a), abs(_a - _a), "ins")
         else:
             seq.append((None, ref[j]))
             j = j - 1
             del_ += 1
+            #print(abs(_d - _a), abs(_b - _a), abs(_a - _a), "del")
 
     while i >= 0 and j >= 0:
         seq.append((hyp[i], ref[j]))
@@ -80,6 +93,10 @@ def edit_distance(hyp, ref, eq=None):
 
     if sub + ins + del_ == 0:
         assert cor == len(hyp), (cor, len(hyp))
+    #print(cor, sub, ins, del_)
+    #for i in range(len(hyp)):
+    #    row = ["%5d" % E(i, j) for j in range(len(ref))]
+    #    print(" ".join(row))
 
     return reversed(seq), cor, sub, ins, del_
 
@@ -206,10 +223,20 @@ def benchmark(x1, x2, func):
 
 if __name__ == '__main__':
 
-    eq = lambda x: 2 * x * x + 3 * x + 4
+    seq, cor, sub, ins, del_ = edit_distance("biten", "kitten")
 
-    X = [10, 20, 30]
-    Y = [eq(x) for x in X]
+    error_count = sub + ins + del_
+    if error_count > 0:
+        for a, b in seq:
+            c = ' ' if a == b else '|'
+            if not a:
+                a = "-"
+            if not b:
+                b = "-"
+            print(a, b)
 
-    fn = solve_quadratic(X, Y)
-    print(fn)
+    #eq = lambda x: 2 * x * x + 3 * x + 4
+    #X = [10, 20, 30]
+    #Y = [eq(x) for x in X]
+    #fn = solve_quadratic(X, Y)
+    #print(fn)

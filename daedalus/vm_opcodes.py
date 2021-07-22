@@ -186,11 +186,10 @@ class globalvar(IntEnum):
     DELETE = 0x1C, 1  # globalindex
 
 class cellvar(IntEnum):
-    LOAD_REF      =  0x20, 1  # cellindex
-    STORE_REF     =  0x21, 1  # cellindex
-    LOAD_DEREF    =  0x22, 1  # cellindex
-    STORE_DEREF   =  0x23, 1  # cellindex
-    DELETE_DEREF  =  0x24, 1  # cellindex
+    LOAD      =  0x20, 1  # cellindex
+    GET      =  0x22, 1  # cellindex
+    SET      =  0x23, 1  # cellindex
+    DELETE   =  0x24, 1  # cellindex
 
 
 class const(IntEnum):

@@ -143,6 +143,7 @@ class Token(object):
     T_STATIC_PROPERTY = "T_STATIC_PROPERTY"
     T_YIELD = "T_YIELD"
     T_YIELD_FROM = "T_YIELD_FROM"
+    T_INTERFACE = "T_INTERFACE"
 
     # function types
     T_FUNCTION = "T_FUNCTION"
@@ -171,6 +172,8 @@ class Token(object):
 
     # a token which stands for no token
     T_EMPTY_TOKEN = "T_EMPTY_TOKEN"
+
+    T_TYPE = "T_TYPE"
 
     # tokens created by the compiler
     T_BLOCK_PUSH = "T_BLOCK_PUSH"

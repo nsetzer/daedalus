@@ -26,6 +26,10 @@ char_len = {'o': 3, 'x': 2, 'u': 4, 'U': 8}
 # the base used to convert a string to a single character
 char_base = {'o': 8, 'x': 16, 'u': 16, 'U': 16}
 
+reserved_types = {
+    'boolean', 'byte', 'char', 'double',  'int', 'long',  'short',
+    'false'
+}
 reserved_words = {
     # types
     'boolean', 'byte', 'char', 'double',  'int', 'long',  'short',

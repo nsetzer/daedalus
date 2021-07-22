@@ -167,6 +167,7 @@ export class Router {
         // -2 is used to  differentiate default and never set
         this.current_index = -2
         this.current_location = null
+        this.match = null
     }
 
     handleLocationChanged(location) {
@@ -253,7 +254,7 @@ export class Router {
     }
 
     setMatch(match) {
-
+        this.match = match;
     }
 
     clear() {
@@ -263,6 +264,8 @@ export class Router {
         this.container.update()
     }
 }
+
+Router.instance = null;
 
 export class AuthenticatedRouter extends Router {
 

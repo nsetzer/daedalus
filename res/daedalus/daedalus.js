@@ -386,7 +386,9 @@ function createDomNode(fiber) {
     Object.keys(fiber.props)
         .filter(isProp)
         .forEach(key => {
-            //console.log("create-prop: " + key + " = " + fiber.props[key])
+            //if (key !== "id" && key !== "nodeValue") {
+            //    console.log("create-prop: " + key + " = " + fiber.props[key])
+            //}
             const propValue = fiber.props[key];
             if (propValue===null) {
                 delete dom[key];

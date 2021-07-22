@@ -93,6 +93,9 @@ class JsObject(object):
             if isinstance(attr, PyProp):
                 attr = attr.bind(self).invoke()
 
+            if isinstance(attr, PyCallable):
+                attr = attr.bind(self)
+
         else:
             attr = self.data[name]
 
@@ -128,6 +131,18 @@ class PyProp(object):
 
     def bind(self, target):
         return PyProp(target, self.func)
+
+class PyCallable(object):
+    def __init__(self, target, func):
+        super(PyCallable, self).__init__()
+        self.target = target
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        return self.func(self.target, *args, **kwargs)
+
+    def bind(self, target):
+        return PyCallable(target, self.func)
 
 class JsArray(JsObject):
 
@@ -265,7 +280,9 @@ class JsUndefined(JsObject):
 
 JsObject.prototype_instance = JsObject()
 JsArray.prototype_instance = JsObject()
+
 JsArray.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.array)))
+JsArray.prototype_instance.setAttr('push', PyCallable(None, lambda self, obj: self.array.append(obj)))
 
 JsUndefined.instance = JsUndefined()
 
@@ -384,7 +401,7 @@ class VmModule(object):
                     print("%4d (%s %s)" % (idx, instr.opcode, self.globals.names[instr.args[0]]))
                 elif instr.opcode in (opcodes.localvar.GET, opcodes.localvar.SET, opcodes.localvar.DELETE):
                     print("%4d (%s %s)" % (idx, instr.opcode, fn.local_names[instr.args[0]]))
-                elif instr.opcode in (opcodes.cellvar.LOAD_REF, opcodes.cellvar.STORE_REF, opcodes.cellvar.LOAD_DEREF, opcodes.cellvar.STORE_DEREF, opcodes.cellvar.DELETE_DEREF):
+                elif instr.opcode in (opcodes.cellvar.GET, opcodes.cellvar.SET, opcodes.cellvar.DELETE, opcodes.cellvar.LOAD):
                     print("%4d (%s %s)" % (idx, instr.opcode, fn.cell_names[instr.args[0]]))
                 elif instr.opcode == opcodes.obj.GET_ATTR:
                     print("%4d (%s %s)" % (idx, instr.opcode, fn.local_names[instr.args[0]]))
@@ -395,8 +412,10 @@ class VmModule(object):
         print("---")
 
 class VmReference(object):
-    def __init__(self, value=None):
+
+    def __init__(self, name, value):
         super(VmReference, self).__init__()
+        self.name = name
         self.value = value
 
 class VmCompiler(object):
@@ -422,7 +441,10 @@ class VmCompiler(object):
             Token.T_NUMBER: self._visit_number,
             Token.T_BINARY: self._visit_binary,
             Token.T_BRANCH: self._visit_branch,
+            Token.T_POSTFIX: self._visit_postfix,
+            Token.T_PREFIX: self._visit_prefix,
             Token.T_WHILE: self._visit_while,
+            Token.T_FOR: self._visit_for,
             Token.T_CONTINUE: self._visit_continue,
             Token.T_BREAK: self._visit_break,
             Token.T_ARGLIST: self._visit_arglist,
@@ -551,24 +573,98 @@ class VmCompiler(object):
     def _visit_while(self, depth, state, token):
         arglist, block = token.children
 
-        instr1 = VmInstruction(opcodes.ctrl.END, token=token)
-        instr2 = VmInstruction(opcodes.ctrl.JUMP, token=token)
-        instr3 = VmInstruction(opcodes.ctrl.IF, token=token)
-        instr4 = VmInstruction(opcodes.ctrl.LOOP, token=token)
+        instr_e = VmInstruction(opcodes.ctrl.END, token=token)
+        instr_j = VmInstruction(opcodes.ctrl.JUMP, token=token)
+        instr_b = VmInstruction(opcodes.ctrl.IF, token=token)
+        instr_l = VmInstruction(opcodes.ctrl.LOOP, token=token)
 
-        self.fn_jumps[instr1] = [instr3]  # target, list[source]
-        self.fn_jumps[instr4] = [instr2]  # target, list[source]
+        self.fn_jumps[instr_e] = [instr_b]  # target, list[source]
+        self.fn_jumps[instr_l] = [instr_j]  # target, list[source]
 
-        self.target_continue.append(instr4)
-        self.target_break.append(instr1)
+        self.target_continue.append(instr_l)
+        self.target_break.append(instr_e)
 
         self._push_token(depth, VmCompiler.C_LOOP_END, None)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr1)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr2)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_j)
         self._push_token(depth, VmCompiler.C_VISIT, block)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr3)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_b)
         self._push_token(depth, VmCompiler.C_VISIT, arglist)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr4)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_l)
+
+    def _visit_for(self, depth, state, token):
+
+        arglist, block, *deletevars = token.children
+
+        arg_init, arg_loop, arg_incr = arglist.children
+
+        instr_e = VmInstruction(opcodes.ctrl.END, token=token)
+        instr_j = VmInstruction(opcodes.ctrl.JUMP, token=token)
+        instr_b = VmInstruction(opcodes.ctrl.IF, token=token)
+        instr_l = VmInstruction(opcodes.ctrl.LOOP, token=token)
+
+        self.fn_jumps[instr_l] = [instr_j]  # target, list[source]
+
+        self.target_continue.append(instr_l)
+        self.target_break.append(instr_e)
+
+        # TODO: support deleting the iterator var
+        #for child in reversed(deletevars):
+        #    self._push_token(depth, VmCompiler.C_VISIT, child)
+
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_j)
+
+        if arg_incr.type != Token.T_EMPTY_TOKEN:
+            self._push_token(depth, VmCompiler.C_VISIT, arg_incr)
+
+        self._push_token(depth, VmCompiler.C_VISIT, block)
+
+        if arg_loop.type != Token.T_EMPTY_TOKEN:
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_b)
+            self._push_token(depth, VmCompiler.C_VISIT, arg_loop)
+
+            self.fn_jumps[instr_e] = [instr_b]
+
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_l)
+
+        if arg_init.type != Token.T_EMPTY_TOKEN:
+            self._push_token(depth, VmCompiler.C_VISIT, arg_init)
+
+    def _visit_postfix(self, depth, state, token):
+
+        const_int = VmInstruction(opcodes.const.INT, 1, token=token)
+        dup = VmInstruction(opcodes.stack.DUP, token=token)
+
+        if token.value == "++":
+            add = VmInstruction(opcodes.math.ADD, token=token)
+            if state & VmCompiler.C_LOAD == 0:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
+            #TODO: this has side effects that need to be fixed
+            #      f()++  => no write back, cannot assign to function call
+            #      a.b++  => duplicate the reference to a
+            #      a[x]++  => duplicate the reference to a and x
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_STORE, token.children[0])
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, add)
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, const_int)
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, dup)
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
+        elif token.value == "--":
+            sub = VmInstruction(opcodes.math.ADD, token=token)
+            if state & VmCompiler.C_LOAD == 0:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
+            #TODO: this has side effects that need to be fixed
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_STORE, token.children[0])
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, sub)
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, const_int)
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, dup)
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
+
+        else:
+            raise NotImplementedError()
+
+    def _visit_prefix(self, depth, state, token):
+        raise NotImplementedError()
 
     def _visit_break(self, depth, state, token):
         instr0 = VmInstruction(opcodes.ctrl.JUMP, token=token)
@@ -760,7 +856,7 @@ class VmCompiler(object):
                 raise NotImplementedError()
             else:
                 #self._push_token(depth, VmCompiler.C_VISIT | (state & (VmCompiler.C_LOAD_STORE)), token)
-                self._push_token(depth, VmCompiler.C_VISIT, token.children[1])
+                self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[1])
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
 
     def _visit_free_var(self, depth, state, token):
@@ -1010,25 +1106,29 @@ class VmCompiler(object):
 
         cellvars = []
 
+        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
+
         if closure and closure.children:
 
+
+            seq = []
             for child in closure.children:
 
                 if child.type == Token.T_FREE_VAR:
                     # argument is always a local variable, make a reference to it
                     #_, index = self._token2index(child, True)
-                    index = self.fn.local_names.index(child.value)
-                    cellvars.append(child.value)
-                    self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.cellvar.LOAD_REF, index, token=token))
-
+                    # index = self.fn.local_names.index(child.value)
+                    index = self.fn.cell_names.index(child.value)
+                    #cellvars.append(child.value)
+                    seq.append((0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.cellvar.LOAD, index, token=token)))
+                    pass
                 elif child.type == Token.T_CELL_VAR:
                     pass
                 else:
                     raise VmCompileError(child, "expected cell or free var")
 
-            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_TUPLE, len(closure.children), token=token))
-
-        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
+            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_TUPLE, len(seq), token=token))
+            self.seq.extend(seq)
 
         if autobind:
             #this = Token(Token.T_KEYWORD, token.line, token.index, "this")
@@ -1078,6 +1178,17 @@ class VmCompiler(object):
             enum = opcodes.localvar
 
             try:
+                index1 = self.fn.cell_names.index(name)
+
+                print("cell var", bool(load), name, index1,  self.fn.cell_names)
+                if load:
+                    return opcodes.cellvar.GET, index1
+                else:
+                    return opcodes.cellvar.SET, index1
+            except ValueError:
+                pass
+
+            try:
                 index = self.fn.local_names.index(name)
             except ValueError:
                 if not load:
@@ -1100,9 +1211,9 @@ class VmCompiler(object):
                 raise VmCompileError(token, "unable to load undefined identifier")
 
             if load:
-                return enum.LOAD_DEREF, index
+                return enum.GET, index
             else:
-                return enum.STORE_DEREF, index
+                return enum.SET, index
 
         elif token.type == Token.T_CELL_VAR:
             name = token.value
@@ -1120,9 +1231,10 @@ class VmCompiler(object):
                 raise VmCompileError(token, "unable to load undefined identifier")
 
             if load:
-                return enum.LOAD_REF, index
+                return enum.LOAD, index
             else:
-                return enum.STORE_REF, index
+                #return enum.SET, index
+                raise NotImplementedError()
 
         elif token.type == Token.T_KEYWORD and token.value in ("this",):
             name = token.value
@@ -1149,11 +1261,13 @@ class VmCompiler(object):
         self.fn.instrs.append(instr)
 
 class VmStackFrame(object):
-    def __init__(self, module, fndef, locals):
+
+    def __init__(self, module, fndef, locals, cells):
         super(VmStackFrame, self).__init__()
         self.fndef = fndef
         self.module = module
         self.locals = locals
+        self.cells = cells
         self.local_names = fndef.local_names
         self.globals = fndef.globals
         #self.cells = {} if cells is None else cells
@@ -1162,6 +1276,7 @@ class VmStackFrame(object):
         self.sp = 0
 
 class VmTryBlock(object):
+
     def __init__(self, catch_ip, finally_ip):
         super(VmTryBlock, self).__init__()
         self.catch_ip = catch_ip
@@ -1180,6 +1295,7 @@ class VmTryBlock(object):
             return self.catch_ip
 
 class VmExceptionContext(object):
+
     def __init__(self, ip, fndef, value, other):
         super(VmExceptionContext, self).__init__()
         self.ip = ip
@@ -1236,9 +1352,10 @@ class VmRuntime(object):
 
     def init(self, module):
 
+        cells = JsObject()
         locals = JsObject()
         locals.setAttr("this", JsUndefined.instance)
-        self.stack_frames = [VmStackFrame(module, module.functions[0], locals)]
+        self.stack_frames = [VmStackFrame(module, module.functions[0], locals, cells)]
 
         g = self.stack_frames[-1].globals
 
@@ -1329,7 +1446,7 @@ class VmRuntime(object):
                     if len(args) > len(func.fndef.arglabels):
                         rest = args[len(func.fndef.arglabels):]
 
-                    new_frame = VmStackFrame(func.module, func.fndef, posargs)
+                    new_frame = VmStackFrame(func.module, func.fndef, posargs, func.cells)
 
                     self.stack_frames.append(new_frame)
                     frame.sp += 1
@@ -1420,12 +1537,30 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.globalvar.DELETE:
                 name = frame.globals.names[instr.args[0]]
                 del frame.globals.values[name]
-            #elif instr.opcode == opcodes.cellvar.SET:
-            #    raise NotImplementedError()
-            #elif instr.opcode == opcodes.cellvar.GET:
-            #    raise NotImplementedError()
-            #elif instr.opcode == opcodes.cellvar.DELETE:
-            #    raise NotImplementedError()
+            elif instr.opcode == opcodes.cellvar.LOAD:
+                name = frame.fndef.cell_names[instr.args[0]]
+                if not frame.cells._hasAttr(name):
+                    frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
+                tos = frame.cells.getAttr(name)
+                frame.stack.append(tos)
+                print("cell ref", name, tos.value)
+            elif instr.opcode == opcodes.cellvar.SET:
+                name = frame.fndef.cell_names[instr.args[0]]
+                if not frame.cells._hasAttr(name):
+                    frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
+                tos = frame.stack.pop()
+                frame.cells.getAttr(name).value = tos
+                print("cell set", name, tos)
+            elif instr.opcode == opcodes.cellvar.GET:
+                name = frame.fndef.cell_names[instr.args[0]]
+                if not frame.cells._hasAttr(name):
+                    frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
+                tos = frame.cells.getAttr(name).value
+                frame.stack.append(tos)
+                print("cell set", name, tos)
+            elif instr.opcode == opcodes.cellvar.DELETE:
+                name = frame.fndef.cell_names[instr.args[0]]
+                frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
             elif instr.opcode == opcodes.stack.ROT2:
                 top1 = frame.stack.pop()
                 top2 = frame.stack.pop()
@@ -1512,7 +1647,13 @@ class VmRuntime(object):
 
                 fnidx = instr.args[0]
 
-                bind = frame.stack.pop()
+                tos = frame.stack.pop()
+                if isinstance(tos, JsArray):
+                    cellvars = tos
+                    bind = frame.stack.pop()
+                else:
+                    cellvars = JsArray()
+                    bind = tos
                 kwargs = frame.stack.pop()
                 argc = frame.stack.pop()
 
@@ -1527,6 +1668,7 @@ class VmRuntime(object):
                     args.insert(0, frame.stack.pop())
 
                 fn = JsFunction(frame.module, frame.module.functions[fnidx], args, kwargs, bind_target)
+                fn.cells = JsObject([(ref.name, ref) for ref in cellvars.array])
                 frame.stack.append(fn)
             elif instr.opcode == opcodes.obj.CREATE_OBJECT:
 
@@ -1550,7 +1692,12 @@ class VmRuntime(object):
                 frame.stack.append(JsArray(args))
             elif instr.opcode == opcodes.obj.CREATE_TUPLE:
 
-                raise NotImplementedError()
+                args = []
+                for i in range(instr.args[0]):
+                    val = frame.stack.pop()
+                    args.append(val)
+
+                frame.stack.append(JsArray(args))
             elif instr.opcode == opcodes.obj.CREATE_SET:
 
                 raise NotImplementedError()
@@ -1759,7 +1906,29 @@ def main():
     r4 = g2()
     """
 
+    text1 = """
+        function f() {
+            x = 1
 
+            function g() { return x }
+
+            x = x + 1
+
+            return g()
+        }
+
+        r1 = f(); // 2
+        r2 = f(); // 2
+    """
+
+    text1 = """
+
+    let sum = 0
+
+    for (let i=0; i<10; i++) {
+        sum += i;
+    }
+    """
     tokens = Lexer().lex(text1)
     parser = Parser()
     parser.python = True

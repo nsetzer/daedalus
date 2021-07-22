@@ -93,12 +93,13 @@ class Router(object):
                 c = part[-1]
                 if c == '?':
                     tokens.append(part[1: -1])
-                    re_str += "\\/([^\\/]*)"
+                    re_str += "(?:\\/([^\\/]*)|\\/)?"
                 elif c == '*':
+                    # match the first forward slash but do not include
+                    # match everything after a slash
+                    # and store in a capture group
                     tokens.append(part[1: -1])
-                    # todo: match '\\/?'' or '\\/()'
-                    # otherwise the / ends up being optional
-                    re_str += "\\/?(.*)"
+                    re_str += "(?:\\/(.*)|\\/)?"
                 elif c == '+':
                     tokens.append(part[1: -1])
                     re_str += "\\/?(.+)"
@@ -302,12 +303,6 @@ class SampleResource(Resource):
         self.builder = Builder(search_path, static_data, platform=platform)
         self.index_js = index_js
         self.opts = opts
-        print("1>index_js", index_js)
-        print("1>search_path", search_path)
-        print("2>static_data", static_data)
-        print("3>platform", platform)
-        print("4>opts", opts)
-        print("---")
         self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
         self.static_path = static_path
 

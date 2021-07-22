@@ -390,6 +390,9 @@ class Formatter(object):
                 if token.value == "constexpr":
                     token.value = "const"
                 seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_INTERFACE:
+                # nothing to do
+                pass
             elif token.type == Token.T_CLASS:
                 seq.append((depth, None, token.children[2]))
                 if len(token.children[1].children) > 0:
@@ -604,7 +607,6 @@ class Formatter(object):
                     seq.append((depth, child.type, child.value))
 
                 out.append((depth,token.type, token.value))
-
             elif token.type == Token.T_RETURN:
                 for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
@@ -663,6 +665,8 @@ def main():  # pragma: no cover
             print(x)
         }
     """
+    text1 = """ let x : List[int] | List[float] """
+    text1 = """ x : a | x """
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 

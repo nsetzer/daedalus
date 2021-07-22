@@ -25,7 +25,7 @@ class RouterTestCase(unittest.TestCase):
 
     def test_001_compile_pattern(self):
         regex, tokens = Router().patternToRegex("/:path*")
-        self.assertEqual(regex.pattern, "^\\/?(.*)\\/?$")
+        self.assertEqual(regex.pattern, "^(?:\\/(.*)|\\/)?\\/?$")
 
 def main():
     unittest.main()

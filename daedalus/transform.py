@@ -389,6 +389,56 @@ class TransformExtractStyleSheet(TransformBase):
             keep = parent.type in (Token.T_MODULE, Token.T_BLOCK)
             return self._extract_stylesheet_with_selector(style_name, token, arg0, arg1, keep)
 
+        elif len(arglist.children) == 3:
+            # extract a multi media style sheet
+            # the first argument is not currently used
+            # the second argument is the media query
+            # the third argument is a dictionary of selector => stylesheet
+            arg0 = arglist.children[1]
+            arg1 = arglist.children[2]
+            # prevent writing the resulting token to javascript
+            # if it does not have any side effects. usually the side
+            # effect is simply writing to the style sheet
+            keep = parent.type in (Token.T_MODULE, Token.T_BLOCK)
+
+            selector = arg0
+            selector_text = None
+            if selector.type == Token.T_STRING:
+                selector_text = py_ast.literal_eval(selector.value)
+            elif selector.type == Token.T_TEMPLATE_STRING:
+                selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
+                selector_text = shell_format(selector_text, self.named_styles)
+
+            if not selector_text:
+                return False
+
+            _style = [selector_text + " {"]
+            for child in arg1.children:
+
+                selector = child.children[0]
+
+                selector_text = None
+                if selector.type == Token.T_STRING:
+                    selector_text = py_ast.literal_eval(selector.value)
+                elif selector.type == Token.T_TEMPLATE_STRING:
+                    selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
+                    selector_text = shell_format(selector_text, self.named_styles)
+
+                if not selector_text:
+                    return False
+
+                style = self._object2style(selector_text, child.children[1])
+                _style.append(style)
+            _style.append("}")
+
+            self.styles.append("\n".join(_style))
+
+            token.type = Token.T_EMPTY_TOKEN
+            token.value = ""
+            token.children = []
+
+            return True
+
         else:
             return False
 
@@ -466,6 +516,7 @@ class TransformExtractStyleSheet(TransformBase):
             arr = ["%s:%s" % (k, v) for k, v in obj.items()]
             body = ";".join(arr)
             return "%s {%s}" % (selector, body)
+
     def _object2style_helper(self, prefix, token):
         """compiles a javascript AST of an Object into a style sheet
         using the same rules as daedalus.StyleSheet
@@ -858,7 +909,7 @@ class VariableScope(object):
                     for scope2 in scopes[:-1]:
                         scope2.defineFreeVar(identity, ref)
                     self.freevars[identity] = ref
-                    print("transform._load_store", identity, ref.name, ref.label)
+                    #print("transform._load_store", identity, ref.name, ref.label)
 
         token.value = ref.identity()
         if token.type == Token.T_TEXT:

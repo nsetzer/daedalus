@@ -267,7 +267,6 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-
     def test_001_add_assign(self):
 
         text = "a += b"
@@ -462,7 +461,6 @@ class ParserBinOpTestCase(unittest.TestCase):
                 TOKEN('T_TEXT', 'b')))
 
         self.assertFalse(parsecmp(expected, ast, False))
-
 
     def test_001_optional_chaining_v1(self):
 
@@ -1342,7 +1340,6 @@ class ParserChallengeTestCase(unittest.TestCase):
                     TOKEN('T_TEXT', 'i2'))))
         self._assert(expected, text)
 
-
     def test_001_challenge_7(self):
         # a for loop with unsafe block
         # confuses what is a arglist or function call
@@ -1431,62 +1428,61 @@ class ParserChallengeTestCase(unittest.TestCase):
                           t=d(t)).length;o<s;o++)this._on(t[o],i,e);
             """
         expected = TOKEN('T_MODULE', '',
-    TOKEN('T_BRANCH', 'if',
-        TOKEN('T_ARGLIST', '()',
-            TOKEN('T_BINARY', '==',
-                TOKEN('T_STRING', '"object"'),
-                TOKEN('T_PREFIX', 'typeof',
-                    TOKEN('T_TEXT', 't')))),
-        TOKEN('T_FOR_IN', 'for',
-            TOKEN('T_VAR', 'var',
-                TOKEN('T_TEXT', 'n')),
-            TOKEN('T_TEXT', 't'),
-            TOKEN('T_FUNCTIONCALL', '',
-                TOKEN('T_GET_ATTR', '.',
-                    TOKEN('T_KEYWORD', 'this'),
-                    TOKEN('T_ATTR', '_on')),
+            TOKEN('T_BRANCH', 'if',
                 TOKEN('T_ARGLIST', '()',
-                    TOKEN('T_TEXT', 'n'),
-                    TOKEN('T_SUBSCR', '',
-                        TOKEN('T_TEXT', 't'),
+                    TOKEN('T_BINARY', '==',
+                        TOKEN('T_STRING', '"object"'),
+                        TOKEN('T_PREFIX', 'typeof',
+                            TOKEN('T_TEXT', 't')))),
+                TOKEN('T_FOR_IN', 'for',
+                    TOKEN('T_VAR', 'var',
                         TOKEN('T_TEXT', 'n')),
-                    TOKEN('T_TEXT', 'i')))),
-        TOKEN('T_FOR', 'for',
-            TOKEN('T_ARGLIST', '()',
-                TOKEN('T_VAR', 'var',
-                    TOKEN('T_COMMA', ',',
-                        TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 't'),
+                    TOKEN('T_FUNCTIONCALL', '',
+                        TOKEN('T_GET_ATTR', '.',
+                            TOKEN('T_KEYWORD', 'this'),
+                            TOKEN('T_ATTR', '_on')),
+                        TOKEN('T_ARGLIST', '()',
+                            TOKEN('T_TEXT', 'n'),
+                            TOKEN('T_SUBSCR', '',
+                                TOKEN('T_TEXT', 't'),
+                                TOKEN('T_TEXT', 'n')),
+                            TOKEN('T_TEXT', 'i')))),
+                TOKEN('T_FOR', 'for',
+                    TOKEN('T_ARGLIST', '()',
+                        TOKEN('T_VAR', 'var',
+                            TOKEN('T_ASSIGN', '=',
+                                TOKEN('T_TEXT', 'o'),
+                                TOKEN('T_NUMBER', '0')),
+                            TOKEN('T_ASSIGN', '=',
+                                TOKEN('T_TEXT', 's'),
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_GROUPING', '()',
+                                        TOKEN('T_ASSIGN', '=',
+                                            TOKEN('T_TEXT', 't'),
+                                            TOKEN('T_FUNCTIONCALL', '',
+                                                TOKEN('T_TEXT', 'd'),
+                                                TOKEN('T_ARGLIST', '()',
+                                                    TOKEN('T_TEXT', 't'))))),
+                                    TOKEN('T_ATTR', 'length')))),
+                        TOKEN('T_BINARY', '<',
                             TOKEN('T_TEXT', 'o'),
-                            TOKEN('T_NUMBER', '0')),
-                        TOKEN('T_ASSIGN', '=',
-                            TOKEN('T_TEXT', 's'),
-                            TOKEN('T_GET_ATTR', '.',
-                                TOKEN('T_GROUPING', '()',
-                                    TOKEN('T_ASSIGN', '=',
-                                        TOKEN('T_TEXT', 't'),
-                                        TOKEN('T_FUNCTIONCALL', '',
-                                            TOKEN('T_TEXT', 'd'),
-                                            TOKEN('T_ARGLIST', '()',
-                                                TOKEN('T_TEXT', 't'))))),
-                                TOKEN('T_ATTR', 'length'))))),
-                TOKEN('T_BINARY', '<',
-                    TOKEN('T_TEXT', 'o'),
-                    TOKEN('T_TEXT', 's')),
-                TOKEN('T_POSTFIX', '++',
-                    TOKEN('T_TEXT', 'o'))),
-            TOKEN('T_FUNCTIONCALL', '',
-                TOKEN('T_GET_ATTR', '.',
-                    TOKEN('T_KEYWORD', 'this'),
-                    TOKEN('T_ATTR', '_on')),
-                TOKEN('T_ARGLIST', '()',
-                    TOKEN('T_SUBSCR', '',
-                        TOKEN('T_TEXT', 't'),
-                        TOKEN('T_TEXT', 'o')),
-                    TOKEN('T_TEXT', 'i'),
-                    TOKEN('T_TEXT', 'e'))))))
+                            TOKEN('T_TEXT', 's')),
+                        TOKEN('T_POSTFIX', '++',
+                            TOKEN('T_TEXT', 'o'))),
+                    TOKEN('T_FUNCTIONCALL', '',
+                        TOKEN('T_GET_ATTR', '.',
+                            TOKEN('T_KEYWORD', 'this'),
+                            TOKEN('T_ATTR', '_on')),
+                        TOKEN('T_ARGLIST', '()',
+                            TOKEN('T_SUBSCR', '',
+                                TOKEN('T_TEXT', 't'),
+                                TOKEN('T_TEXT', 'o')),
+                            TOKEN('T_TEXT', 'i'),
+                            TOKEN('T_TEXT', 'e'))))))
         self._assert(expected, text)
 
-    def test_001_challenge_11(self):
+    def test_001_challenge_12(self):
         text = """ a?"str"in b:c """
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_TERNARY', '?',
@@ -1497,7 +1493,7 @@ class ParserChallengeTestCase(unittest.TestCase):
                 TOKEN('T_TEXT', 'c')))
         self._assert(expected, text)
 
-    def test_001_challenge_11(self):
+    def test_001_challenge_13(self):
         text = """ a=x?b=y:c=z """
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_ASSIGN', '=',
@@ -1620,6 +1616,95 @@ class ParserModuleTestCase(unittest.TestCase):
             TOKEN('T_IMPORT_JS_MODULE_AS', "'./module/module.js'",
                 TOKEN('T_TEXT', 'module')))
 
+        self.assertFalse(parsecmp(expected, ast, False))
+
+class ParserTypeAnnotationTestCase(unittest.TestCase):
+
+    def test_001_typedef(self):
+        text = "type Foo = List"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_TYPE', 'type',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'Foo'),
+                    TOKEN('T_TEXT', 'List'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_var_1(self):
+        text = "let x : string"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'let',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_TEXT', 'x'),
+                    TOKEN('T_TEXT', 'string'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_var_2(self):
+        text = "let x : string, y : string"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'let',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_TEXT', 'x'),
+                    TOKEN('T_TEXT', 'string')),
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_TEXT', 'y'),
+                    TOKEN('T_TEXT', 'string'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_function_1(self):
+        text = "function f(x: a=>b): a=>b {}"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FUNCTION', 'function',
+                TOKEN('T_TEXT', 'f',
+                    TOKEN('T_LAMBDA', '=>',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_TEXT', 'b'))),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_LAMBDA', '=>',
+                            TOKEN('T_TEXT', 'a'),
+                            TOKEN('T_TEXT', 'b')))),
+                TOKEN('T_BLOCK', '{}')))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_lambda_1(self):
+        text = "(x: int) => int"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_LAMBDA', '=>',
+                TOKEN('T_TEXT', 'Anonymous'),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_TEXT', 'x'),
+                        TOKEN('T_KEYWORD', 'int'))),
+                TOKEN('T_KEYWORD', 'int')))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_generic(self):
+        text = "function f<T>(x:T) : T {}"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FUNCTION', 'function',
+                TOKEN('T_TEXT', 'f',
+                    TOKEN('T_TEXT', 'T')),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_TEXT', 'T'))),
+                TOKEN('T_BLOCK', '{}')))
         self.assertFalse(parsecmp(expected, ast, False))
 
 def main():

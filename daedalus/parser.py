@@ -20,7 +20,7 @@ The parser interprets it as:
 """
 import sys
 import ast
-from .lexer import Lexer, Token, TokenError
+from .lexer import Lexer, Token, TokenError, reserved_types
 from .transform import TransformGrouping, \
     TransformFlatten, TransformOptionalChaining, \
     TransformMagicConstants, TransformRemoveSemicolons, TransformBase
@@ -220,6 +220,7 @@ class Parser(ParserBase):
             (L2R, self.visit_math_mul, ['*', '/', '%']),
             (L2R, self.visit_binary, ['+', '-']),
             (L2R, self.visit_binary, ['<<', '>>', ">>>"]),
+            (L2R, self.visit_generic_lambda, ['=>',]),
             #(L2R, self.visit_binary, ['<', '<=', ">", ">=", "in", "of", "instanceof"]),
             (L2R, self.visit_binary, ['<', '<=', ">", ">=", "instanceof"]),
             (L2R, self.visit_binary, ['==', '!=', '===', '!==']),
@@ -231,6 +232,7 @@ class Parser(ParserBase):
             (L2R, self.visit_binary, ['||']),
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
+            (L2R, self.visit_type_annotations, []),
             #(R2L, self.visit_ternary, ['?']), # merged with visit_assign_v2
             (R2L, self.visit_assign_v2, [
                     '=>',
@@ -389,6 +391,7 @@ class Parser(ParserBase):
             return None
 
         side = "rhs" if direction > 0 else "lhs"
+        print([token.value for token in tokens])
         if 0 <= index_tok1 < len(tokens):
             raise ParseError(tokens[index_tok1], "invalid token on %s of %s" % (side, token.value))
         raise ParseError(token, "missing token on %s" % side)
@@ -455,6 +458,32 @@ class Parser(ParserBase):
             tok = Token(Token.T_BLOCK, tok.line, tok.index, '{}', [tok])
 
         return tok
+
+    def consume_type(self, tokens, index):
+
+        rhs1 = self.consume_keyword(tokens, tokens[index], index, 1)
+
+        if rhs1.type == Token.T_LAMBDA:
+            rhs1.children.pop(0)
+
+        seq = [rhs1]
+
+        idx = self.peek_keyword(tokens, tokens[index], index, 1)
+        while idx is not None and tokens[idx].type == Token.T_SPECIAL and tokens[idx].value == '=>':
+            seq.append(self.consume_keyword(tokens, tokens[index], index, 1))
+            seq.append(self.consume_keyword(tokens, tokens[index], index, 1))
+            idx = self.peek_keyword(tokens, tokens[index], index, 1)
+
+        while len(seq) > 1:
+            rhs = seq.pop()
+            sym = seq.pop()
+            lhs = seq.pop()
+            sym.children.append(lhs)
+            sym.children.append(rhs)
+            seq.append(sym)
+            sym.type = Token.T_LAMBDA
+
+        return seq[0]
 
     def visit_attr(self, parent, tokens, index, operators):
         """
@@ -623,6 +652,16 @@ class Parser(ParserBase):
                     tokens[index - 1] = tok1
                     return self._offset
                 else:
+                    i1 = self.peek_keyword(tokens, token, index, -1)
+                    if i1 is not None:
+                        tok = tokens[i1]
+                        if tok.type == Token.T_KEYWORD and tok.value in reserved_types:
+                            lhs = self.consume_keyword(tokens, token, index, -1)
+                            tok1 = Token(Token.T_SUBSCR, token.line, token.index, "")
+                            tok1.children = [lhs] + token.children
+                            tokens[index - 1] = tok1
+                            return self._offset
+
                     token.type = Token.T_LIST
 
         elif token.type == Token.T_TEMPLATE_STRING:
@@ -799,7 +838,13 @@ class Parser(ParserBase):
            token.value not in operators:
             return 1
 
-        token.children.append(self.consume(tokens, token, index, 1))
+        idx = self.peek_token(tokens, token, index, 1)
+        if idx is None and token.type == Token.T_KEYWORD and token.value == "void":
+            pass
+        elif idx is not None and tokens[idx].type == Token.T_SPECIAL and tokens[idx].value == '=>':
+            pass
+        else:
+            token.children.append(self.consume(tokens, token, index, 1))
 
 
         token.type = Token.T_PREFIX
@@ -842,6 +887,51 @@ class Parser(ParserBase):
         else:
             token.type = Token.T_PREFIX
 
+
+        return 1
+
+    def visit_generic_lambda(self, parent, tokens, index, operators):
+
+        token = tokens[index]
+
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+        start_index = index
+        index -= 2
+        if index >= 0 and tokens[index].type == Token.T_SPECIAL and tokens[index].value == ">":
+            # reverse grouping
+            current = tokens[index]
+            current.type = Token.T_SPECIAL
+            current.value = "<>"
+            index -= 1
+
+            # this takes into account tokens of the same type,
+            # however this is not required because of the new reverse scan
+            # used by the caller
+            counter = 1
+            start = index
+            while index >= 0:
+                token = tokens[index]
+                if token.type == Token.T_SPECIAL and token.value == ">":
+                    counter += 1
+                elif token.type == Token.T_SPECIAL and token.value == "<":
+                    counter -= 1
+                    if counter == 0:
+                        current.children = tokens[index+1:start+1]
+                        del tokens[index:start+1]
+                        break
+                index -= 1
+
+            if counter != 0:
+                raise ParseError(current, "matching %s not found" % close)
+
+            tokens.pop(index)
+
+            rv = (index - start_index) + 2
+            print([token.value for token in tokens], start_index + rv)
+            return rv
 
         return 1
 
@@ -971,7 +1061,6 @@ class Parser(ParserBase):
 
         return self._offset
 
-
     def visit_colon(self, parent, tokens, index, operators):
         """
         parse colon separated pairs,
@@ -996,18 +1085,13 @@ class Parser(ParserBase):
             return 1
 
 
-        idx = self.peek_token(tokens, token, index, 1)
+        idx = self.peek_keyword(tokens, token, index, 1)
         rhs = None
         if idx is not None:
-            if tokens[idx].type == Token.T_KEYWORD:
-                try:
-                    rhs = self.consume(tokens, token, index, 1)
-                except ParseError:
-                    rhs = None
-
-                #if tokens[idx].value in 'null'
-                pass
-            else:
+            if tokens[idx].type == Token.T_KEYWORD and (
+                tokens[idx].value in reserved_types or tokens[idx].value in ('null', 'undefined', 'true', 'false', 'this')):
+                rhs = self.consume_keyword(tokens, token, index, 1)
+            elif tokens[idx].type != Token.T_KEYWORD:
                 rhs = self.consume(tokens, token, index, 1)
 
         lhs = self.consume_keyword(tokens, token, index, -1)
@@ -1065,6 +1149,25 @@ class Parser(ParserBase):
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
            token.value not in operators:
             return 1
+
+        # attempt 2  at type annotations
+        if token.type == Token.T_SPECIAL and token.value == "=":
+            i = index - 4
+            j = index - 3
+            k = index - 2
+            # test pattern is # TEXT colon something equalsign
+            #print([tok.value for tok in tokens[i:index+2]])
+            if i < 0 or \
+               i >= 0 and (tokens[i].type == Token.T_COMMA or \
+                           tokens[i].type == Token.T_KEYWORD and \
+                           tokens[i].value in  ('constexpr', 'const', 'let', 'var')):
+                if tokens[j].type == Token.T_TEXT and tokens[k].type==Token.T_SPECIAL and tokens[k].value == ":":
+                    type_ = self.consume_keyword(tokens, tokens[k], k, 1)
+                    tokens.pop(k)
+                    tokens[j].children.append(type_)
+                    # this will trigger a visit of this node again
+                    # but with the correct index
+                    return -2
 
         rhs = self.consume(tokens, token, index, 1)
         lhs = self.consume(tokens, token, index, -1)
@@ -1297,15 +1400,15 @@ class Parser(ParserBase):
         if token.value == 'const':
             self.collect_keyword_var(tokens, index)
 
-        elif token.value == 'return':
-            self.collect_keyword_return(tokens, index)
-
         elif token.value == 'var':
             self.warn(token, Parser.W_VAR_USED)
             self.collect_keyword_var(tokens, index)
 
         elif token.value == 'let':
             self.collect_keyword_var(tokens, index)
+
+        elif token.value == 'return':
+            self.collect_keyword_return(tokens, index)
 
         elif token.value == 'throw':
             self.collect_keyword_throw(tokens, index)
@@ -1365,6 +1468,8 @@ class Parser(ParserBase):
             # TODO: this may be consumed in a higher layer...
             # is there  a better way for this lower layer to signal that
             pass
+        elif token.value in reserved_types:
+            pass
         else:
             self.warn(token, Parser.W_UNSUPPORTED)
 
@@ -1398,12 +1503,60 @@ class Parser(ParserBase):
 
         return 1
 
+    def visit_type_annotations(self, parent, tokens, index, operators):
+
+        token = tokens[index]
+
+        # text
+        # text [equalsign expression]
+        # text colon [text|keyword|pipe|arrow...] [equalsign expression]
+
+        #if token.type == Token.T_KEYWORD and token.value in ('const', 'let', 'var', 'constexpr'):
+        #    print([token.value for token in tokens])
+
+        #if tokens[index].type == 'T_SPECIAL' and tokens[index].value == ':':
+        #    j = index - 2
+        #    if j >= 0:
+        #        print([token.value for token in tokens])
+        #        if tokens[j].type == 'T_SPECIAL' and tokens[j].value == '?':
+        #            return 1
+        #        self.consume_type(tokens, index)
+        #        tokens.pop(index)
+        #        return 0
+
+        #if tokens[index].type == 'T_SPECIAL' and tokens[index].value == ':':
+        #    b = self.consume_type(tokens, index)
+        #    a = tokens.pop(index)
+        #    tokens[index-1].children = [b]
+
+        if token.type == Token.T_KEYWORD and token.value == 'interface':
+            token.type = Token.T_INTERFACE
+            rhs1 = self.consume(tokens, token, index, 1)
+            rhs2 = self.consume(tokens, token, index, 1)
+            token.children.append(rhs1)
+            token.children.append(rhs2)
+            rhs2.type = Token.T_OBJECT
+
+        return 1
+
     def visit_cleanup(self, parent, tokens, index, operators):
 
         token = tokens[index]
         if token.type == Token.T_NEWLINE:
             tokens.pop(index)
             return 0
+
+        # fix for type definitions
+        #  allow 'type' to be an identifier
+        #  allow 'type x = expression' to be a type definition
+        if token.type == Token.T_TEXT and token.value == "type":
+            i1 = self.peek_token(tokens, token, index, 1)
+            if i1 is not None and tokens[i1].type == Token.T_ASSIGN:
+                if tokens[i1].value != "=":
+                    raise ParseError(tokens[i1], "expected assignment")
+                token.children = [self.consume(tokens, token, index, 1)]
+                token.type = Token.T_TYPE
+                return 1
 
         return 1
 
@@ -1974,6 +2127,12 @@ class Parser(ParserBase):
 
         rhs1 = self.consume(tokens, token, index, 1)
 
+        # check if this function is a generic function, pop the generic attribute
+        i2 = self.peek_token(tokens, token, index, 1)
+        if i2 is not None and tokens[i2].type == token.T_SPECIAL and tokens[i2].value == "<":
+            self.grouping(tokens, i2, "<", ">")
+            tokens.pop(i2) # not sure where to put this
+
         # function () {}
         # function name() {}
         anonymous = False
@@ -1986,16 +2145,28 @@ class Parser(ParserBase):
             token.children = [Token(Token.T_TEXT, token.line, token.index, "Anonymous"), rhs1]
         else:
             # name, arglist
-            token.children = [rhs1, self.consume(tokens, token, index, 1)]
+            arglist = self.consume(tokens, token, index, 1)
+            token.children = [rhs1, arglist]
 
         # function body
         body = self.consume(tokens, token, index, 1)
+
+        # check to see if a return type was given for this function
+        if body.type == Token.T_SPECIAL and body.value == ":":
+            type_ = self.consume_type(tokens, index)
+            token.children[0].children.append(type_)
+            body = self.consume(tokens, token, index, 1)
 
         if token.children[1].type not in (Token.T_GROUPING, Token.T_ARGLIST):
             raise ParseError(token, "expected arglist")
 
         token.children[1].type = Token.T_ARGLIST
-        for arg in token.children[1].children:
+        for k, arg in enumerate(token.children[1].children):
+
+            if arg.type == Token.T_BINARY and arg.value==":":
+                # fix the type annotation for this argument
+                token.children[1].children[k] = arg.children[0]
+                arg.children[0].children = [self.consume_type(arg.children, 0)]
             if arg.type == Token.T_LIST:
                 arg.type = Token.T_UNPACK_SEQUENCE
             if arg.type == Token.T_GROUPING:
@@ -2223,6 +2394,27 @@ def main():  # pragma: no cover
     text1 = "x?.[0]"
     text1 = "export let x=1,y=2"
     text1 = "0xfor"
+
+    text1 = "x : a | x" # special case, should be an error...
+    text1 = "let add: (obj: int) => void" # requires special handling in type annotation visitor
+    text1 = "let x : int = 0, y : int, z"
+    text1 = "let x : string"
+    text1 = "let x : void => void"
+    text1 = "let x : (name: string) => void"
+    text1 = "function f(x: string){}"
+    text1 = "function f(x: int): int {}"
+    text1 = "function f(x: a=>b): a=>b {}"
+    text1 = "let x : List[int] | List[float]"
+    text1 = "interface Point {x: int, y: int}"
+    text1 = "class Point {x: int y: int}"
+    text1 = """ a=x?b=y:c=z """  # challenge 13 breaks types
+    text1 = """ const b : int = a ? 1 : 2, c  b+= 1"""
+    text1 = """ x = {x : null} """
+    text1 = """ type Foo = (()=>void) | Set[int] """
+    text1 = "let f = (x: int) : int => x"
+    text1 = "function f<T>(arg: T) : T { return arg }"
+    text1 = "type x = <G>(arg: T) => H"
+    #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)
     print("="* 79)
