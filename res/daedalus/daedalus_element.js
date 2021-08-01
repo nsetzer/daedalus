@@ -122,7 +122,8 @@ export class DomElement {
         // this.appendChild(DomElement, "div"))
 
         if (!childElement || !childElement.type) {
-            throw "invalid child";
+            console.log({message: "invalid child", child: childElement})
+            throw "appendChild Failed: child is null or type not set";
         }
 
         if (typeof this.children === "string") {

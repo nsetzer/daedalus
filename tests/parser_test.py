@@ -60,6 +60,23 @@ class ParserTestCase(unittest.TestCase):
                     TOKEN('T_BLOCK', '{}'))))
         self.assertFalse(parsecmp(expected, ast, False))
 
+class ParserTypesTestCase(unittest.TestCase):
+
+    def _test(self, text, expected):
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_number_float(self):
+        text = "3.14"
+        expected = TOKEN('T_MODULE', '', TOKEN('T_NUMBER', '3.14'))
+        self._test(text, expected)
+
+    def test_001_number_exponent(self):
+        text = "1e-5"
+        expected = TOKEN('T_MODULE', '', TOKEN('T_NUMBER', '1e-5'))
+        self._test(text, expected)
+
 class ParserUnaryOpTestCase(unittest.TestCase):
 
     def test_001_unary_prefix(self):

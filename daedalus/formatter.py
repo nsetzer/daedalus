@@ -319,8 +319,8 @@ class Formatter(object):
 
                 out.append((depth, token.type, token.value))
             elif token.type == Token.T_NUMBER:
-
-                out.append((depth, token.type, token.value))
+                num = token.value.replace("_", "")
+                out.append((depth, token.type, num))
             elif token.type == Token.T_TAGGED_TEMPLATE:
                 lhs,rhs = token.children
                 seq.append((depth, None, rhs))
@@ -667,6 +667,7 @@ def main():  # pragma: no cover
     """
     text1 = """ let x : List[int] | List[float] """
     text1 = """ x : a | x """
+    text1 = """ x = NaN """
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 

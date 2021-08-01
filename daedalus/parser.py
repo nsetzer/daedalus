@@ -2414,6 +2414,7 @@ def main():  # pragma: no cover
     text1 = "let f = (x: int) : int => x"
     text1 = "function f<T>(arg: T) : T { return arg }"
     text1 = "type x = <G>(arg: T) => H"
+    text1 = "x = 1e-6"
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

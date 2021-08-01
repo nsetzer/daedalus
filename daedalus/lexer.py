@@ -485,7 +485,25 @@ class Lexer(LexerBase):
             except StopIteration:
                 break
 
-            if c in chset_number:
+
+            if c == 'e':
+                # numbers with exponents allow for unary signs
+                # as part of the number
+                # allow for 1e-5, 1e+5, 1e5
+                self._putch(self._getch())
+
+                try:
+                    c = self._peekch()
+                except StopIteration:
+                    break
+
+                if c in "+-" or c in chset_number:
+                    self._putch(self._getch())
+                else:
+                    self._push()
+                    break
+
+            elif c in chset_number:
                 self._putch(self._getch())
             else:
                 self._push()

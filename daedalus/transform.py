@@ -8,8 +8,17 @@ import hashlib
 from .lexer import Lexer
 from .token import Token, TokenError
 
+
+
 class TransformError(TokenError):
     pass
+
+def literal_eval(token):
+    try:
+        return py_ast.literal_eval(token.value)
+    except SyntaxError as e:
+        pass
+    raise TransformError(token, "syntax error")
 
 class TransformBase(object):
     def __init__(self):
@@ -368,7 +377,7 @@ class TransformExtractStyleSheet(TransformBase):
         if parent and parent.type == Token.T_BINARY and parent.value == ':':
             key = parent.children[0]
             if key.type == Token.T_STRING:
-                style_name = 'style.' + py_ast.literal_eval(key.value)
+                style_name = 'style.' + literal_eval(key)
             elif key.type == Token.T_TEXT:
                 style_name = 'style.' + key.value
 
@@ -404,7 +413,7 @@ class TransformExtractStyleSheet(TransformBase):
             selector = arg0
             selector_text = None
             if selector.type == Token.T_STRING:
-                selector_text = py_ast.literal_eval(selector.value)
+                selector_text = literal_eval(selector)
             elif selector.type == Token.T_TEMPLATE_STRING:
                 selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
                 selector_text = shell_format(selector_text, self.named_styles)
@@ -419,7 +428,7 @@ class TransformExtractStyleSheet(TransformBase):
 
                 selector_text = None
                 if selector.type == Token.T_STRING:
-                    selector_text = py_ast.literal_eval(selector.value)
+                    selector_text = literal_eval(selector)
                 elif selector.type == Token.T_TEMPLATE_STRING:
                     selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
                     selector_text = shell_format(selector_text, self.named_styles)
@@ -457,7 +466,7 @@ class TransformExtractStyleSheet(TransformBase):
 
         selector_text = None
         if selector.type == Token.T_STRING:
-            selector_text = py_ast.literal_eval(selector.value)
+            selector_text = literal_eval(selector)
         elif selector.type == Token.T_TEMPLATE_STRING:
             selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
             selector_text = shell_format(selector_text, self.named_styles)
@@ -531,13 +540,13 @@ class TransformExtractStyleSheet(TransformBase):
                 if lhs.type == Token.T_TEXT:
                     lhs_value = lhs.value
                 elif lhs.type == Token.T_STRING:
-                    lhs_value = py_ast.literal_eval(lhs.value)
+                    lhs_value = literal_eval(lhs)
 
                 rhs_value = None
                 if rhs.type == Token.T_TEXT:
                     rhs_value = rhs.value
                 elif rhs.type == Token.T_STRING:
-                    rhs_value = py_ast.literal_eval(rhs.value)
+                    rhs_value = literal_eval(rhs)
                 elif rhs.type == Token.T_NUMBER:
                     rhs_value = rhs.value
                 elif rhs.type == Token.T_OBJECT or rhs.type == Token.T_RECORD:
@@ -2675,11 +2684,11 @@ js_num_ops = {
 }
 
 def js_seq_get_attr(obj, key):
-    index = py_ast.literal_eval(key.value)
+    index = literal_eval(key)
     return obj.children[index]
 
 def js_map_get_attr(obj, key):
-    index = py_ast.literal_eval(key.value)
+    index = literal_eval(key)
     return obj.children[index]
 
 class TransformConstEval(TransformBaseV3):
@@ -2759,8 +2768,8 @@ class TransformConstEval(TransformBaseV3):
         rhs = self.resolve_reference(rhs)
 
         if is_str(lhs) and is_str(rhs):
-            lv = py_ast.literal_eval(lhs.value)
-            rv = py_ast.literal_eval(rhs.value)
+            lv = literal_eval(lhs)
+            rv = literal_eval(rhs)
 
             if token.value in js_num_ops:
                 #print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
@@ -2769,8 +2778,8 @@ class TransformConstEval(TransformBaseV3):
                 token.children = []
 
         elif is_num(lhs) and is_num(rhs):
-            lv = py_ast.literal_eval(lhs.value)
-            rv = py_ast.literal_eval(rhs.value)
+            lv = literal_eval(lhs)
+            rv = literal_eval(rhs)
 
             if token.value in js_num_ops:
                 token.type = Token.T_NUMBER
@@ -2779,8 +2788,8 @@ class TransformConstEval(TransformBaseV3):
                 token.children = []
 
         elif (is_num(lhs) and is_num(rhs)) or (is_num(lhs) and is_str(rhs)):
-            lv = str(py_ast.literal_eval(lhs.value))
-            rv = str(py_ast.literal_eval(rhs.value))
+            lv = str(literal_eval(lhs))
+            rv = str(literal_eval(rhs))
             if token.value == "+":
                 #print("compute: %s:%d %r%s%r" % (token.file, token.line, lv, token.value, rv))
                 token.type = Token.T_NUMBER
@@ -2799,7 +2808,7 @@ def getModuleImportExport(ast, warn_include=False):
             if warn_include:
                 sys.stdout.write("warning: include found in file that is not a daedalus module\n")
 
-            name = py_ast.literal_eval(token.children[0].value)
+            name = literal_eval(token.children[0])
             imports[name] = []
 
             ast.children.pop(0)

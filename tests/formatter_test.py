@@ -18,6 +18,11 @@ class FormatterUtilTestCase(unittest.TestCase):
         self.assertTrue(isalphanum("\u263A", "\u263A"))
         self.assertTrue(isalphanum("function", "_name"))
 
+
+
+
+
+
 class FormatterTestCase(unittest.TestCase):
 
     @classmethod
@@ -77,6 +82,9 @@ class FormatterTestCase(unittest.TestCase):
         output = self.formatter.format(ast)
 
         self.assertEqual(expected, output)
+
+    def test_001_number_separated(self):
+        self._chkeq("""1_234.000_000""", "1234.000000")
 
     def test_001_regex(self):
         self._chkeq("""
