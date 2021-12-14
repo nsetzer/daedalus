@@ -391,7 +391,7 @@ class Parser(ParserBase):
             return None
 
         side = "rhs" if direction > 0 else "lhs"
-        print([token.value for token in tokens])
+        #print([token.value for token in tokens])
         if 0 <= index_tok1 < len(tokens):
             raise ParseError(tokens[index_tok1], "invalid token on %s of %s" % (side, token.value))
         raise ParseError(token, "missing token on %s" % side)

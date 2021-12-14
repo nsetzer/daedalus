@@ -9,6 +9,7 @@ import gzip
 import ssl
 from urllib.parse import urlparse, unquote
 import mimetypes
+from collections import defaultdict
 
 from .builder import Builder
 
@@ -40,12 +41,56 @@ class JsonResponse(Response):
         self.headers = {"Content-Type": "application/json"}
         self.payload = json.dumps(obj).encode('utf-8') + b"\n"
 
+def get(path):
+    """decorator which registers a class method as a GET handler"""
+    def decorator(f):
+        f._endpoint = path
+        f._methods = ['GET']
+        return f
+    return decorator
+
+def put(path):
+    """decorator which registers a class method as a PUT handler"""
+    def decorator(f):
+        f._endpoint = path
+        f._methods = ['PUT']
+        return f
+    return decorator
+
+def post(path):
+    """decorator which registers a class method as a POST handler"""
+    def decorator(f):
+        f._endpoint = path
+        f._methods = ['POST']
+        return f
+    return decorator
+
+def delete(path):
+    """decorator which registers a class method as a DELETE handler"""
+    def decorator(f):
+        f._endpoint = path
+        f._methods = ['DELETE']
+        return f
+    return decorator
+
 class Resource(object):
     def __init__(self):
         super(Resource, self).__init__()
 
-    def endpoints():
-        return []
+        self._endpoints = []
+
+        for name in dir(self):
+            attr = getattr(self, name)
+            if hasattr(attr, '_endpoint'):
+                func = attr
+                # fname = self.__class__.__name__ + "." + func.__name__
+                path = func._endpoint
+                methods = func._methods
+
+                self._endpoints.append((methods[0], path, attr))
+
+    def endpoints(self):
+        return self._endpoints
 
 class Router(object):
     def __init__(self):
@@ -59,12 +104,31 @@ class Router(object):
         self.endpoints = []
 
     def registerEndpoints(self, endpoints):
+
+        def sortkey(endpoint):
+            pattern = endpoint[1]
+            parts = pattern.split("/")
+            total = 0
+            for part in parts:
+                if part.startswith(":"):
+                    if not part.endswith("*"):
+                        total += 1
+                else:
+                    total += 1
+            return total
+
+        endpoints = sorted(endpoints, key=sortkey, reverse=True)
+
         for method, pattern, callback in endpoints:
             regex, tokens = self.patternToRegex(pattern)
             self.route_table[method].append((regex, tokens, callback))
             self.endpoints.append((method, pattern))
 
     def getRoute(self, method, path):
+        if method not in self.route_table:
+            sys.stderr.write("unsupported method: %s\n" % method)
+            return None
+
         for re_ptn, tokens, callback in self.route_table[method]:
             m = re_ptn.match(path)
             if m:
@@ -132,8 +196,18 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             # TODO: try-block around user code
             callback, matches = result
 
+            # parse query parameters
+            # key => list of values
+            self.query = defaultdict(list)
             parts = url.query.split("&")
-            self.query = dict(part.split("=") for part in parts if '=' in part)
+            for part in parts:
+                if '=' in part:
+                    key, value = part.split("=", 1)
+                    self.query[key].append(value)
+                else:
+                    self.query[part].append(None)
+
+            # execute the user callback
             response = callback(self, self.path, matches)
 
             if not response:
@@ -306,15 +380,7 @@ class SampleResource(Resource):
         self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
         self.static_path = static_path
 
-    def endpoints(self):
-        return [
-            ("GET", "/static/index.css", self.get_style),
-            ("GET", "/static/index.js", self.get_source),
-            ("GET", "/static/:path*", self.get_static),
-            ("GET", "/favicon.ico", self.get_favicon),
-            ("GET", "/:path*", self.get_path),
-        ]
-
+    @get("/static/index.css")
     def get_style(self, request, location, matches):
         """
         serve the compiled css
@@ -323,6 +389,7 @@ class SampleResource(Resource):
         response.headers['Content-Type'] = 'text/css'
         return response
 
+    @get("/static/index.js")
     def get_source(self, request, location, matches):
         """
         serve the compiled javascript code
@@ -331,11 +398,14 @@ class SampleResource(Resource):
         response.headers['Content-Type'] = 'application/javascript'
         return response
 
+    @get("/static/:path*")
     def get_static(self, request, location, matches):
         """
         serve files found inside the provided static directory
         """
         # Note: Not For Production Use. This is a security risk
+        print(self.static_path)
+        print(os.listdir(self.static_path))
         path = os.path.join(self.static_path, matches['path'])
 
         if not os.path.exists(path):
@@ -346,6 +416,7 @@ class SampleResource(Resource):
         response.headers['Content-Type'] = type
         return response
 
+    @get("/:path*")
     def get_path(self, request, location, matches):
         """
         rebuild the javascript and html, return the html
@@ -353,6 +424,7 @@ class SampleResource(Resource):
         self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
         return Response(payload=self.html)
 
+    @get("/favicon.ico")
     def get_favicon(self, request, location, matches):
         """
         serve the favicon

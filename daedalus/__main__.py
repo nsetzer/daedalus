@@ -103,7 +103,7 @@ class BuildCLI(CLI):
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--env', type=str, action='append', default=[])
         subparser.add_argument('--platform', type=str, default=None)
-        subparser.add_argument('--static', type=str, default=None)
+        subparser.add_argument('--static', type=str, default="./static")
         subparser.add_argument('index_js')
         subparser.add_argument('out')
 
@@ -171,7 +171,6 @@ class BuildProfileCLI(CLI):
             {},
             filename=None,
             sort='cumtime')
-
 
 class ServeCLI(CLI):
 
@@ -339,7 +338,6 @@ class RunCLI(CLI):
             if isinstance(rv_, int):
                 rv = rv_
         return rv
-
 
 def register_parsers(parser):
 
