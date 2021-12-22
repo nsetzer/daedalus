@@ -416,14 +416,6 @@ class SampleResource(Resource):
         response.headers['Content-Type'] = type
         return response
 
-    @get("/:path*")
-    def get_path(self, request, location, matches):
-        """
-        rebuild the javascript and html, return the html
-        """
-        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
-        return Response(payload=self.html)
-
     @get("/favicon.ico")
     def get_favicon(self, request, location, matches):
         """
@@ -438,6 +430,14 @@ class SampleResource(Resource):
         type, _ = mimetypes.guess_type(path)
         response.headers['Content-Type'] = type
         return response
+
+    @get("/:path*")
+    def get_path(self, request, location, matches):
+        """
+        rebuild the javascript and html, return the html
+        """
+        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
+        return Response(payload=self.html)
 
 class SampleServer(Server):
 

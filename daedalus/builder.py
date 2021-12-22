@@ -623,7 +623,6 @@ class Builder(object):
         return [self.modules[p] for p in order]
 
     def build_module(self, path, minify=False):
-
         jsm = self.discover(path)
         ast = jsm.getAST()
 

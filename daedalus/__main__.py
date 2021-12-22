@@ -22,46 +22,7 @@ try:
 except ImportError as e:
     enable_compiler = False
 
-def makedirs(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-def parse_paths(paths, js_root=None):
-
-    paths = []
-    if paths:
-        paths = paths.split(":")
-
-    if js_root:
-        paths.insert(0, os.path.split(js_root)[0])
-
-    return paths
-
-def copy_staticdir(staticdir, outdir):
-
-    if staticdir and os.path.exists(staticdir):
-
-        for dirpath, dirnames, filenames in os.walk(staticdir):
-            paths = []
-            for dirname in dirnames:
-                src_path = os.path.join(dirpath, dirname)
-                dst_path = os.path.join(outdir, "static", os.path.relpath(src_path, staticdir))
-                if not os.path.exists(dst_path):
-                    os.makedirs(dst_path)
-
-            for filename in filenames:
-                src_path = os.path.join(dirpath, filename)
-                dst_path = os.path.join(outdir, "static", os.path.relpath(src_path, staticdir))
-                with open(src_path, "rb") as rb:
-                    with open(dst_path, "wb") as wb:
-                        wb.write(rb.read())
-
-def copy_favicon(builder, outdir):
-    inp_favicon = builder.find("favicon.ico")
-    out_favicon = os.path.join(outdir, "favicon.ico")
-    with open(inp_favicon, "rb") as rb:
-        with open(out_favicon, "wb") as wb:
-            wb.write(rb.read())
+from .cli_util import build
 
 class Clock(object):
     def __init__(self, text):
@@ -111,37 +72,27 @@ class BuildCLI(CLI):
 
         outdir = args.out
         staticdir = args.static
-        envparams = args.env
         platform = args.platform
         minify = args.minify
         onefile = args.onefile
-        js_path_input = os.path.abspath(args.index_js)
-        html_path_output = os.path.join(outdir, "index.html")
-        js_path_output = os.path.join(outdir, "static", "index.js")
-        css_path_output = os.path.join(outdir, "static", "index.css")
+        index_js = os.path.abspath(args.index_js)
+        if args.path:
+            paths = paths.split(":")
+        else:
+            paths = []
 
-        paths = parse_paths(args.paths, js_path_input)
-        static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in envparams])}}
-        builder = Builder(paths, static_data, platform=platform)
-        css, js, html = builder.build(js_path_input, minify=minify, onefile=onefile)
+        paths.insert(0, os.path.split(js_root)[0])
 
-        makedirs(outdir)
+        envparams = args.env
+        staticdata = {"daedalus": {"env": dict([s.split('=', 1) for s in envparams])}}
 
-        with open(html_path_output, "w") as wf:
-            cmd = 'daedalus ' + ' '.join(sys.argv[1:])
-            wf.write("<!--%s-->\n" % cmd)
-            wf.write(html)
-
-        if not onefile:
-            makedirs(os.path.join(outdir, 'static'))
-            with open(js_path_output, "w") as wf:
-                wf.write(js)
-
-            with open(css_path_output, "w") as wf:
-                wf.write(css)
-
-        copy_staticdir(staticdir, outdir)
-        copy_favicon(builder, outdir)
+        build(outdir, index_js,
+            staticdir=staticdir,
+            staticdata=staticdata,
+            paths=paths,
+            platform=platform,
+            minify=minify,
+            onefile=onefile)
 
 class BuildProfileCLI(CLI):
     """
