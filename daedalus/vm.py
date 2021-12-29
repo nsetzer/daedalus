@@ -467,6 +467,7 @@ class VmCompiler(object):
             Token.T_DELETE_VAR: self._visit_delete_var,
             Token.T_FREE_VAR: self._visit_free_var,
             Token.T_CELL_VAR: self._visit_cell_var,
+            Token.T_CLASS: self._visit_class,
         }
 
         self.compile_actions = {
@@ -974,6 +975,55 @@ class VmCompiler(object):
 
             flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
             self._push_token(depth, flag0, expr_call)
+
+    def _visit_class(self, depth, state, token):
+
+        name = token.children[0]
+        parent = token.children[1]
+        block1 = token.children[2]
+        closure1 = token.children[3]
+
+        constructor = None
+        methods = []
+        for meth in block1.children:
+
+            if meth.children[0].value == "constructor":
+                constructor = meth
+            else:
+                meth = meth.clone()
+                meth.type = Token.T_LAMBDA
+
+                #T_ASSIGN<6,23,'='>
+                #T_GET_ATTR<6,20,'.'>
+                #T_KEYWORD<6,16,'this'>
+                #T_ATTR<6,21,'x'>
+                _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+                _attr = Token(Token.T_ATTR, token.line, token.index, meth.children[0].value)
+                _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr])
+                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, meth])
+                methods.append(_assign)
+
+        methods.extend(constructor.children[2].children)
+
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
+        methods.append(_return)
+
+        constructor = constructor.clone()
+
+        constructor.children[2].children = methods
+
+        constructor.type = Token.T_FUNCTION
+        constructor.children[0] = name
+        #print(constructor.toString(1))
+
+        arglist = constructor.children[1]
+        block2 = constructor.children[2]
+        closure2 = constructor.children[3]
+
+        opcode, index = self._token2index(name, False)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
+        self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block2, closure2, autobind=False)
 
     def _visit_return(self, depth, state, token):
         self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.RETURN, len(token.children), token=token))
@@ -1891,7 +1941,7 @@ def main():
 
     """
 
-    text1 = """
+    text_fclass1 = """
 
     function f() {
         x = 5;
@@ -1929,7 +1979,46 @@ def main():
         sum += i;
     }
     """
-    tokens = Lexer().lex(text1)
+
+    render1 = """
+
+        console.log("<HTML><BODY>Hello World</BODY></HTML>")
+    """
+
+    class0 = """
+        function App(x) {
+
+            this.get_x = () => {
+                return this.x
+            }
+
+            this.x = x
+
+            return this
+        }
+
+        y = App(7).get_x()
+        console.log(y)
+    """
+    # compiler trasforms class into the above example
+    class1 = """
+
+        // export
+        class App {
+            constructor(x) {
+                this.x = x;
+            }
+
+            get_x() {
+                return this.x
+            }
+        }
+
+        y = App(7).get_x()
+        console.log(y)
+    """
+
+    tokens = Lexer().lex(class1)
     parser = Parser()
     parser.python = True
     ast = parser.parse(tokens)
