@@ -191,11 +191,10 @@ class VmTestCase(unittest.TestCase):
 
         """
         result, globals_ = self.evaljs(text, diag=False)
-        print(globals_.values)
         self.assertEqual(globals_.values['a'],  5)
         self.assertEqual(globals_.values['b'], 12)
 
-    def test_try_catch_finally(self):
+    def test_try_catch_finally_throw_1(self):
         text = """
 
             let g = 0
@@ -213,6 +212,69 @@ class VmTestCase(unittest.TestCase):
         """
         result, globals_ = self.evaljs(text, diag=False)
         self.assertEqual(globals_.values['g'], 3)
+
+    def test_class_simple(self):
+        text = """
+
+            class Point {
+                constructor(x, y) {
+
+                    this.x = x
+                    this.y = y
+                }
+
+                get_x() {
+                    return this.x
+                }
+            }
+
+            p = Point(6, 7)
+            x = p.x
+            y = p.y
+
+            x2 = p.get_x()
+        """
+        result, globals_ = self.evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 6)
+        self.assertEqual(globals_.values['y'], 7)
+        self.assertEqual(globals_.values['x2'], 6)
+
+    def test_class_simple_inheritance(self):
+        text = """
+
+            class Point {
+                constructor(x, y) {
+
+                    this.x = x
+                    this.y = y
+                }
+
+                get_x() {
+                    return this.x
+                }
+            }
+
+            class Point2 extends Point {
+                constructor(x, y) {
+                    super(x, y)
+                }
+
+                mul() {
+                    return this.x * this.y
+                }
+            }
+
+            p = Point2(6, 7)
+            x = p.x
+            y = p.y
+            x2 = p.get_x()
+            m = p.mul()
+        """
+        result, globals_ = self.evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 6)
+        self.assertEqual(globals_.values['y'], 7)
+        self.assertEqual(globals_.values['x2'], 6)
+        self.assertEqual(globals_.values['m'], 42)
 
 def main():
     unittest.main()

@@ -254,7 +254,8 @@ class obj(IntEnum):
     # fnidx, argcount
     # arg is number of function arguments
     # default values are popped from the stack
-    CREATE_FUNCTION = 0x6D, 1
+    CREATE_SUPER    = 0x6D  # TOS = super(TOS1, TOS2)
+    CREATE_FUNCTION = 0x6E, 1
 
     CREATE_CLASS    = 0x6F
 
