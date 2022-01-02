@@ -66,14 +66,14 @@ class JsObject(object):
 
         if prototype is None:
 
-            self.prototype = JsObject.prototype_instance
+            self.prototype = self.__class__.prototype_instance
         else:
             self.prototype = prototype
 
     def __repr__(self):
         # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
         s = ",".join([str(s) for s in self.data.keys()])
-        return "<JsObject(%s)>" % s
+        return "<%s(%s)>" % (self.__class__.__name__, s)
 
     def _hasAttr(self, name):
         if isinstance(name, JsString):
@@ -278,11 +278,50 @@ class JsUndefined(JsObject):
     def deserialize(self, stream):
         pass
 
+class JsPromise(JsObject):
+
+    prototype_instance = None
+
+    def __init__(self, callback=None):
+        # callback: (resolve, reject) => {}
+        super(JsPromise, self).__init__()
+        self.callback = callback
+
+        self._invoke()
+
+    def _invoke(self):
+
+        runtime = VmRuntime()
+        runtime.initfn(self.callback)
+        rv, globals = runtime.run()
+        self._result = rv
+
+    def _then(self, callback=None):
+        # callback: (success) => {}
+        return 123
+
+    def _catch(self, callback=None):
+        # callback: (error) => {}
+        return 124
+
+    def _finally(self, callback=None):
+        # callback: () => {}
+        return 125
+
+def fetch(url, parameters):
+    return JsPromise()
+
+
 JsObject.prototype_instance = JsObject()
 JsArray.prototype_instance = JsObject()
 
 JsArray.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.array)))
 JsArray.prototype_instance.setAttr('push', PyCallable(None, lambda self, obj: self.array.append(obj)))
+
+JsPromise.prototype_instance = JsObject()
+JsPromise.prototype_instance.setAttr('then', PyCallable(None, JsPromise._then))
+JsPromise.prototype_instance.setAttr('catch', PyCallable(None, JsPromise._catch))
+JsPromise.prototype_instance.setAttr('finally', PyCallable(None, JsPromise._finally))
 
 JsUndefined.instance = JsUndefined()
 
@@ -376,16 +415,23 @@ class JsFunction(object):
         self.args = args
         self.kwargs = kwargs
         self.bind_target = bind_target
+        self.cells = None
 
     def __repr__(self):
 
-
         return "<JsFunction(%s)>" % (",".join(self.fndef.arglabels))
+
+    def bind(self, target):
+
+        fn = JsFunction(self.module, self.fndef, self.args, self.kwargs, target)
+        fn.cells = self.cells # TODO this seems like a hack
+        return fn
 
 class VmModule(object):
     def __init__(self):
         super(VmModule, self).__init__()
         self.path = None
+        self.functions = []
 
     def dump(self):
 
@@ -467,6 +513,8 @@ class VmCompiler(object):
             Token.T_DELETE_VAR: self._visit_delete_var,
             Token.T_FREE_VAR: self._visit_free_var,
             Token.T_CELL_VAR: self._visit_cell_var,
+            Token.T_CLASS: self._visit_class,
+            "T_CREATE_SUPER": self._visit_create_super,
         }
 
         self.compile_actions = {
@@ -913,6 +961,9 @@ class VmCompiler(object):
         elif token.value == "this":
             opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
             self._push_instruction(VmInstruction(opcode, index, token=token))
+        elif token.value == "super":
+            _sup = Token(Token.T_LOCAL_VAR, token.line, token.index, token.value)
+            return self._visit_text(depth, state, _sup)
         else:
             raise VmCompileError(token, "not implemented")
 
@@ -974,6 +1025,87 @@ class VmCompiler(object):
 
             flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
             self._push_token(depth, flag0, expr_call)
+
+    def _visit_class(self, depth, state, token):
+
+        name = token.children[0]
+        parent = token.children[1]
+        block1 = token.children[2]
+        closure1 = token.children[3]
+
+        constructor = None
+        methods = []
+        for meth in block1.children:
+
+            if meth.children[0].value == "constructor":
+                constructor = meth
+            else:
+                meth = meth.clone()
+                meth.type = Token.T_LAMBDA
+
+                #T_ASSIGN<6,23,'='>
+                #T_GET_ATTR<6,20,'.'>
+                #T_KEYWORD<6,16,'this'>
+                #T_ATTR<6,21,'x'>
+                _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+                _attr = Token(Token.T_ATTR, token.line, token.index, meth.children[0].value)
+                _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr])
+                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, meth])
+                methods.append(_assign)
+
+        methods.extend(constructor.children[2].children)
+
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
+        methods.append(_return)
+
+
+        if parent.children:
+        # if False:
+            parent_cls = parent.children[0].value
+
+            _parent = Token(name.type, token.line, token.index, parent_cls)
+            _bind = Token(Token.T_ATTR, token.line, token.index, "bind")
+            _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+            _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_parent, _bind])
+
+            _arglist = Token(Token.T_ARGLIST, token.line, token.index, "()", [_this])
+            _fncall = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
+            _super = Token(Token.T_LOCAL_VAR, token.line, token.index, "super")
+            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_super, _fncall])
+
+            # _super = Token("T_CREATE_SUPER", token.line, token.index, "super", [_parent, _this])
+            methods.insert(0, _assign)
+
+        constructor = constructor.clone()
+
+
+        constructor.children[2].children = methods
+
+        constructor.type = Token.T_FUNCTION
+        constructor.children[0] = name
+        # print(constructor.toString(1))
+
+        arglist = constructor.children[1]
+        block2 = constructor.children[2]
+        closure2 = constructor.children[3]
+
+        opcode, index = self._token2index(name, False)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
+        self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block2, closure2, autobind=False)
+
+    def _visit_create_super(self, depth, state, token):
+
+        # TODO: not implemented
+        # intent is to load the 'super' keyword and add any missing properties
+        # from the parent class, but bound to the current 'this'
+        # this can be optimized by only generating instructions for functions
+        # that are actually used in the method
+        self._push_instruction(VmInstruction(opcodes.obj.CREATE_SUPER, token=token))
+
+        #self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
+
+
 
     def _visit_return(self, depth, state, token):
         self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.RETURN, len(token.children), token=token))
@@ -1247,7 +1379,10 @@ class VmCompiler(object):
                 self.fn.local_names.append(name)
 
         if index == -1:
-            raise VmCompileError(token, "unable to load undefined identifier")
+            if load:
+                raise VmCompileError(token, "unable to load undefined identifier")
+            else:
+                raise VmCompileError(token, "unable to store undefined identifier")
 
         if load:
             return enum.GET, index
@@ -1350,11 +1485,23 @@ class VmRuntime(object):
 
         self.enable_diag = False
 
-    def init(self, module):
+    def initfn(self, fn):
 
-        cells = JsObject()
+        mod = VmModule()
+        mod.functions = [fn.fndef]
+        self.init(mod, cells=fn.cells, bind_target=fn.bind_target)
+
+    def init(self, module, cells=None, bind_target=None):
+
+        if cells is None:
+            cells =JsObject()
+
         locals = JsObject()
-        locals.setAttr("this", JsUndefined.instance)
+        if bind_target is None:
+            locals.setAttr("this", JsUndefined.instance)
+        else:
+            locals.setAttr("this", bind_target)
+
         self.stack_frames = [VmStackFrame(module, module.functions[0], locals, cells)]
 
         g = self.stack_frames[-1].globals
@@ -1362,6 +1509,8 @@ class VmRuntime(object):
         console = lambda: None
         console.log = print
         g.values['console'] = console
+        g.values['Promise'] = JsPromise
+        g.values['fetch'] = fetch
 
     def _unwind(self):
 
@@ -1454,7 +1603,13 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     continue
                 else:
-                    frame.stack.append(func(*args))
+                    # TODO: python callable may return a JsFunction
+                    #       derived Immediatley nvokable Function
+                    #       which must be avaulated to get the true
+                    #       return value
+                    _rv = func(*args, **kwargs.data)
+                    print("iifc:", _rv)
+                    frame.stack.append(_rv)
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
                 if frame.stack:
@@ -1891,7 +2046,7 @@ def main():
 
     """
 
-    text1 = """
+    text_fclass1 = """
 
     function f() {
         x = 5;
@@ -1929,7 +2084,84 @@ def main():
         sum += i;
     }
     """
-    tokens = Lexer().lex(text1)
+
+    render1 = """
+
+        console.log("<HTML><BODY>Hello World</BODY></HTML>")
+    """
+
+    class0 = """
+        function App(x) {
+
+            this.get_x = () => {
+                return this.x
+            }
+
+            this.x = x
+
+            return this
+        }
+
+        y = App(7).get_x()
+        console.log(y)
+    """
+    # compiler trasforms class into the above example
+    class1 = """
+
+        // export
+        class App {
+            constructor(x) {
+                this.x = x;
+            }
+
+            get_x() {
+                return this.x
+            }
+        }
+
+        y = App(7).get_x()
+        console.log(y)
+    """
+
+    class2 = """
+
+        class P {
+            constructor(x, y) {
+                this.x = x
+                this.y = y
+            }
+        }
+
+        class T extends P {
+            constructor(x, y) {
+                //super = P.bind(this)
+                super(x, y)
+            }
+
+            mul() {
+                return this.x * this.y
+            }
+        }
+
+        console.log(T(6, 7).mul())
+    """
+
+
+    array1 = """
+
+        let a = [1, 2, 3]
+        console.log(a.length, a[1])
+        a.push(4)
+        console.log(a.length, a[1])
+    """
+
+    promise1 = """
+        p = Promise(()=>{return 1})
+        //console.log()
+        //console.log(fetch("/root", {}))
+    """
+
+    tokens = Lexer().lex(promise1)
     parser = Parser()
     parser.python = True
     ast = parser.parse(tokens)
