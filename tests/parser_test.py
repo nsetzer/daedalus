@@ -1011,6 +1011,49 @@ class ParserKeywordTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_try_catch_promise(self):
+
+        text = """
+            fetch(url, {})
+                .then(res=>{})
+                .catch(err=>{})
+                .finally(()=>{})
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FUNCTIONCALL', '',
+                TOKEN('T_GET_ATTR', '.',
+                    TOKEN('T_FUNCTIONCALL', '',
+                        TOKEN('T_GET_ATTR', '.',
+                            TOKEN('T_FUNCTIONCALL', '',
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_FUNCTIONCALL', '',
+                                        TOKEN('T_TEXT', 'fetch'),
+                                        TOKEN('T_ARGLIST', '()',
+                                            TOKEN('T_TEXT', 'url'),
+                                            TOKEN('T_OBJECT', '{}'))),
+                                    TOKEN('T_ATTR', 'then')),
+                                TOKEN('T_ARGLIST', '()',
+                                    TOKEN('T_LAMBDA', '=>',
+                                        TOKEN('T_TEXT', 'Anonymous'),
+                                        TOKEN('T_TEXT', 'res'),
+                                        TOKEN('T_OBJECT', '{}')))),
+                            TOKEN('T_ATTR', 'catch')),
+                        TOKEN('T_ARGLIST', '()',
+                            TOKEN('T_LAMBDA', '=>',
+                                TOKEN('T_TEXT', 'Anonymous'),
+                                TOKEN('T_TEXT', 'err'),
+                                TOKEN('T_OBJECT', '{}')))),
+                    TOKEN('T_KEYWORD', 'finally')),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_LAMBDA', '=>',
+                        TOKEN('T_TEXT', 'Anonymous'),
+                        TOKEN('T_ARGLIST', '()'),
+                        TOKEN('T_OBJECT', '{}')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
     def test_001_lambda_assign(self):
         """
         this test can only pass if binary operators
@@ -1683,14 +1726,16 @@ class ParserTypeAnnotationTestCase(unittest.TestCase):
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_FUNCTION', 'function',
                 TOKEN('T_TEXT', 'f',
-                    TOKEN('T_LAMBDA', '=>',
-                        TOKEN('T_TEXT', 'a'),
-                        TOKEN('T_TEXT', 'b'))),
-                TOKEN('T_ARGLIST', '()',
-                    TOKEN('T_TEXT', 'x',
+                    TOKEN('T_ANNOTATION', '',
                         TOKEN('T_LAMBDA', '=>',
                             TOKEN('T_TEXT', 'a'),
                             TOKEN('T_TEXT', 'b')))),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_LAMBDA', '=>',
+                                TOKEN('T_TEXT', 'a'),
+                                TOKEN('T_TEXT', 'b'))))),
                 TOKEN('T_BLOCK', '{}')))
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -1717,13 +1762,30 @@ class ParserTypeAnnotationTestCase(unittest.TestCase):
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_FUNCTION', 'function',
                 TOKEN('T_TEXT', 'f',
-                    TOKEN('T_TEXT', 'T')),
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'T'))),
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_TEXT', 'x',
-                        TOKEN('T_TEXT', 'T'))),
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'T')))),
                 TOKEN('T_BLOCK', '{}')))
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_interface(self):
+        text = "interface IPoint {x:int, y:int}"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_INTERFACE', 'interface',
+                TOKEN('T_TEXT', 'IPoint'),
+                TOKEN('T_OBJECT', '{}',
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_TEXT', 'x'),
+                        TOKEN('T_KEYWORD', 'int')),
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_TEXT', 'y'),
+                        TOKEN('T_KEYWORD', 'int')))))
+        self.assertFalse(parsecmp(expected, ast, False))
 def main():
     unittest.main()
 

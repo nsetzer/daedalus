@@ -174,6 +174,7 @@ class Token(object):
     T_EMPTY_TOKEN = "T_EMPTY_TOKEN"
 
     T_TYPE = "T_TYPE"
+    T_ANNOTATION = "T_ANNOTATION"
 
     # tokens created by the compiler
     T_BLOCK_PUSH = "T_BLOCK_PUSH"

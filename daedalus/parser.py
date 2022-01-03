@@ -367,7 +367,7 @@ class Parser(ParserBase):
         self._offset is reset on ever call, and should be cached
         """
 
-        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "function*", "class", "catch", "undefined")
+        expression_whitelist = ("super", "true", "false", "null", "this", "new", "function", "function*", "class", "catch", "finally", "undefined")
         self._offset = 0
         index_tok1 = index + direction
         while 0 <= index_tok1 < len(tokens):
@@ -616,7 +616,7 @@ class Parser(ParserBase):
                 lhs = self.consume(tokens, token, index, -1)
                 n = 0
 
-                if lhs.type == Token.T_TEXT and lhs.value == "catch":
+                if lhs.type == Token.T_TEXT and lhs.value in ("catch", "finally"):
                     # the syntax looks like a function call:
                     #   catch(expr) {}
                     # but catch is a keyword, produce a catch node instead
@@ -1164,7 +1164,8 @@ class Parser(ParserBase):
                 if tokens[j].type == Token.T_TEXT and tokens[k].type==Token.T_SPECIAL and tokens[k].value == ":":
                     type_ = self.consume_keyword(tokens, tokens[k], k, 1)
                     tokens.pop(k)
-                    tokens[j].children.append(type_)
+                    anno = Token(Token.T_ANNOTATION, type_.line, type_.index, "", [type_])
+                    tokens[j].children.append(anno)
                     # this will trigger a visit of this node again
                     # but with the correct index
                     return -2
@@ -2154,7 +2155,8 @@ class Parser(ParserBase):
         # check to see if a return type was given for this function
         if body.type == Token.T_SPECIAL and body.value == ":":
             type_ = self.consume_type(tokens, index)
-            token.children[0].children.append(type_)
+            anno = Token(Token.T_ANNOTATION, type_.line, type_.index, "", [type_])
+            token.children[0].children.append(anno)
             body = self.consume(tokens, token, index, 1)
 
         if token.children[1].type not in (Token.T_GROUPING, Token.T_ARGLIST):
@@ -2166,7 +2168,9 @@ class Parser(ParserBase):
             if arg.type == Token.T_BINARY and arg.value==":":
                 # fix the type annotation for this argument
                 token.children[1].children[k] = arg.children[0]
-                arg.children[0].children = [self.consume_type(arg.children, 0)]
+                type_ = self.consume_type(arg.children, 0)
+                anno = Token(Token.T_ANNOTATION, type_.line, type_.index, "", [type_])
+                arg.children[0].children = [anno]
             if arg.type == Token.T_LIST:
                 arg.type = Token.T_UNPACK_SEQUENCE
             if arg.type == Token.T_GROUPING:
@@ -2415,6 +2419,9 @@ def main():  # pragma: no cover
     text1 = "function f<T>(arg: T) : T { return arg }"
     text1 = "type x = <G>(arg: T) => H"
     text1 = "x = 1e-6"
+
+    # TODO: types should have a T_ANNOTATION with a single child, the type information
+    text1 = "function f<T>(arg: T) : T { return arg }"
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

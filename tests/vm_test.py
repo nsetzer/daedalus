@@ -91,6 +91,14 @@ class VmTestCase(unittest.TestCase):
         result, globals_ = self.evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 6)
 
+    def test_math_unary_not(self):
+
+        text = """
+            var x = !false
+        """
+        result, globals_ = self.evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 1)
+
     def test_function_while(self):
         text = """
             i  = 5
@@ -185,14 +193,19 @@ class VmTestCase(unittest.TestCase):
         text = """
 
             x = [4,5,6]
-            x[2] = 12
-            a = x[1]
-            b = x[2]
+            a = x[0]
+            b = x[1]
+            c = x[2]
 
+            x[2] = 12
+            d = x[2]
         """
         result, globals_ = self.evaljs(text, diag=False)
-        self.assertEqual(globals_.values['a'],  5)
-        self.assertEqual(globals_.values['b'], 12)
+        self.assertEqual(globals_.values['a'], 4)
+        self.assertEqual(globals_.values['b'], 5)
+        self.assertEqual(globals_.values['c'], 6)
+
+        self.assertEqual(globals_.values['d'], 12)
 
     def test_try_catch_finally_throw_1(self):
         text = """

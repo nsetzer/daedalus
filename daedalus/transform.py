@@ -1375,6 +1375,7 @@ class TransformAssignScope(object):
             Token.T_BINARY: self.visit_binary,
             Token.T_PYIMPORT: self.visit_pyimport,
             Token.T_EXPORT: self.visit_export,
+            Token.T_EXPORT_DEFAULT: self.visit_export,
             Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
             Token.T_UNPACK_OBJECT: self.visit_unpack_object,
             Token.T_FOR: self.visit_for,
@@ -1477,12 +1478,10 @@ class TransformAssignScope(object):
 
             fn = self.states[flags & ST_MASK].get(token.type, None)
 
-            if fn:
-                fn(flags, scope, token, parent)
-
-            else:
+            if not fn:
                 fn = self.state_defaults[flags & ST_MASK]
-                fn(flags, scope, token, parent)
+
+            fn(flags, scope, token, parent)
 
     def initialState(self, token):
         self.global_scope = self.newScope('__main__', None)
@@ -1519,6 +1518,12 @@ class TransformAssignScope(object):
                 # alt:?
                 # if not token.type == Token.T_METHOD or self.python:
                 scope.define(SC_FUNCTION, child.children[0])
+            elif child.type in (Token.T_EXPORT, Token.T_EXPORT_DEFAULT):
+                # TODO: support comma separated sequences
+                # e.g. : export default function a(){}, function b(){}
+                gc = child.children[0]
+                if isNamedFunction(gc):
+                    scope.define(SC_FUNCTION, gc.children[0])
             elif child.type == Token.T_CLASS:
                 scope.define(0, child.children[0], DF_CLASS)
 
@@ -1538,10 +1543,9 @@ class TransformAssignScope(object):
     def visit_function(self, flags, scope, token, parent):
 
         if isNamedFunction(token):
-            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE, Token.T_OBJECT):
+            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE, Token.T_OBJECT, Token.T_EXPORT, Token.T_EXPORT_DEFAULT):
                 # this should never happen
                 raise TransformError(parent, "visit function, parent node is not a block scope: %s>%s" % (parent.type, token.type))
-
         # define the name of the function when it is not an
         # anonymous function and not a class constructor.
         ##if not isAnonymousFunction(token) and not isConstructor(token):
@@ -1999,6 +2003,10 @@ class TransformAssignScope(object):
         if arglist.children:
             scope.define(ST_BLOCK, arglist.children[0])
 
+    #def visit_export(self, flags, scope, token, parent):
+    #    print("tr export", token.children[0].toString(1))
+    #    self._push_tokens(ST_VISIT | (flags & ST_SCOPE_MASK), scope, [token.children[0]], token)
+
     # -------------------------------------------------------------------------
 
     def finalize_default(self, flags, scope, token, parent):
@@ -2117,6 +2125,7 @@ class TransformAssignScope(object):
 
         scope.updateDeferedBlock()
         scope.updateDefered()
+
         for defered in scope.defered_functions:
             refs = {**defered.fnrefs, **defered.blrefs}
             if defered.token.type == Token.T_CLASS:
@@ -2256,8 +2265,14 @@ class TransformAssignScope(object):
 
             self._push_children(next_scope, token.children[2])
         else:
+            # TODO: this is a hack to get the scoping right
+            # for the case of:
+            #   a => b => b+a
+            block = Token(Token.T_BLOCK, 0, 0, "{}", [token.children[2]])
+            self._hoist_functions(next_scope, block)
+            self._push_children(next_scope, block)
             #raise TransformError(token.children[2], "expected block in function def")
-            self._push_children(next_scope, token.children[2])
+            #self._push_children(next_scope, token.children[2])
 
     def _handle_class(self, scope, token, refs):
 
@@ -3094,7 +3109,7 @@ def main_unused():
     """
 
     mod2_text = """
-        function f() {
+        export function f() {
             try {
                 throw "str"
             } catch (ex) {
@@ -3111,7 +3126,9 @@ def main_unused():
 
 
 
-        #print(ast.toString(1))
+    print(ast.toString(1))
+    return
+
     # level 2 transform:
     #  compare imports and exports across multiple files and modules
     #  for imports and module imports which do not import names
@@ -3128,8 +3145,8 @@ def main_unused():
 
 
         # TODO: be able to run an ast multiple times through the transform
-        #tr = TransformMinifyScope()
-        tr = TransformIdentityScope()
+        tr = TransformMinifyScope()
+        #tr = TransformIdentityScope()
         tr.transform(ast)
 
         candidates = set()
