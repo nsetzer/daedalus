@@ -241,10 +241,16 @@ class obj(IntEnum):
     GET_ATTR  = 0x50, 1  # TOS = TOS1?.name[i]
     SET_ATTR  = 0x51, 1  # TOS1?.name[i] = TOS2
     DEL_ATTR  = 0x52, 1  # delete TOS1?.name[i]
+    HAS_ATTR  = 0x53, 1  # name in TOS1
 
-    GET_INDEX = 0x53 # TOS = TOS1[TOS2]
-    SET_INDEX = 0x54 # TOS1[TOS2] = TOS3
-    DEL_INDEX = 0x55 # del TOS1[TOS2]
+    GET_INDEX = 0x54 # TOS = TOS1[TOS2]
+    SET_INDEX = 0x55 # TOS1[TOS2] = TOS3
+    DEL_INDEX = 0x56 # del TOS1[TOS2]
+
+    GET_TYPENAME = 0x57 # typeof TOS
+
+    UPDATE_LIST     = 0x58
+    UPDATE_OBJECT   = 0x59
 
     CREATE_OBJECT   = 0x5A
     CREATE_ARRAY    = 0x5B

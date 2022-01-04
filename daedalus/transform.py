@@ -1524,6 +1524,9 @@ class TransformAssignScope(object):
                 gc = child.children[0]
                 if isNamedFunction(gc):
                     scope.define(SC_FUNCTION, gc.children[0])
+
+                elif gc.type == Token.T_CLASS:
+                    scope.define(0, gc.children[0], DF_CLASS)
             elif child.type == Token.T_CLASS:
                 scope.define(0, child.children[0], DF_CLASS)
 
@@ -1595,7 +1598,6 @@ class TransformAssignScope(object):
         # define the class name in the current scope
         # see visit_block
         #scope.define(SC_FUNCTION, token.children[0])
-
         scope.defer(token)
 
     def visit_var(self, flags, scope, token, parent):
