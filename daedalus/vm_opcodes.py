@@ -163,10 +163,10 @@ class ctrl(IntEnum):
     CALL    =        0x0C, 1
     CALL_EX =        0x0D, 1
 
-    _RESERVED =        0x0E, 0
-    _RESERVED =        0x0F, 0
-    _RESERVED =        0x10, 0
-    _RESERVED =        0x11, 0
+    IFNULL     =     0x0E, 0  # nullish coalescing operator
+    _RESERVED2 =     0x0F, 0
+    _RESERVED3 =     0x10, 0
+    _RESERVED4 =     0x11, 0
 
 class stack(IntEnum):
     ROT2 = 0x12
@@ -249,7 +249,7 @@ class obj(IntEnum):
 
     GET_TYPENAME = 0x57 # typeof TOS
 
-    UPDATE_LIST     = 0x58
+    UPDATE_ARRAY    = 0x58
     UPDATE_OBJECT   = 0x59
 
     CREATE_OBJECT   = 0x5A

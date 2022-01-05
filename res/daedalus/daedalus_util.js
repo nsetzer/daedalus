@@ -61,7 +61,7 @@ function serializeParameters(obj) {
         return "";
     }
 
-    const strings = Object.keys(obj).reduce(function(a,k) {
+    const strings = Object.keys(obj).reduce((a,k) => {
         if (obj[k] === null || obj[k] === undefined) {
             ; // nothing to do
         } else if (Array.isArray(obj[k])) {

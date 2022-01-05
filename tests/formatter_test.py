@@ -407,6 +407,18 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    def test_001_binary_nullish_coalescing(self):
+
+        text = """
+            c = a ?? b
+        """
+        expected = "c=a??b"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
     def test_001_binary_null_assign(self):
 
         text = """

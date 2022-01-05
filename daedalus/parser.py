@@ -984,6 +984,8 @@ class Parser(ParserBase):
             token.type = Token.T_LOGICAL_AND
         elif token.value == '||':
             token.type = Token.T_LOGICAL_OR
+        elif token.value == '??':
+            token.type = Token.T_NULLISH_COALESCING
         else:
             token.type = Token.T_BINARY
 
@@ -1190,7 +1192,11 @@ class Parser(ParserBase):
 
         token.children.append(lhs)
         token.children.append(rhs)
-        token.type = Token.T_ASSIGN
+
+        if token.value == "??=":
+            token.type = Token.T_NULLISH_ASSIGN
+        else:
+            token.type = Token.T_ASSIGN
 
         return self._offset - 1
 

@@ -274,7 +274,7 @@ class Formatter(object):
                 else:
                     seq.append((depth, token.type, token.value))
                 seq.append((depth, None, token.children[1]))
-            elif token.type in (Token.T_BINARY, Token.T_GET_ATTR, Token.T_LOGICAL_OR, Token.T_LOGICAL_AND, Token.T_INSTANCE_OF):
+            elif token.type in (Token.T_BINARY, Token.T_GET_ATTR, Token.T_LOGICAL_OR, Token.T_LOGICAL_AND, Token.T_INSTANCE_OF, Token.T_NULLISH_COALESCING):
                 seq.append((depth, None, token.children[1]))
 
                 if token.value.isalpha():
@@ -282,7 +282,7 @@ class Formatter(object):
                 else:
                     seq.append((depth, token.type, token.value))
                 seq.append((depth, None, token.children[0]))
-            elif token.type == Token.T_ASSIGN:
+            elif token.type == Token.T_ASSIGN or token.type == Token.T_NULLISH_ASSIGN:
                 seq.append((depth, None, token.children[1]))
 
                 if token.value.isalpha():

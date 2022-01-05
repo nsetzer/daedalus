@@ -289,6 +289,25 @@ class VmTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['x2'], 6)
         self.assertEqual(globals_.values['m'], 42)
 
+    @unittest.expectedFailure
+    def test_null_assign(self):
+
+        text = """
+            a ??= 4
+
+            b = undefined
+            b ??= 4
+
+            c = 1
+            c ??= 4
+
+        """
+        result, globals_ = self.evaljs(text, diag=False)
+        self.assertEqual(globals_.values['a'], 4)
+        self.assertEqual(globals_.values['b'], 4)
+        self.assertEqual(globals_.values['c'], 1)
+
+
 def main():
     unittest.main()
 

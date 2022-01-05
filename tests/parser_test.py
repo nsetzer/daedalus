@@ -342,7 +342,7 @@ class ParserBinOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_ASSIGN', '??=',
+            TOKEN('T_NULLISH_ASSIGN', '??=',
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_TEXT', 'b'))
         )
@@ -473,7 +473,7 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         ast = parser.parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '??',
+            TOKEN('T_NULLISH_COALESCING', '??',
                 TOKEN('T_TEXT', 'a'),
                 TOKEN('T_TEXT', 'b')))
 
@@ -504,9 +504,9 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         ast = parser.parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_BINARY', '.',
+            TOKEN('T_GET_ATTR', '.',
                 TOKEN('T_GROUPING', '()',
-                    TOKEN('T_BINARY', '||',
+                    TOKEN('T_LOGICAL_OR', '||',
                         TOKEN('T_GROUPING', '()',
                             TOKEN('T_TEXT', 'a')),
                         TOKEN('T_OBJECT', '{}'))),
@@ -564,7 +564,7 @@ class ParserBinOpTestCase(unittest.TestCase):
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_SUBSCR', '[]',
                 TOKEN('T_GROUPING', '()',
-                    TOKEN('T_BINARY', '||',
+                    TOKEN('T_LOGICAL_OR', '||',
                         TOKEN('T_GROUPING', '()',
                             TOKEN('T_TEXT', 'x')),
                         TOKEN('T_OBJECT', '{}'))),

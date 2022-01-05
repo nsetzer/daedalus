@@ -230,7 +230,7 @@ class TransformOptionalChaining(TransformBase):
 
         if len(token.children) == 2:
 
-            token.type = Token.T_BINARY
+            token.type = Token.T_GET_ATTR
             token.value = "."
             lhs, rhs = token.children
             ln = token.line
@@ -238,7 +238,7 @@ class TransformOptionalChaining(TransformBase):
 
             token.children = [
                 Token(Token.T_GROUPING, ln, idx, "()",
-                [Token(Token.T_BINARY, ln, idx, "||",
+                [Token(Token.T_LOGICAL_OR, ln, idx, "||",
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_OBJECT, ln, idx, "{}")
@@ -258,7 +258,7 @@ class TransformOptionalChaining(TransformBase):
 
             token.children = [
                 Token(Token.T_GROUPING, ln, idx, "()",
-                [Token(Token.T_BINARY, ln, idx, "||",
+                [Token(Token.T_LOGICAL_OR, ln, idx, "||",
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_GROUPING, ln, idx, "()", [
@@ -287,7 +287,7 @@ class TransformOptionalChaining(TransformBase):
 
             token.children = [
                 Token(Token.T_GROUPING, ln, idx, "()",
-                [Token(Token.T_BINARY, ln, idx, "||",
+                [Token(Token.T_LOGICAL_OR, ln, idx, "||",
                     [
                         Token(Token.T_GROUPING, ln, idx, "()", [lhs]),
                         Token(Token.T_OBJECT, ln, idx, "{}")
