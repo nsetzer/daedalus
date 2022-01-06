@@ -404,8 +404,6 @@ class SampleResource(Resource):
         serve files found inside the provided static directory
         """
         # Note: Not For Production Use. This is a security risk
-        print(self.static_path)
-        print(os.listdir(self.static_path))
         path = os.path.join(self.static_path, matches['path'])
 
         if not os.path.exists(path):

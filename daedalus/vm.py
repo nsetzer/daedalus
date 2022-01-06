@@ -45,12 +45,15 @@ TODO: update assignments and destructuring assignments must be transformed
 
 
 """
+import os
 import io
 import struct
 import ctypes
 import binascii
 import operator
 import ast as pyast
+import math
+import random
 
 from . import vm_opcodes as opcodes
 
@@ -539,7 +542,9 @@ class VmModule(object):
     def __init__(self):
         super(VmModule, self).__init__()
         self.path = None
+        self.globals = None
         self.functions = []
+        self.includes = []
 
     def dump(self):
 
@@ -598,6 +603,7 @@ class VmCompiler(object):
             Token.T_WHILE: self._visit_while,
             Token.T_DOWHILE: self._visit_dowhile,
             Token.T_FOR: self._visit_for,
+            Token.T_FOR_IN: self._visit_for_in,
             Token.T_CONTINUE: self._visit_continue,
             Token.T_BREAK: self._visit_break,
             Token.T_ARGLIST: self._visit_arglist,
@@ -614,6 +620,7 @@ class VmCompiler(object):
             Token.T_KEYWORD: self._visit_keyword,
             Token.T_OPTIONAL_CHAINING: self._visit_optional_chaining,
             Token.T_FUNCTION: self._visit_function,
+            Token.T_ANONYMOUS_FUNCTION: self._visit_anonymous_function,
             Token.T_LAMBDA: self._visit_lambda,
             Token.T_RETURN: self._visit_return,
             Token.T_FUNCTIONCALL: self._visit_functioncall,
@@ -637,6 +644,7 @@ class VmCompiler(object):
         }
 
         self.functions = []
+        self.includes = []
 
     def compile(self, ast, path=None):
 
@@ -679,6 +687,8 @@ class VmCompiler(object):
             self._finalize(self.fn, self.fn_jumps)
 
             fnidx += 1
+
+        self.module.includes = self.includes
 
         return self.module
 
@@ -898,6 +908,9 @@ class VmCompiler(object):
 
         if arg_init.type != Token.T_EMPTY_TOKEN:
             self._push_token(depth, VmCompiler.C_VISIT, arg_init)
+
+    def _visit_for_in(self, depth, state, token):
+        pass
 
     def _visit_postfix(self, depth, state, token):
 
@@ -1293,14 +1306,17 @@ class VmCompiler(object):
 
     def _visit_string(self, depth, state, token):
 
-        value = JsString(pyast.literal_eval(token.value))
+        try:
+            value = JsString(pyast.literal_eval(token.value))
+        except:
+            raise VmCompileError(token, "unable to load undefined string")
         self._push_instruction(self._build_instr_string(state, token, value))
 
     def _visit_regex(self, depth, state, token):
 
         expr, flag = token.value[1:].rsplit('/', 1)
-        expr = "'" + expr + "'"
-        flag = "'" + flag + "'"
+        expr = repr(expr)
+        flag = repr(flag)
 
         _regex = Token(Token.T_GLOBAL_VAR, token.line, token.index, 'RegExp')
         _expr = Token(Token.T_STRING, token.line, token.index, expr)
@@ -1321,7 +1337,7 @@ class VmCompiler(object):
         print(token.toString(1))
         tmp = '\'' + token.value[1:-1] + '\''
         value = JsString(pyast.literal_eval(tmp))
-        self._push_instruction(self.cd (state, token, value))
+        self._push_instruction(self._build_instr_string (state, token, value))
         print("template string not implemented")
 
     def _visit_number(self, depth, state, token):
@@ -1367,6 +1383,18 @@ class VmCompiler(object):
 
         opcode, index = self._token2index(name, False)
         self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
+
+        self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block, closure, autobind=False)
+
+    def _visit_anonymous_function(self, depth, state, token):
+
+        name = token.children[0]
+        arglist = token.children[1]
+        block = token.children[2]
+        closure = token.children[3]
+
+        #opcode, index = self._token2index(name, False)
+        #self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
 
         self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block, closure, autobind=False)
 
@@ -1669,6 +1697,8 @@ class VmCompiler(object):
             self._push_token(depth, flag0, child)
 
     def _visit_include(self, depth, state, token):
+        path = pyast.literal_eval(token.children[0].value)
+        self.includes.append(path)
         pass
 
     def _visit_export(self, depth, state, token):
@@ -1700,7 +1730,6 @@ class VmCompiler(object):
 
         for arg in arglist.children:
             if arg.type in vartypes:
-                print("arglabels", arg.value)
                 arglabels.append(arg.value)
                 argdefaults.append(None)
             elif arg.type == Token.T_SPREAD:
@@ -1714,7 +1743,6 @@ class VmCompiler(object):
                     raise CompileError(arg, "invalid argument")
             else:
                 raise CompileError(arg, "unexpected argument")
-        print("!!! build", arglabels)
 
         cellvars = []
 
@@ -1986,13 +2014,20 @@ class VmRuntime(object):
 
         console = lambda: None
         console.log = print
-        g.values['console'] = console
-        g.values['Promise'] = JsPromise
-        g.values['fetch'] = fetch
-        g.values['Set'] = JsSet
-        g.values['Array'] = JsArray
-        g.values['Object'] = JsObjectCtor()
-        g.values['window'] = JsObject()
+        _math = lambda: None
+        _math.floor = math.floor
+        _math.ceil = math.ceil
+        _math.random = random.random
+
+        self.builtins = {}
+        self.builtins['console'] = console
+        self.builtins['Math'] = _math
+        self.builtins['Promise'] = JsPromise
+        self.builtins['fetch'] = fetch
+        self.builtins['Set'] = JsSet
+        self.builtins['Array'] = JsArray
+        self.builtins['Object'] = JsObjectCtor()
+        self.builtins['window'] = JsObject()
 
     def _unwind(self):
 
@@ -2013,6 +2048,26 @@ class VmRuntime(object):
 
     def run(self):
 
+        try:
+
+            self._run()
+
+        except Exception as e:
+            if self.stack_frames:
+                print("a python error was caught while running javascript")
+                for idx, frame in enumerate(reversed(self.stack_frames)):
+
+                    print("frame", idx)
+                    frame = self.stack_frames[-1]
+                    print(frame.module)
+                    print(frame.module.path)
+                    instr = frame.fndef.instrs[frame.sp]
+                    print(frame.sp, instr.line, instr.index)
+            raise e
+
+
+    def _run(self):
+
         frame = self.stack_frames[-1]
         instrs = frame.fndef.instrs
         return_value = None
@@ -2024,7 +2079,7 @@ class VmRuntime(object):
             if self.enable_diag:
                 #name = frame.local_names[instr.args[0]]
                 extra = instr.getArgString(frame.fndef.globals, frame.local_names, frame.fndef.cell_names)
-                print("%2d %4d %s %s" % (len(self.stack_frames), frame.sp, instr.opcode, extra))
+                print("%2d %4d %4d %s %s" % (len(self.stack_frames), frame.sp, instr.line, instr.opcode, extra))
 
             if instr.opcode == opcodes.ctrl.NOP:
                 pass
@@ -2186,7 +2241,6 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     frame.sp = block.target()
                     continue
-
             elif instr.opcode == opcodes.localvar.SET:
                 name = frame.local_names[instr.args[0]]
                 frame.locals.setAttr(name, frame.stack.pop())
@@ -2200,9 +2254,12 @@ class VmRuntime(object):
                 name = frame.globals.names[instr.args[0]]
                 frame.globals.values[name] = frame.stack.pop()
             elif instr.opcode == opcodes.globalvar.GET:
+
                 name = frame.globals.names[instr.args[0]]
                 if name in frame.globals.values:
                     frame.stack.append(frame.globals.values[name])
+                elif name in self.builtins:
+                    frame.stack.append(self.builtins[name])
                 else:
                     frame.stack.append(JsUndefined.instance)
             elif instr.opcode == opcodes.globalvar.DELETE:
@@ -2446,6 +2503,109 @@ class VmRuntime(object):
                 continue
 
         return return_value, frame.globals
+
+class VmLoader(object):
+    def __init__(self,):
+        super(VmLoader, self).__init__()
+
+    def _load_path(self, path):
+        text = open(path).read()
+
+        return self._load_text(text)
+
+    def _load_text(self, text):
+
+        tokens = Lexer().lex(text)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = True
+        parser.python = True
+        ast = parser.parse(tokens)
+
+        xform = TransformIdentityScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+
+        compiler = VmCompiler()
+        module = compiler.compile(ast)
+
+        return module
+
+    def _load(self, root_mod, root_dir, root_name):
+
+        root_mod.depth = 0
+
+        visited = {root_name: root_mod}
+        includes = [(1, p) for p in root_mod.includes]
+
+        while includes:
+            depth, inc_path = includes.pop()
+            inc_path = os.path.normpath(os.path.join(root_dir, inc_path))
+
+            if inc_path in visited:
+                continue
+            print(inc_path)
+
+            dep_mod = self._load_path(inc_path)
+            dep_mod.depth = depth
+            dep_mod.path = inc_path
+
+            visited[inc_path] = dep_mod
+
+
+            includes.extend([(depth+1, p) for p in dep_mod.includes])
+
+        mods = sorted(visited.values(), key=lambda m: m.depth, reverse=True)
+
+        for mod in mods:
+            print(mod.depth, mod.path)
+
+            for inc_path in mod.includes:
+                inc_path = os.path.normpath(os.path.join(root_dir, inc_path))
+
+                mod2 = visited[inc_path]
+
+                runtime = VmRuntime()
+                #runtime.enable_diag = True
+                runtime.init(mod2)
+                try:
+                    rv, mod2_globals = runtime.run()
+                except Exception as e:
+
+                    print("error in ", mod2.path)
+                    raise e
+
+                for name in mod.globals.names:
+                    if name in mod2_globals.values and name not in mod.globals.values:
+                        mod.globals.values[name] = mod2_globals.values[name]
+
+        runtime = VmRuntime()
+        runtime.enable_diag = True
+        runtime.init(root_mod)
+        rv, mod_globals = runtime.run()
+
+    def run_path(self, path):
+
+        path = os.path.abspath(path)
+        root_mod = self._load_path(path)
+        root_dir = os.path.split(path)[0]
+        root_mod.path = path
+
+        return self._load(root_mod, root_dir, path)
+
+    def run_text(self, text):
+
+        root_mod = self._load_text(text)
+        root_dir = "./"
+        root_name = "__main__"
+        root_mod.path = root_name
+
+        return self._load(root_mod, root_dir, root_name)
+
+
+
+
+
+
 
 
 def main():
@@ -2899,10 +3059,16 @@ def main():
     text1 = """
 
         include "./res/daedalus/daedalus_util.js"
+        console.log(randomInt(0,100))
+        console.log(randomInt(0,100))
+        console.log(randomInt(0,100))
     """
 
+    text1 = """
+        StyleSheet.foo(5)
+    """
     #text1 = open("./res/daedalus/daedalus_util.js").read()
-
+    """
     tokens = Lexer().lex(text1)
     parser = Parser()
     parser.feat_xform_optional_chaining = True
@@ -2920,6 +3086,26 @@ def main():
     module.dump()
 
     print("="*60)
+    for path in module.includes:
+        print(path)
+        mod2 = compile_file(path)
+        runtime = VmRuntime()
+        runtime.init(mod2)
+        rv, globals = runtime.run()
+        print(globals.values)
+        for name in module.globals.names:
+            if name in globals.values:
+                if name not in module.globals.values:
+                    module.globals.values[name] = globals.values[name]
+    print("="*60)
+    """
+
+    # T_ANONYMOUS_FUNCTION
+    # T_FOR_IN
+    loader = VmLoader()
+    #loader.load("./res/daedalus/daedalus.js")
+    loader.run_text(text1)
+    return
 
     runtime = VmRuntime()
     runtime.enable_diag = True
