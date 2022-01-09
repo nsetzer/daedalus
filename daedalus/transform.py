@@ -1942,9 +1942,8 @@ class TransformAssignScope(object):
 
     def visit_export(self, flags, scope, token, parent):
 
-        # don't reverse
         new_flags = (ST_VISIT | (flags & ST_SCOPE_MASK))
-        for child in token.children:
+        for child in reversed(token.children):
             self.seq.append((new_flags, scope, child, token))
 
     def visit_unpack_sequence(self, flags, scope, token, parent):
@@ -2814,6 +2813,13 @@ class TransformConstEval(TransformBaseV3):
                 token.children = []
 
 def getModuleImportExport(ast, warn_include=False):
+    """
+    returns:
+        ast             - the modified ast
+        imports         - a dictionary for file_path => list of included names
+        module_imports  - a dictionary for module_name => list of included names
+        exports         - list of exported names from this ast module
+    """
     imports = {}
     module_imports = {}
     exports = []
@@ -2843,35 +2849,32 @@ def getModuleImportExport(ast, warn_include=False):
 
             ast.children.pop(0)
 
-            module_imports[token.value] = dict(fromlist)
+            if token.value in module_imports:
+                module_imports[token.value].update(dict(fromlist))
+            else:
+                module_imports[token.value] = dict(fromlist)
 
         elif token.type == Token.T_IMPORT:
             i += 1
 
-        elif token.type == Token.T_EXPORT:
-            for text in token.children[1:]:
-                exports.append(text.value)
-            child = token.children[0]
-            # remove the token entirely if it does not have any side effects
-            # otherwise remove the export keyword
-            if child.type == Token.T_TEXT:
-                ast.children.pop(i)
-            else:
-                ast.children[i] = child
-                i += 1
+        elif token.type in (Token.T_EXPORT, Token.T_EXPORT_DEFAULT):
+            if len(token.children) == 3:
+                # export from may need to update includes and exports
+                # the from source has not yet been defined.
+                # it may be a filepath or an object - undecided
+                 raise TransformError(token, "export from not implemented")
 
-        elif token.type == Token.T_EXPORT_DEFAULT:
-            # there can only be one child after the default export
-            exports.append(token.children[1].value)
-            default_export = token.children[1].value
-            child = token.children[0]
+            for text in token.children[0].children:
+                exports.append(text.value)
+
+            child = token.children[1].children[0]
             # remove the token entirely if it does not have any side effects
             # otherwise remove the export keyword
             if child.type == Token.T_TEXT:
                 ast.children.pop(i)
             else:
-                ast.children[i] = child
-                i += 1
+                ast.children = ast.children[:i] + token.children[1].children + ast.children[i+1:]
+                i += len(token.children[1].children)
 
         else:
             i += 1

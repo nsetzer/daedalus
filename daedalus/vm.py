@@ -62,356 +62,6 @@ from .lexer import Lexer
 from .parser import Parser, ParseError
 from .transform import TransformIdentityScope
 
-operands = [
-    '__lt__',
-    '__le__',
-    '__eq__',
-    '__ne__',
-    '__ge__',
-    '__gt__',
-    '__add__',
-    '__sub__',
-    '__mul__',
-    '__truediv__',
-    '__floordiv__',
-    '__mod__',
-    '__pow__',
-    '__lshift__',
-    '__rshift__',
-    '__and__',
-    '__xor__',
-    '__or__',
-]
-
-operandsr = [
-
-    ('__radd__'     , '__add__'),
-    ('__rsub__'     , '__sub__'),
-    ('__rmul__'     , '__mul__'),
-    ('__rtruediv__' , '__truediv__'),
-    ('__rfloordiv__', '__floordiv__'),
-    ('__rmod__'     , '__mod__'),
-    ('__rpow__'     , '__pow__'),
-    ('__rlshift__'  , '__lshift__'),
-    ('__rrshift__'  , '__rshift__'),
-    ('__rand__'     , '__and__'),
-    ('__rxor__'     , '__xor__'),
-    ('__ror__'      , '__or__')
-]
-
-class JsObject(object):
-
-    prototype_instance = None
-    type_name = "object"
-
-    def __init__(self, args=None, prototype=None):
-        super(JsObject, self).__init__()
-
-        if args:
-            self.data = dict(args)
-        else:
-            self.data = {}
-
-        if prototype is None:
-
-            self.prototype = self.__class__.prototype_instance
-        else:
-            self.prototype = prototype
-
-    def __repr__(self):
-        # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
-        s = ",".join([str(s) for s in self.data.keys()])
-        return "<%s(%s)>" % (self.__class__.__name__, s)
-
-    def _hasAttr(self, name):
-        if isinstance(name, JsString):
-            name = name.value
-        return name in self.data
-
-    def getAttr(self, name):
-        if isinstance(name, JsString):
-            name = name.value
-
-        if name == '__proto__':
-            return self.prototype
-
-        if self.prototype._hasAttr(name):
-            attr = self.prototype.getAttr(name)
-
-            if isinstance(attr, PyProp):
-                attr = attr.bind(self).invoke()
-
-            if isinstance(attr, PyCallable):
-                attr = attr.bind(self)
-
-        elif name in self.data:
-            return self.data[name]
-
-        print("get undefined attribute %s" % name)
-        return JsUndefined.instance
-
-    def setAttr(self, name, value):
-        if isinstance(name, JsString):
-            name = name.value
-        self.data[name] = value
-
-    def delAttr(self, name):
-        if isinstance(name, JsString):
-            name = name.value
-        del self.data[name]
-
-    def getIndex(self, index):
-        if index in self.data:
-            return self.data[index]
-        print("get undefined index %s" % index)
-        return JsUndefined.instance
-
-    def setIndex(self, index, value):
-        self.data[index] = value
-
-    def delIndex(self, index):
-        del self.data[index]
-
-class JsObjectCtor(JsObject):
-
-    def __call__(self, *args, **kwargs):
-        return JsObject(*args, **kwargs)
-
-class PyProp(object):
-    def __init__(self, target, func):
-        super(PyProp, self).__init__()
-        self.target = target
-        self.func = func
-
-    def invoke(self, *args, **kwargs):
-        return self.func(self.target, *args, **kwargs)
-
-    def bind(self, target):
-        return PyProp(target, self.func)
-
-class PyCallable(object):
-    def __init__(self, target, func):
-        super(PyCallable, self).__init__()
-        self.target = target
-        self.func = func
-
-    def __call__(self, *args, **kwargs):
-        return self.func(self.target, *args, **kwargs)
-
-    def bind(self, target):
-        return PyCallable(target, self.func)
-
-class JsArray(JsObject):
-
-    prototype_instance = None
-    type_name = "Array"
-
-    def __init__(self, args=None):
-        super(JsArray, self).__init__(None, JsArray.prototype_instance)
-        if args:
-            self.array = list(args)
-        else:
-            self.array = []
-
-    def __repr__(self):
-        s = ",".join([str(s) for s in self.array])
-        return "<%s(%s)>" % (self.__class__.__name__, s)
-
-    def getIndex(self, index):
-        if isinstance(index, int):
-            return self.array[index]
-        return self.getAttr(index)
-
-    def setIndex(self, index, value):
-        if isinstance(index, int):
-            self.array[index] = value
-        else:
-            self.setAttr(index, value)
-
-    def delIndex(self, index):
-        if isinstance(index, int):
-            del self.array[index]
-        else:
-            self.delAttr(index)
-
-class JsSet(JsObject):
-    prototype_instance = None
-    type_name = "Set"
-
-    def __init__(self, args=None):
-        super(JsSet, self).__init__(None, JsSet.prototype_instance)
-
-        if args:
-            self.seq = set(args)
-        else:
-            self.seq = set()
-
-def _apply_value_operation(cls, op, a, b):
-    if not isinstance(b, JsObject):
-        b = cls(b)
-    return op(a.value, b.value)
-
-class JsNumberType(type):
-    def __new__(metacls, name, bases, namespace):
-        cls = super().__new__(metacls, name, bases, namespace)
-
-        for name in operands:
-            if not hasattr(cls, name):
-                op = getattr(operator, name)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
-
-        for name, key in operandsr:
-            if not hasattr(cls, name):
-                op = getattr(operator, key)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
-
-        return cls
-
-class JsNumber(JsObject, metaclass=JsNumberType):
-    def __init__(self, value=0):
-        super(JsNumber, self).__init__()
-
-        self.value = value
-
-    def __repr__(self):
-        return "<JsNumber(%s)>" % self.value
-
-    def serialize(self, stream):
-        pass
-
-    def deserialize(self, stream):
-        pass
-
-class JsStringType(type):
-    def __new__(metacls, name, bases, namespace):
-        cls = super().__new__(metacls, name, bases, namespace)
-
-        for name in operands:
-            if not hasattr(cls, name):
-                op = getattr(operator, name)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
-
-        for name, key in operandsr:
-            if not hasattr(cls, name):
-                op = getattr(operator, key)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
-
-        return cls
-
-class JsString(JsObject, metaclass=JsStringType):
-    def __init__(self, value=''):
-        super(JsString, self).__init__()
-        if isinstance(value, JsString):
-            value = value.value
-        self.value = str(value)
-
-    def __repr__(self):
-        return "<JsString(%s)>" % self.value
-
-    def serialize(self, stream):
-        data = self.value.encode("utf-8")
-        stream.write(opcodes.LEB128u(len(data) + 1))
-        stream.write(data)
-        stream.write(b"\x00")
-
-    def deserialize(self, stream):
-        length = opcodes.read_LEB128u(stream)
-        data = stream.read(length - 1)
-        stream.read(1) # discard zero byte
-        return JsString(data.decode("utf-8"))
-
-    def __eq__(self, other):
-        if isinstance(other, JsString):
-            other = other.value
-        return self.value == other
-
-    def __hash__(self):
-        return self.value.__hash__()
-
-class JsUndefined(JsObject):
-    instance = None
-    def __init__(self):
-        super(JsUndefined, self).__init__()
-        if JsUndefined.instance is not None:
-            raise RunTimeError("cannot construct singleton")
-
-    def __repr__(self):
-        return "<JsUndefined()>"
-
-    def __str__(self):
-        return "undefined"
-
-    def __bool__(self):
-        return False
-
-    def serialize(self, stream):
-        pass
-
-    def deserialize(self, stream):
-        pass
-
-class JsPromise(JsObject):
-
-    prototype_instance = None
-
-    def __init__(self, callback=None):
-        # callback: (resolve, reject) => {}
-        super(JsPromise, self).__init__()
-        self.callback = callback
-        self._result = None
-        self._invoke()
-
-    def _invoke(self):
-
-        if isinstance(self.callback, JsFunction):
-
-            runtime = VmRuntime()
-            runtime.initfn(self.callback)
-            rv, globals = runtime.run()
-            self._result = rv
-        else:
-            self._result = self.callback()
-
-    def _then(self, callback=None):
-
-        result = self._result
-
-        # callback: (success) => {}
-        return 123
-
-    def _catch(self, callback=None):
-        # callback: (error) => {}
-        return 124
-
-    def _finally(self, callback=None):
-        # callback: () => {}
-        return 125
-
-def fetch(url, parameters):
-
-    return JsPromise(lambda: "<html/>")
-
-JsObject.prototype_instance = JsObject()
-
-JsObjectCtor.prototype_instance = JsObjectCtor()
-JsObjectCtor.prototype_instance.setAttr('keys', PyCallable(None, lambda _, arg: JsArray([
-    JsString(x) for x in arg.data.keys()
-])))
-
-JsArray.prototype_instance = JsObject()
-JsArray.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.array)))
-JsArray.prototype_instance.setAttr('push', PyCallable(None, lambda self, obj: self.array.append(obj)))
-
-JsSet.prototype_instance = JsObject()
-JsSet.prototype_instance.setAttr('size', PyProp(None, lambda obj: len(obj.seq)))
-
-JsPromise.prototype_instance = JsObject()
-JsPromise.prototype_instance.setAttr('then', PyCallable(None, JsPromise._then))
-JsPromise.prototype_instance.setAttr('catch', PyCallable(None, JsPromise._catch))
-JsPromise.prototype_instance.setAttr('finally', PyCallable(None, JsPromise._finally))
-
-JsUndefined.instance = JsUndefined()
-
 class VmInstruction(object):
     __slots__ = ['opcode', 'args', 'target', 'line', 'index']
 
@@ -1214,7 +864,7 @@ class VmCompiler(object):
 
     def _visit_delete_var(self, depth, state, token):
         child = token.children[0]
-        opcode, index = self._token2index(child, False)
+        opcode, index = self._token2index(child, False, delete=True)
         self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=child))
 
     def _visit_binary(self, depth, state, token):
@@ -1334,7 +984,7 @@ class VmCompiler(object):
 
     def _visit_template_string(self, depth, state, token):
 
-        print(token.toString(1))
+        #print(token.toString(1))
         tmp = '\'' + token.value[1:-1] + '\''
         value = JsString(pyast.literal_eval(tmp))
         self._push_instruction(self._build_instr_string (state, token, value))
@@ -1796,7 +1446,7 @@ class VmCompiler(object):
             cellvars.append(cellvar.value)
         fndef.cell_names = cellvars
 
-    def _token2index(self, token, load):
+    def _token2index(self, token, load, delete=False):
 
         enum = None
         index = -1
@@ -1890,7 +1540,9 @@ class VmCompiler(object):
             else:
                 raise VmCompileError(token, "unable to store undefined identifier")
 
-        if load:
+        if delete:
+            return enum.DELETE, index
+        elif load:
             return enum.GET, index
         else:
             return enum.SET, index
@@ -1900,6 +1552,445 @@ class VmCompiler(object):
 
     def _push_instruction(self, instr):
         self.fn.instrs.append(instr)
+
+# ---
+
+operands = [
+    '__lt__',
+    '__le__',
+    '__eq__',
+    '__ne__',
+    '__ge__',
+    '__gt__',
+    '__add__',
+    '__sub__',
+    '__mul__',
+    '__truediv__',
+    '__floordiv__',
+    '__mod__',
+    '__pow__',
+    '__lshift__',
+    '__rshift__',
+    '__and__',
+    '__xor__',
+    '__or__',
+]
+
+operandsr = [
+
+    ('__radd__'     , '__add__'),
+    ('__rsub__'     , '__sub__'),
+    ('__rmul__'     , '__mul__'),
+    ('__rtruediv__' , '__truediv__'),
+    ('__rfloordiv__', '__floordiv__'),
+    ('__rmod__'     , '__mod__'),
+    ('__rpow__'     , '__pow__'),
+    ('__rlshift__'  , '__lshift__'),
+    ('__rrshift__'  , '__rshift__'),
+    ('__rand__'     , '__and__'),
+    ('__rxor__'     , '__xor__'),
+    ('__ror__'      , '__or__')
+]
+
+def jsc(f):
+
+
+    text = f(None)
+
+    tokens = Lexer().lex(text)
+    parser = Parser()
+    parser.feat_xform_optional_chaining = True
+    parser.python = True
+    ast = parser.parse(tokens)
+
+    xform = TransformIdentityScope()
+    xform.disable_warnings=True
+    xform.transform(ast)
+
+    compiler = VmCompiler()
+    module = compiler.compile(ast)
+
+    #if debug:
+    #    print(ast.toString(1))
+    #    module.dump()
+
+    fn = JsFunction(module, module.functions[1], None, None, None)
+
+    return fn
+
+class JsObject(object):
+
+    prototype_instance = None
+    type_name = "object"
+
+    def __init__(self, args=None, prototype=None):
+        super(JsObject, self).__init__()
+
+        if args:
+            self.data = dict(args)
+        else:
+            self.data = {}
+
+        if prototype is None:
+
+            self.prototype = self.__class__.prototype_instance
+        else:
+            self.prototype = prototype
+
+    def __repr__(self):
+        # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
+        s = ",".join([str(s) for s in self.data.keys()])
+        return "<%s(%s)>" % (self.__class__.__name__, s)
+
+    def _hasAttr(self, name):
+        if isinstance(name, JsString):
+            name = name.value
+        return name in self.data
+
+    def getAttr(self, name):
+        if isinstance(name, JsString):
+            name = name.value
+
+        #if name == '__proto__':
+        #    return self.prototype
+
+        #if self.prototype._hasAttr(name):
+        #    attr = self.prototype.getAttr(name)
+        #    if isinstance(attr, PyProp):
+        #        attr = attr.bind(self).invoke()
+        #    if isinstance(attr, PyCallable):
+        #        attr = attr.bind(self)
+        #    if isinstance(attr, JsFunction):
+        #        attr = attr.bind(self)
+        #    return attr
+
+        if hasattr(self, name):
+            attr = getattr(self, name)
+            if isinstance(attr, JsFunction):
+                attr = attr.bind(self)
+            return attr
+
+        elif name in self.data:
+            return self.data[name]
+
+        print("get undefined attribute %s" % name)
+        return JsUndefined.instance
+
+    def setAttr(self, name, value):
+        if isinstance(name, JsString):
+            name = name.value
+        self.data[name] = value
+
+    def delAttr(self, name):
+        if isinstance(name, JsString):
+            name = name.value
+        del self.data[name]
+
+    def getIndex(self, index):
+        if index in self.data:
+            return self.data[index]
+        print("get undefined index %s" % index)
+        return JsUndefined.instance
+
+    def setIndex(self, index, value):
+        self.data[index] = value
+
+    def delIndex(self, index):
+        del self.data[index]
+
+    @staticmethod
+    def keys(inst):
+        return JsArray(inst.data.keys())
+
+class JsObjectCtor(JsObject):
+
+    def __call__(self, *args, **kwargs):
+        return JsObject(*args, **kwargs)
+
+class PyProp(object):
+    def __init__(self, target, func):
+        super(PyProp, self).__init__()
+        self.target = target
+        self.func = func
+
+    def invoke(self, *args, **kwargs):
+        return self.func(self.target, *args, **kwargs)
+
+    def bind(self, target):
+        return PyProp(target, self.func)
+
+class PyCallable(object):
+    def __init__(self, target, func):
+        super(PyCallable, self).__init__()
+        self.target = target
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        return self.func(self.target, *args, **kwargs)
+
+    def bind(self, target):
+        return PyCallable(target, self.func)
+
+class JsArray(JsObject):
+
+    prototype_instance = None
+    type_name = "Array"
+
+    def __init__(self, args=None):
+        super(JsArray, self).__init__(None, JsArray.prototype_instance)
+        if args:
+            self.array = list(args)
+        else:
+            self.array = []
+
+    def __repr__(self):
+        s = ",".join([str(s) for s in self.array])
+        return "<%s(%s)>" % (self.__class__.__name__, s)
+
+    def getIndex(self, index):
+        if isinstance(index, int):
+            return self.array[index]
+        return self.getAttr(index)
+
+    def setIndex(self, index, value):
+        if isinstance(index, int):
+            self.array[index] = value
+        else:
+            self.setAttr(index, value)
+
+    def delIndex(self, index):
+        if isinstance(index, int):
+            del self.array[index]
+        else:
+            self.delAttr(index)
+
+    def push(self, item):
+        self.array.append(item)
+
+    @property
+    def length(self):
+        return len(self.array)
+
+    @jsc
+    def map(self):
+        return """
+            function map(fn) {
+                out = []
+                for (let i=0; i < this.length; i++) {
+                    let v = fn(this[i])
+                    out.push(v)
+                }
+                return out
+            }
+        """
+
+class JsSet(JsObject):
+    prototype_instance = None
+    type_name = "Set"
+
+    def __init__(self, args=None):
+        super(JsSet, self).__init__(None, JsSet.prototype_instance)
+
+        if args:
+            self.seq = set(args)
+        else:
+            self.seq = set()
+
+def _apply_value_operation(cls, op, a, b):
+    if not isinstance(b, JsObject):
+        b = cls(b)
+    return op(a.value, b.value)
+
+class JsNumberType(type):
+    def __new__(metacls, name, bases, namespace):
+        cls = super().__new__(metacls, name, bases, namespace)
+
+        for name in operands:
+            if not hasattr(cls, name):
+                op = getattr(operator, name)
+                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
+
+        for name, key in operandsr:
+            if not hasattr(cls, name):
+                op = getattr(operator, key)
+                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
+
+        return cls
+
+class JsNumber(JsObject, metaclass=JsNumberType):
+    def __init__(self, value=0):
+        super(JsNumber, self).__init__()
+
+        self.value = value
+
+    def __repr__(self):
+        return "<JsNumber(%s)>" % self.value
+
+    def serialize(self, stream):
+        pass
+
+    def deserialize(self, stream):
+        pass
+
+class JsStringType(type):
+    def __new__(metacls, name, bases, namespace):
+        cls = super().__new__(metacls, name, bases, namespace)
+
+        for name in operands:
+            if not hasattr(cls, name):
+                op = getattr(operator, name)
+                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
+
+        for name, key in operandsr:
+            if not hasattr(cls, name):
+                op = getattr(operator, key)
+                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
+
+        return cls
+
+class JsString(JsObject, metaclass=JsStringType):
+
+    prototype_instance = None
+
+    def __init__(self, value=''):
+        super(JsString, self).__init__(None, JsString.prototype_instance)
+        if isinstance(value, JsString):
+            value = value.value
+        self.value = str(value)
+
+    def __repr__(self):
+        return "<JsString(%s)>" % self.value
+
+    def serialize(self, stream):
+        data = self.value.encode("utf-8")
+        stream.write(opcodes.LEB128u(len(data) + 1))
+        stream.write(data)
+        stream.write(b"\x00")
+
+    def deserialize(self, stream):
+        length = opcodes.read_LEB128u(stream)
+        data = stream.read(length - 1)
+        stream.read(1) # discard zero byte
+        return JsString(data.decode("utf-8"))
+
+    def getIndex(self, index):
+        if index < len(self.value):
+            return self.value[index]
+        print("get undefined index %s" % index)
+        return JsUndefined.instance
+
+    def __eq__(self, other):
+        if isinstance(other, JsString):
+            other = other.value
+        return self.value == other
+
+    def __bool__(self):
+        return bool(self.value)
+
+    def __hash__(self):
+        return self.value.__hash__()
+
+class JsUndefined(JsObject):
+    instance = None
+    def __init__(self):
+        super(JsUndefined, self).__init__()
+        if JsUndefined.instance is not None:
+            raise RunTimeError("cannot construct singleton")
+
+    def __repr__(self):
+        return "<JsUndefined()>"
+
+    def __str__(self):
+        return "undefined"
+
+    def __bool__(self):
+        return False
+
+    def serialize(self, stream):
+        pass
+
+    def deserialize(self, stream):
+        pass
+
+class JsPromise(JsObject):
+
+    prototype_instance = None
+
+    def __init__(self, callback=None):
+        # callback: (resolve, reject) => {}
+        super(JsPromise, self).__init__()
+        self.callback = callback
+        self._result = None
+        self._invoke()
+
+    def _invoke(self):
+
+        if isinstance(self.callback, JsFunction):
+
+            runtime = VmRuntime()
+            runtime.initfn(self.callback)
+            rv, globals = runtime.run()
+            self._result = rv
+        else:
+            self._result = self.callback()
+
+    def _then(self, callback=None):
+
+        result = self._result
+
+        # callback: (success) => {}
+        return 123
+
+    def _catch(self, callback=None):
+        # callback: (error) => {}
+        return 124
+
+    def _finally(self, callback=None):
+        # callback: () => {}
+        return 125
+
+class JsElement(object):
+    prototype_instance = None
+
+    #def __init__(self):
+        #super(JsElement, self).__init__(None, JsElement.prototype_instance)
+        #print(JsElement.prototype_instance)
+
+    def appendChild(self, child):
+        print("append child")
+
+def fetch(url, parameters):
+
+    return JsPromise(lambda: "<html/>")
+
+JsObject.prototype_instance = JsObject()
+
+#JsObjectCtor.prototype_instance = JsObjectCtor()
+#JsObjectCtor.prototype_instance.setAttr('keys', PyCallable(None, lambda _, arg: JsArray([
+#    JsString(x) for x in arg.data.keys()
+#])))
+
+#JsArray.prototype_instance = JsObject()
+#JsArray.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.array)))
+#JsArray.prototype_instance.setAttr('push', PyCallable(None, lambda self, obj: self.array.append(obj)))
+
+JsString.prototype_instance = JsObject()
+JsString.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.value)))
+
+JsSet.prototype_instance = JsObject()
+JsSet.prototype_instance.setAttr('size', PyProp(None, lambda obj: len(obj.seq)))
+
+JsPromise.prototype_instance = JsObject()
+JsPromise.prototype_instance.setAttr('then', PyCallable(None, JsPromise._then))
+JsPromise.prototype_instance.setAttr('catch', PyCallable(None, JsPromise._catch))
+JsPromise.prototype_instance.setAttr('finally', PyCallable(None, JsPromise._finally))
+
+#JsElement.prototype_instance = JsObject()
+#JsElement.prototype_instance.setAttr('appendChild', PyCallable(None, JsElement._appendChild))
+
+JsUndefined.instance = JsUndefined()
+
+# ---
 
 class VmStackFrame(object):
 
@@ -1983,13 +2074,14 @@ unary_op = {
 }
 
 class VmRuntime(object):
-    def __init__(self):
+    def __init__(self, builtins=None):
         super(VmRuntime, self).__init__()
 
         self.stack_frames = []
         self.exception = None
 
         self.enable_diag = False
+        self.builtins = builtins
 
     def initfn(self, fn):
 
@@ -2019,15 +2111,53 @@ class VmRuntime(object):
         _math.ceil = math.ceil
         _math.random = random.random
 
-        self.builtins = {}
-        self.builtins['console'] = console
-        self.builtins['Math'] = _math
-        self.builtins['Promise'] = JsPromise
-        self.builtins['fetch'] = fetch
-        self.builtins['Set'] = JsSet
-        self.builtins['Array'] = JsArray
-        self.builtins['Object'] = JsObjectCtor()
-        self.builtins['window'] = JsObject()
+        _document = lambda: None
+        _document.createElement = lambda *arg: JsElement()
+        _document.head = JsElement()
+
+        if self.builtins is None:
+            self.builtins = {}
+            self.builtins['console'] = console
+            self.builtins['Math'] = _math
+            self.builtins['document'] = _document
+            self.builtins['Promise'] = JsPromise
+            self.builtins['fetch'] = fetch
+            self.builtins['Set'] = JsSet
+            self.builtins['Array'] = JsArray
+            self.builtins['Object'] = JsObjectCtor()
+            self.builtins['window'] = JsObject()
+
+            #text = """
+            #    function map(fn) {
+            #        out = []
+            #        for (let i=0; i < this.length; i++) {
+            #            let v = fn(this[i])
+            #            out.push(v)
+            #        }
+            #        return out
+            #    }
+            #"""
+            #JsArray.prototype_instance.setAttr('map', self._compile_fn(text))
+
+    def _compile_fn(self, text, debug=False):
+        tokens = Lexer().lex(text)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = True
+        parser.python = True
+        ast = parser.parse(tokens)
+
+        xform = TransformIdentityScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+
+        compiler = VmCompiler()
+        module = compiler.compile(ast)
+        if debug:
+            print(ast.toString(1))
+            module.dump()
+
+        fn = JsFunction(module, module.functions[1], None, None, None)
+        return fn
 
     def _unwind(self):
 
@@ -2050,21 +2180,22 @@ class VmRuntime(object):
 
         try:
 
-            self._run()
+            return self._run()
 
         except Exception as e:
             if self.stack_frames:
+                print("***")
                 print("a python error was caught while running javascript")
                 for idx, frame in enumerate(reversed(self.stack_frames)):
 
                     print("frame", idx)
-                    frame = self.stack_frames[-1]
-                    print(frame.module)
-                    print(frame.module.path)
+                    # print(frame.locals)
+                    # print(frame.globals)
+                    print("  path", frame.module.path)
                     instr = frame.fndef.instrs[frame.sp]
-                    print(frame.sp, instr.line, instr.index)
+                    print("  sp", frame.sp, "line", instr.line, "column", instr.index)
+                    print("***")
             raise e
-
 
     def _run(self):
 
@@ -2530,27 +2661,35 @@ class VmLoader(object):
 
         return module
 
+    def _fix_mod(self, mod):
+
+        root = os.path.split(os.path.abspath(mod.path))[0]
+
+        for i in range(len(mod.includes)):
+            mod.includes[i] = os.path.normpath(os.path.join(root, mod.includes[i]))
+
     def _load(self, root_mod, root_dir, root_name):
 
         root_mod.depth = 0
+
+        self._fix_mod(root_mod)
 
         visited = {root_name: root_mod}
         includes = [(1, p) for p in root_mod.includes]
 
         while includes:
             depth, inc_path = includes.pop()
-            inc_path = os.path.normpath(os.path.join(root_dir, inc_path))
 
             if inc_path in visited:
                 continue
-            print(inc_path)
+            print("loading", depth, inc_path)
 
             dep_mod = self._load_path(inc_path)
             dep_mod.depth = depth
             dep_mod.path = inc_path
+            self._fix_mod(dep_mod)
 
             visited[inc_path] = dep_mod
-
 
             includes.extend([(depth+1, p) for p in dep_mod.includes])
 
@@ -2569,6 +2708,7 @@ class VmLoader(object):
                 runtime.init(mod2)
                 try:
                     rv, mod2_globals = runtime.run()
+                    print(mod2_globals)
                 except Exception as e:
 
                     print("error in ", mod2.path)
@@ -2578,10 +2718,15 @@ class VmLoader(object):
                     if name in mod2_globals.values and name not in mod.globals.values:
                         mod.globals.values[name] = mod2_globals.values[name]
 
+        print("=*" + "="*68)
         runtime = VmRuntime()
         runtime.enable_diag = True
         runtime.init(root_mod)
         rv, mod_globals = runtime.run()
+
+        print("return value", rv)
+        print("globals", mod_globals.values)
+
 
     def run_path(self, path):
 
@@ -3056,17 +3201,45 @@ def main():
         } while (c < 5);
     """
 
+    mapping1 = """
+
+        //function f(...rest) {
+        //    console.log(rest)
+        //}
+        //f()
+
+        //x = [1,2,3]
+        //console.log(x[2])
+
+        fn = x => x*x
+
+        console.log([1,2,3].map(fn))
+        console.log([1,2,3,4].length)
+
+        //o = {a: 1, b: 2}
+        //console.log(Object.keys(o).map(k => o[k]*5))
+
+        //chars= "abc"
+        //console.log(chars.length, chars[0])
+
+    """
+
     text1 = """
+
+        //include "./res/daedalus/daedalus.js"
 
         include "./res/daedalus/daedalus_util.js"
+
+        console.log(generateStyleSheetName())
         console.log(randomInt(0,100))
-        console.log(randomInt(0,100))
-        console.log(randomInt(0,100))
+    """
+    keys1 = """
+
+        o = {a:1}
+        x = Object.keys(o)
+        y = o.keys(o)
     """
 
-    text1 = """
-        StyleSheet.foo(5)
-    """
     #text1 = open("./res/daedalus/daedalus_util.js").read()
     """
     tokens = Lexer().lex(text1)
@@ -3104,7 +3277,7 @@ def main():
     # T_FOR_IN
     loader = VmLoader()
     #loader.load("./res/daedalus/daedalus.js")
-    loader.run_text(text1)
+    loader.run_text(keys1)
     return
 
     runtime = VmRuntime()
@@ -3116,14 +3289,8 @@ def main():
         for i, frame in enumerate(reversed(runtime.stack_frames)):
             print()
             print("-"*60)
-            print("frame: %d" % (i+1))
-            print("locals:")
-            print(frame.locals)
-            print("globals:")
-            print(frame.globals)
         raise
-    print("return value", rv)
-    print("globals", globals.values)
+
 
 
 

@@ -1769,6 +1769,8 @@ class Parser(ParserBase):
         export function a () {}
         export class a {}
 
+        export <comma_list> from <source>
+
         Anonymous exports will cause a ParseError
         export function () {}
         export class {}
@@ -1776,12 +1778,14 @@ class Parser(ParserBase):
         The resulting token has the form
 
             Token<T_EXPORT, export_name>
-                Token<T_TEXT, export_name>
-                Token<..., body>
+                Token<T_ARGLIST, export_name>
+                Token<T_ARGLIST, exports>
+                [Token<T_ARGLIST>]
 
             Token<T_EXPORT_DEFAULT, export_name>
-                Token<T_TEXT, export_name>
-                Token<..., body>
+                Token<T_ARGLIST, export_name>
+                Token<T_ARGLIST, exports>
+                [Token<T_ARGLIST>]
 
 
         """
@@ -1796,17 +1800,24 @@ class Parser(ParserBase):
 
         child = self.consume_keyword(tokens, token, index, 1)
 
+        from_source = None
+        i2 = self.peek_keyword(tokens, token, index, 1)
+        if i2 is not None and tokens[i2].type == Token.T_TEXT and tokens[i2].value == 'from':
+            keyword = self.consume_keyword(tokens, token, index, 1)
+            from_source = self.consume(tokens, token, index, 1)
+
         exports = []
 
+        # collect all of the export names into a single list
         stack = [child]
         while stack:
 
-            node = stack.pop(0)
+            node = stack.pop()
 
             if node.type == Token.T_TEXT:
                 if not node.value:
                     raise ParseError(token, "unable to export anonymous entity")
-                exports.append(Token(Token.T_TEXT, child.line, child.index, node.value))
+                exports.insert(0, Token(Token.T_TEXT, child.line, child.index, node.value))
             elif node.type == Token.T_ASSIGN and node.value == "=":
                 stack.append(node.children[0])
             elif node.type == Token.T_VAR:
@@ -1820,11 +1831,29 @@ class Parser(ParserBase):
             else:
                 raise ParseError(node, "unable to export token")
 
-        #name = Token(Token.T_TEXT, child.line, child.index, token.value)
-        token.type = kind
-        token.children = [child, ] + exports
+        # flatten the exports into a single list
+        arglist = Token(Token.T_ARGLIST, token.line, token.index, "()", [child])
+        i=0;
+        while i < len(arglist.children):
+            if arglist.children[i].type == Token.T_COMMA:
+                node = arglist.children.pop(i)
+                arglist.children.insert(i, node.children[1])
+                arglist.children.insert(i, node.children[0])
+            else:
+                i += 1
 
-        if token.type == Token.T_EXPORT_DEFAULT and len(token.children) > 2:
+        arglist2 = Token(Token.T_ARGLIST, token.line, token.index, "()", exports)
+
+        # the output is:
+        #   the list of exported names,
+        #   the list of exported nodes,
+        #   optionally a from list
+        token.type = kind
+        token.children = [arglist2, arglist]
+        if from_source:
+            token.children.append(from_source)
+
+        if token.type == Token.T_EXPORT_DEFAULT and len(exports) > 1:
             raise ParseError(token, "export default can only export a single name")
 
     def _collect_keyword_import_get_name(self, module):
@@ -2428,6 +2457,7 @@ def main():  # pragma: no cover
 
     # TODO: types should have a T_ANNOTATION with a single child, the type information
     text1 = "function f<T>(arg: T) : T { return arg }"
+    text1 = "export a, b, c, d from e"
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)
