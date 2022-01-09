@@ -245,7 +245,6 @@ function reconcileChildren(parentFiber) {
                 parent: (parentFiber.partial && oldFiber)? oldFiber.parent : parentFiber,
                 alternate: oldFiber,
                 dom: oldFiber ? oldFiber.dom : null,
-                signals: element._$signals,
                 element: element,
                 index: index,
                 oldIndex: oldIndex
@@ -516,11 +515,6 @@ function removeDomNode(fiber) {
     fiber.element._$fiber = null
     fiber.alternate = null
     _removeDomNode_elementFixUp(fiber.element)
-    // TODO: check for connected signals/slots and disconnect
-    // if we can add/remove dom nodes in this way then
-    // removeing a dom node and adding it again means
-    // manually reconnecting signals...
-    // and removing it means it can't receive signals...
 }
 
 

@@ -1,28 +1,6 @@
 
 include './daedalus_util.js'
 
-let sigal_counter = 0
-export function Signal(element, name) {
-    const event_name = "onSignal_" + (sigal_counter++) + "_" + name
-
-    const signal = {}
-    signal._event_name = event_name
-    signal._slots = []
-    signal.emit = (obj=null) => {
-        signal._slots.map(
-            item => {requestIdleCallback(() => {item.callback(obj)})}
-        )
-    }
-
-    console.log("signal create:" + event_name)
-
-    if (!!element) {
-        element._$signals.push(signal)
-    }
-
-    return signal
-}
-
 let element_uid = 0
 function generateElementId() {
     const chars = 'abcdefghijklmnopqrstuvwxyz';
@@ -47,8 +25,6 @@ function generateElementId() {
                     // no longer required
         - on*       : event callbacks
     daedalus private keys begin with '_$'
-        - _$signals // deprecated
-        - _$slots   // deprecated
         - _$fiber
         - _$dirty
 */
@@ -65,8 +41,6 @@ export class DomElement {
             this.props.id = this.constructor.name + generateElementId()
         }
 
-        this._$signals = []
-        this._$slots = []
         this._$dirty = true // whether a change has been queued to re-render
         this.state = {} // element data that effects rendering
         this.attrs = {}  // like state, but does not effect rendering
@@ -235,17 +209,6 @@ export class DomElement {
         return this.props.className === cls;
     }
 
-    connect(signal, callback) {
-        console.log("signal connect:" + signal._event_name, callback)
-        const ref = {element: this, signal: signal, callback: callback};
-        signal._slots.push(ref)
-        this._$slots.push(ref)
-    }
-
-    disconnect(signal) {
-        console.log("signal disconnect:" + signal._event_name)
-    }
-
     getDomNode() {
         return this._$fiber && this._$fiber.dom
     }
@@ -330,11 +293,8 @@ export class ButtonElement extends DomElement {
 export class TextInputElement extends DomElement {
 
     // second positional parameter reserved for future use
-    // TODO: eliminate use of signal here
     constructor(text, _, submit_callback) {
         super("input", {value: text, type:"text"}, []);
-
-        //this.textChanged = Signal(this, 'textChanged');
 
         this.attrs = {
             submit_callback,
@@ -379,36 +339,6 @@ export class TextInputElement extends DomElement {
         }
     }
 }
-
-export class NumberInputElement extends DomElement {
-
-    constructor(value) {
-        super("input", {value: value, type: "number"}, []);
-
-        this.valueChanged = Signal(this, 'valueChanged');
-    }
-
-    onChange(event) {
-        this.updateProps({value: parseInt(event.target.value, 10)}, false)
-        this.valueChanged.emit(this.props)
-    }
-
-    onPaste(event) {
-        this.updateProps({value: parseInt(event.target.value, 10)}, false)
-        this.valueChanged.emit(this.props)
-    }
-
-    onKeyUp(event) {
-        this.updateProps({value: parseInt(event.target.value, 10)}, false)
-        this.valueChanged.emit(this.props)
-    }
-
-    onInput(event) {
-        this.updateProps({value: parseInt(event.target.value, 10)}, false)
-        this.valueChanged.emit(this.props)
-    }
-}
-
 
 // Swap two nodes
 function swap(nodeA, nodeB) {

@@ -171,18 +171,21 @@ export class Router {
     }
 
     handleLocationChanged(location) {
-
         // find the first matching route and displat that child
+        let auth = this.isAuthenticated()
         let index=0;
         while (index < this.routes.length) {
             const item = this.routes[index]
+            if (!auth && item.auth) {
+                index += 1;
+                continue
+            }
             const match = locationMatch(item.re, location)
             if (match !== null) {
 
                 // if the location results in a new child to be diplayed
                 // then display that child. otherwise there is no need
                 // to update the child
-
                 let fn = (element) => this.setElement(index, location, match, element)
                 if (this.doRoute(item, fn, match)) {
                     return
@@ -263,6 +266,11 @@ export class Router {
         this.current_location = null
         this.container.update()
     }
+
+    isAuthenticated() {
+        return false
+    }
+
 }
 
 Router.instance = null;
@@ -293,7 +301,6 @@ export class AuthenticatedRouter extends Router {
         }
 
         if (item.auth===undefined && item.noauth === true) {
-            console.log(item, has_auth)
             if (!has_auth) {
                 item.callback(fn, match)
                 return true
