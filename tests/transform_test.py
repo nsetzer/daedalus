@@ -52,11 +52,11 @@ class TransformTestCase(unittest.TestCase):
                     TOKEN('T_GLOBAL_VAR', 'c'),
                     TOKEN('T_NUMBER', '2'))),
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_GLOBAL_VAR', 'a'),
                     TOKEN('T_GLOBAL_VAR', 'b'),
                     TOKEN('T_GLOBAL_VAR', 'c')),
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_GLOBAL_VAR', 'a'),
                     TOKEN('T_GLOBAL_VAR', 'b'),
                     TOKEN('T_GLOBAL_VAR', 'c'))))

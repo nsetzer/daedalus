@@ -902,11 +902,13 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_VAR', 'const',
-                    TOKEN('T_ASSIGN', '=',
-                        TOKEN('T_TEXT', 'v1'),
-                        TOKEN('T_KEYWORD', 'null'))),
-                TOKEN('T_TEXT', 'v1')))
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_TEXT', 'v1')),
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_VAR', 'const',
+                        TOKEN('T_ASSIGN', '=',
+                            TOKEN('T_TEXT', 'v1'),
+                            TOKEN('T_KEYWORD', 'null'))))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -917,11 +919,13 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_FUNCTION', 'function',
-                    TOKEN('T_TEXT', 'a'),
-                    TOKEN('T_ARGLIST', '()'),
-                    TOKEN('T_BLOCK', '{}')),
-                TOKEN('T_TEXT', 'a')))
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_TEXT', 'a')),
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_FUNCTION', 'function',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_ARGLIST', '()'),
+                        TOKEN('T_BLOCK', '{}')))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -932,11 +936,13 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_CLASS', 'class',
-                    TOKEN('T_TEXT', 'A'),
-                    TOKEN('T_KEYWORD', 'extends'),
-                    TOKEN('T_CLASS_BLOCK', '{}')),
-                TOKEN('T_TEXT', 'A')))
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_TEXT', 'A')),
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_CLASS', 'class',
+                        TOKEN('T_TEXT', 'A'),
+                        TOKEN('T_KEYWORD', 'extends'),
+                        TOKEN('T_CLASS_BLOCK', '{}')))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -947,11 +953,13 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_VAR', 'let',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_TEXT', 'v1'),
                     TOKEN('T_TEXT', 'v2')),
-                TOKEN('T_TEXT', 'v1'),
-                TOKEN('T_TEXT', 'v2')))
+                TOKEN('T_EXPORT_ARGS', '()',
+                    TOKEN('T_VAR', 'let',
+                        TOKEN('T_TEXT', 'v1'),
+                        TOKEN('T_TEXT', 'v2')))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -1786,9 +1794,9 @@ class ParserTypeAnnotationTestCase(unittest.TestCase):
                         TOKEN('T_TEXT', 'y'),
                         TOKEN('T_KEYWORD', 'int')))))
         self.assertFalse(parsecmp(expected, ast, False))
+
 def main():
     unittest.main()
-
 
 if __name__ == '__main__':
     main()

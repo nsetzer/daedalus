@@ -2,6 +2,12 @@
 
 """
 
+TODO: transformations:
+    - regex
+    - class
+    - template strings
+    - anything else?
+
 TODO: update assignments and destructuring assignments must be transformed
 
     example:
@@ -60,7 +66,7 @@ from . import vm_opcodes as opcodes
 from .token import Token, TokenError
 from .lexer import Lexer
 from .parser import Parser, ParseError
-from .transform import TransformIdentityScope
+from .transform import TransformBaseV2, TransformIdentityScope
 
 class VmInstruction(object):
     __slots__ = ['opcode', 'args', 'target', 'line', 'index']
@@ -165,8 +171,10 @@ class VmFunctionDef(object):
         self.globals = globals
         self.local_names = []
         self.cell_names = []
+        self.free_names = []
         self.arglabels = []
         self.rest_name = None
+        self._name = "__main__"
 
 class JsFunction(object):
     def __init__(self, module, fndef, args, kwargs, bind_target):
@@ -177,6 +185,8 @@ class JsFunction(object):
         self.kwargs = kwargs
         self.bind_target = bind_target
         self.cells = None
+
+        self.prototype = JsObject()
 
     def __repr__(self):
 
@@ -221,6 +231,38 @@ class VmReference(object):
         self.name = name
         self.value = value
 
+class VmTransform(TransformBaseV2):
+
+
+    def visit(self, parent, token, index):
+
+        if token.type == Token.T_TEMPLATE_STRING:
+            self._visit_template_string(parent, token, index)
+
+    def _visit_template_string(self, parent, token, index):
+
+        node = None
+        for child in reversed(token.children):
+
+            if child.type == Token.T_STRING:
+                child = Token(Token.T_STRING, child.line, child.index, repr(child.value))
+
+            if child.type == Token.T_TEMPLATE_EXPRESSION:
+                child = Token(Token.T_ARGLIST, child.line, child.index, "()", child.children)
+
+            if node is None:
+                node = child
+
+            else:
+                node = Token(Token.T_BINARY, token.line, token.index, "+", [child, node])
+
+        if len(token.children) > 0 and token.children[0].type == Token.T_TEMPLATE_EXPRESSION:
+
+            temp = Token(Token.T_STRING, token.line, token.index, "''")
+            node = Token(Token.T_BINARY, token.line, token.index, "+", [temp, node])
+
+        parent.children[index] = node
+
 class VmCompiler(object):
 
     C_INSTRUCTION = 0x01
@@ -260,7 +302,6 @@ class VmCompiler(object):
             Token.T_BLOCK: self._visit_block,
             Token.T_GROUPING: self._visit_grouping,
             Token.T_STRING: self._visit_string,
-            Token.T_TEMPLATE_STRING: self._visit_template_string,
             Token.T_OBJECT: self._visit_object,
             Token.T_LIST: self._visit_list,
             Token.T_REGEX: self._visit_regex,
@@ -287,6 +328,7 @@ class VmCompiler(object):
             Token.T_INCLUDE: self._visit_include,
             Token.T_EXPORT: self._visit_export,
             Token.T_EXPORT_DEFAULT: self._visit_export_default,
+            Token.T_EXPORT_ARGS: self._visit_export_args,
             #"T_CREATE_SUPER": self._visit_create_super,
         }
 
@@ -899,11 +941,16 @@ class VmCompiler(object):
 
         if token.value == "=":
 
+
+
+            self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, token.children[0])
+
             if state & VmCompiler.C_LOAD:
                 self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.DUP, token=token))
 
-            self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, token.children[0])
             self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[1])
+
+
 
         else:
 
@@ -950,7 +997,7 @@ class VmCompiler(object):
                 self.fn.globals.constdata.append(value)
 
         if index == -1:
-            raise VmCompileError(token, "unable to load undefined string")
+            raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
 
         return VmInstruction(opcodes.const.STRING, index, token=token)
 
@@ -958,8 +1005,10 @@ class VmCompiler(object):
 
         try:
             value = JsString(pyast.literal_eval(token.value))
-        except:
-            raise VmCompileError(token, "unable to load undefined string")
+        except SyntaxError as e:
+            raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
+        except Exception as e:
+            raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
         self._push_instruction(self._build_instr_string(state, token, value))
 
     def _visit_regex(self, depth, state, token):
@@ -982,17 +1031,16 @@ class VmCompiler(object):
         #value = JsString(token.value)
         #elf._push_instruction(self._build_instr_string(state, token, value))
 
-    def _visit_template_string(self, depth, state, token):
-
-        #print(token.toString(1))
-        tmp = '\'' + token.value[1:-1] + '\''
-        value = JsString(pyast.literal_eval(tmp))
-        self._push_instruction(self._build_instr_string (state, token, value))
-        print("template string not implemented")
-
     def _visit_number(self, depth, state, token):
 
-        self._push_instruction(VmInstruction(opcodes.const.INT, int(token.value), token=token))
+        try:
+            val = int(token.value)
+            op = opcodes.const.INT
+        except:
+            val = float(token.value)
+            op = opcodes.const.FLOAT32
+
+        self._push_instruction(VmInstruction(op, val, token=token))
 
     def _visit_keyword(self, depth, state, token):
 
@@ -1051,7 +1099,6 @@ class VmCompiler(object):
     def _visit_lambda(self, depth, state, token):
 
         if len(token.children) != 4:
-            print(token.toString(1))
             raise VmCompileError(token,"invalid")
         name = token.children[0]
         arglist = token.children[1]
@@ -1177,7 +1224,6 @@ class VmCompiler(object):
         _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
         methods.append(_return)
 
-
         if parent.children:
         # if False:
             parent_cls = parent.children[0].value
@@ -1194,6 +1240,16 @@ class VmCompiler(object):
 
             # _super = Token("T_CREATE_SUPER", token.line, token.index, "super", [_parent, _this])
             methods.insert(0, _assign)
+
+        # TODO: copy dict from PARENT_CLASS.prototype
+        #       then update using CLASS.prototype
+        #       -- may require a special python function
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto = Token(Token.T_ATTR, token.line, token.index, "prototype")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _proto])
+        _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, _object])
+        methods.insert(0, _assign)
 
         if constructor is None:
 
@@ -1352,12 +1408,18 @@ class VmCompiler(object):
         pass
 
     def _visit_export(self, depth, state, token):
-        node = token.children[0]
+        node = token.children[1]
         self._push_token(depth, state, node)
 
     def _visit_export_default(self, depth, state, token):
-        node = token.children[0]
+        node = token.children[1]
         self._push_token(depth, state, node)
+
+    def _visit_export_args(self, depth, state, token):
+
+        flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
+        for child in reversed(token.children):
+            self._push_token(depth, flag0, child)
 
     def _build_function(self, state, token, name, arglist, block, closure, autobind=True):
 
@@ -1366,6 +1428,7 @@ class VmCompiler(object):
             block = Token(Token.T_RETURN, block.line, block.index, "{}", [block])
 
         fndef = VmFunctionDef(block, self.module.globals)
+        fndef._name = token.children[0].value
         fnidx = len(self.module.functions)
         self.module.functions.append(fndef)
 
@@ -1394,7 +1457,6 @@ class VmCompiler(object):
             else:
                 raise CompileError(arg, "unexpected argument")
 
-        cellvars = []
 
         self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
 
@@ -1408,7 +1470,6 @@ class VmCompiler(object):
                     #_, index = self._token2index(child, True)
                     # index = self.fn.local_names.index(child.value)
                     index = self.fn.cell_names.index(child.value)
-                    #cellvars.append(child.value)
                     seq.append((0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.cellvar.LOAD, index, token=token)))
                     pass
                 elif child.type == Token.T_CELL_VAR:
@@ -1442,9 +1503,17 @@ class VmCompiler(object):
         fndef.arglabels = list(arglabels)
         fndef.rest_name = rest_name
 
-        for cellvar in closure.children:
-            cellvars.append(cellvar.value)
-        fndef.cell_names = cellvars
+        fndef.cell_names = []
+        fndef.free_names = []
+        for var in closure.children:
+            if var.type == Token.T_CELL_VAR:
+                fndef.cell_names.append(var.value)
+            elif var.type == Token.T_FREE_VAR:
+                # TODO: fix duplication in cell_names
+                fndef.cell_names.append(var.value)
+                fndef.free_names.append(var.value)
+            else:
+                raise VmCompileError(var, "expected closure")
 
     def _token2index(self, token, load, delete=False):
 
@@ -1620,10 +1689,9 @@ def jsc(f):
 
 class JsObject(object):
 
-    prototype_instance = None
     type_name = "object"
 
-    def __init__(self, args=None, prototype=None):
+    def __init__(self, args=None):
         super(JsObject, self).__init__()
 
         if args:
@@ -1631,15 +1699,9 @@ class JsObject(object):
         else:
             self.data = {}
 
-        if prototype is None:
-
-            self.prototype = self.__class__.prototype_instance
-        else:
-            self.prototype = prototype
-
     def __repr__(self):
         # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
-        s = ",".join([str(s) for s in self.data.keys()])
+        s = ",".join([str(s)+":"+str(self.data[s]) for s in self.data.keys()])
         return "<%s(%s)>" % (self.__class__.__name__, s)
 
     def _hasAttr(self, name):
@@ -1650,19 +1712,6 @@ class JsObject(object):
     def getAttr(self, name):
         if isinstance(name, JsString):
             name = name.value
-
-        #if name == '__proto__':
-        #    return self.prototype
-
-        #if self.prototype._hasAttr(name):
-        #    attr = self.prototype.getAttr(name)
-        #    if isinstance(attr, PyProp):
-        #        attr = attr.bind(self).invoke()
-        #    if isinstance(attr, PyCallable):
-        #        attr = attr.bind(self)
-        #    if isinstance(attr, JsFunction):
-        #        attr = attr.bind(self)
-        #    return attr
 
         if hasattr(self, name):
             attr = getattr(self, name)
@@ -1700,7 +1749,8 @@ class JsObject(object):
 
     @staticmethod
     def keys(inst):
-        return JsArray(inst.data.keys())
+        x = JsArray(inst.data.keys())
+        return x
 
 class JsObjectCtor(JsObject):
 
@@ -1733,18 +1783,17 @@ class PyCallable(object):
 
 class JsArray(JsObject):
 
-    prototype_instance = None
     type_name = "Array"
 
     def __init__(self, args=None):
-        super(JsArray, self).__init__(None, JsArray.prototype_instance)
+        super(JsArray, self).__init__(None)
         if args:
             self.array = list(args)
         else:
             self.array = []
 
     def __repr__(self):
-        s = ",".join([str(s) for s in self.array])
+        s = ",".join([repr(s) for s in self.array])
         return "<%s(%s)>" % (self.__class__.__name__, s)
 
     def getIndex(self, index):
@@ -1784,12 +1833,23 @@ class JsArray(JsObject):
             }
         """
 
+    def concat(self, *sequences):
+
+        for seq in sequences:
+            self.array.extend(seq.array)
+
+        return self
+
+    def join(self, string):
+
+        seq = [str(s) for s in self.array]
+        return JsString(string.value.join(seq))
+
 class JsSet(JsObject):
-    prototype_instance = None
     type_name = "Set"
 
     def __init__(self, args=None):
-        super(JsSet, self).__init__(None, JsSet.prototype_instance)
+        super(JsSet, self).__init__(None)
 
         if args:
             self.seq = set(args)
@@ -1799,7 +1859,15 @@ class JsSet(JsObject):
 def _apply_value_operation(cls, op, a, b):
     if not isinstance(b, JsObject):
         b = cls(b)
-    return op(a.value, b.value)
+
+    if isinstance(a, JsString) or isinstance(b, JsString):
+        if isinstance(a, (int, float)):
+            a = JsString(a)
+        if isinstance(b, (int, float)):
+            b = JsString(b)
+        return JsString(op(a.value, b.value))
+    else:
+        return JsNumber(op(a.value, b.value))
 
 class JsNumberType(type):
     def __new__(metacls, name, bases, namespace):
@@ -1813,7 +1881,7 @@ class JsNumberType(type):
         for name, key in operandsr:
             if not hasattr(cls, name):
                 op = getattr(operator, key)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
+                setattr(cls, name, lambda b, a, op=op: _apply_value_operation(cls, op, a, b))
 
         return cls
 
@@ -1844,22 +1912,24 @@ class JsStringType(type):
         for name, key in operandsr:
             if not hasattr(cls, name):
                 op = getattr(operator, key)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
+                setattr(cls, name, lambda b, a, op=op: _apply_value_operation(cls, op, a, b))
 
         return cls
 
 class JsString(JsObject, metaclass=JsStringType):
 
-    prototype_instance = None
-
     def __init__(self, value=''):
-        super(JsString, self).__init__(None, JsString.prototype_instance)
+        super(JsString, self).__init__(None)
         if isinstance(value, JsString):
             value = value.value
         self.value = str(value)
 
     def __repr__(self):
-        return "<JsString(%s)>" % self.value
+        return "<JsString(%r)>" % self.value
+
+    def __str__(self):
+        # "<JsString(%s)>" %
+        return self.value
 
     def serialize(self, stream):
         data = self.value.encode("utf-8")
@@ -1890,6 +1960,28 @@ class JsString(JsObject, metaclass=JsStringType):
     def __hash__(self):
         return self.value.__hash__()
 
+
+    @property
+    def length(self):
+        return len(self.value)
+
+
+    def indexOf(self, substr):
+        try:
+            return self.value.index(substr.value)
+        except ValueError as e:
+            return -1
+
+    def lastIndexOf(self, substr):
+        try:
+            return self.value.rindex(substr.value)
+        except ValueError as e:
+            return -1
+
+    def match(self, regex):
+        print("match not implemented", self, regex)
+        return False
+
 class JsUndefined(JsObject):
     instance = None
     def __init__(self):
@@ -1912,9 +2004,9 @@ class JsUndefined(JsObject):
     def deserialize(self, stream):
         pass
 
-class JsPromise(JsObject):
+JsUndefined.instance = JsUndefined()
 
-    prototype_instance = None
+class JsPromise(JsObject):
 
     def __init__(self, callback=None):
         # callback: (resolve, reject) => {}
@@ -1949,46 +2041,65 @@ class JsPromise(JsObject):
         # callback: () => {}
         return 125
 
-class JsElement(object):
-    prototype_instance = None
-
-    #def __init__(self):
-        #super(JsElement, self).__init__(None, JsElement.prototype_instance)
-        #print(JsElement.prototype_instance)
-
-    def appendChild(self, child):
-        print("append child")
-
 def fetch(url, parameters):
 
     return JsPromise(lambda: "<html/>")
 
-JsObject.prototype_instance = JsObject()
+class JsDocument(JsObject):
 
-#JsObjectCtor.prototype_instance = JsObjectCtor()
-#JsObjectCtor.prototype_instance.setAttr('keys', PyCallable(None, lambda _, arg: JsArray([
-#    JsString(x) for x in arg.data.keys()
-#])))
+    def __init__(self):
+        super(JsDocument, self).__init__()
 
-#JsArray.prototype_instance = JsObject()
-#JsArray.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.array)))
-#JsArray.prototype_instance.setAttr('push', PyCallable(None, lambda self, obj: self.array.append(obj)))
+        self.head = JsElement()
 
-JsString.prototype_instance = JsObject()
-JsString.prototype_instance.setAttr('length', PyProp(None, lambda obj: len(obj.value)))
+    @staticmethod
+    def createElement(name):
 
-JsSet.prototype_instance = JsObject()
-JsSet.prototype_instance.setAttr('size', PyProp(None, lambda obj: len(obj.seq)))
+        elem = JsElement()
 
-JsPromise.prototype_instance = JsObject()
-JsPromise.prototype_instance.setAttr('then', PyCallable(None, JsPromise._then))
-JsPromise.prototype_instance.setAttr('catch', PyCallable(None, JsPromise._catch))
-JsPromise.prototype_instance.setAttr('finally', PyCallable(None, JsPromise._finally))
+        elem.sheet = JsElement()
 
-#JsElement.prototype_instance = JsObject()
-#JsElement.prototype_instance.setAttr('appendChild', PyCallable(None, JsElement._appendChild))
+        return elem
 
-JsUndefined.instance = JsUndefined()
+class JsElement(JsObject):
+
+    def __init__(self):
+        super(JsElement, self).__init__(None)
+
+        self.rules = JsArray()
+        self.children = []
+
+    def appendChild(self, child):
+        self.children.append(child)
+        print("children", self.children)
+
+    def insertRule(self, text, index=0):
+        self.rules.push(text)
+
+    def addRule(self, selector, text):
+        self.insertRule(selector + " {" + text + "}", self.rules.length)
+
+class JsWindow(JsObject):
+
+    def __init__(self):
+        super(JsWindow, self).__init__()
+
+
+
+    def addEventListener(self, event, callback):
+        pass
+
+    def requestIdleCallback(self, callback, options):
+        pass
+
+class JsNavigator(JsObject):
+
+    def __init__(self):
+        super(JsNavigator, self).__init__()
+
+        self.appVersion = JsString("0")
+        self.userAgent = JsString("daedalus")
+        self.appName = JsString("daedalus")
 
 # ---
 
@@ -2111,33 +2222,22 @@ class VmRuntime(object):
         _math.ceil = math.ceil
         _math.random = random.random
 
-        _document = lambda: None
-        _document.createElement = lambda *arg: JsElement()
-        _document.head = JsElement()
-
         if self.builtins is None:
             self.builtins = {}
             self.builtins['console'] = console
             self.builtins['Math'] = _math
-            self.builtins['document'] = _document
+            self.builtins['document'] = JsDocument()
             self.builtins['Promise'] = JsPromise
             self.builtins['fetch'] = fetch
             self.builtins['Set'] = JsSet
             self.builtins['Array'] = JsArray
             self.builtins['Object'] = JsObjectCtor()
-            self.builtins['window'] = JsObject()
-
-            #text = """
-            #    function map(fn) {
-            #        out = []
-            #        for (let i=0; i < this.length; i++) {
-            #            let v = fn(this[i])
-            #            out.push(v)
-            #        }
-            #        return out
-            #    }
-            #"""
-            #JsArray.prototype_instance.setAttr('map', self._compile_fn(text))
+            self.builtins['window'] = JsWindow()
+            self.builtins['navigator'] = JsNavigator()
+            self.builtins['parseFloat'] = lambda x: x
+            self.builtins['parseInt'] = lambda x, base=10: x
+            self.builtins['isNaN'] = lambda x: False
+            self.builtins['RegExp'] = lambda expr,flags: False
 
     def _compile_fn(self, text, debug=False):
         tokens = Lexer().lex(text)
@@ -2153,7 +2253,7 @@ class VmRuntime(object):
         compiler = VmCompiler()
         module = compiler.compile(ast)
         if debug:
-            print(ast.toString(1))
+            print("ast", ast.toString(1))
             module.dump()
 
         fn = JsFunction(module, module.functions[1], None, None, None)
@@ -2305,14 +2405,13 @@ class VmRuntime(object):
                 posargs = frame.stack.pop()
                 func = frame.stack.pop()
                 print("CALL_EX not implemented")
-                print(func, posargs, kwargs)
+                #print(func, posargs, kwargs)
                 frame.stack.append(JsUndefined.instance)
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
                 if frame.stack:
                     print("stack", frame.stack)
                     print("warning: stack not empty")
-                print("return value", rv)
                 self.stack_frames.pop()
                 if len(self.stack_frames) == 0:
                     return_value = rv
@@ -2402,21 +2501,18 @@ class VmRuntime(object):
                     frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
                 tos = frame.cells.getAttr(name)
                 frame.stack.append(tos)
-                print("cell ref", name, tos.value)
             elif instr.opcode == opcodes.cellvar.SET:
                 name = frame.fndef.cell_names[instr.args[0]]
                 if not frame.cells._hasAttr(name):
                     frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
                 tos = frame.stack.pop()
                 frame.cells.getAttr(name).value = tos
-                print("cell set", name, tos)
             elif instr.opcode == opcodes.cellvar.GET:
                 name = frame.fndef.cell_names[instr.args[0]]
                 if not frame.cells._hasAttr(name):
                     frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
                 tos = frame.cells.getAttr(name).value
                 frame.stack.append(tos)
-                print("cell get", name, tos)
             elif instr.opcode == opcodes.cellvar.DELETE:
                 name = frame.fndef.cell_names[instr.args[0]]
                 frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
@@ -2483,7 +2579,12 @@ class VmRuntime(object):
                 frame.stack.append(int(obj._hasAttr(name)))
             elif instr.opcode == opcodes.obj.GET_TYPENAME:
                 obj = frame.stack.pop()
-                if isinstance(obj, JsObject):
+                print("typename of", obj)
+                if obj is JsUndefined.instance:
+                    val = JsString("undefined")
+                elif isinstance(obj, JsString):
+                    val = JsString("string")
+                elif isinstance(obj, JsObject):
                     print("typeaname of ", obj)
                     val = JsString(obj.type_name)
                 else:
@@ -2538,8 +2639,16 @@ class VmRuntime(object):
                 for i in range(argc):
                     args.insert(0, frame.stack.pop())
 
-                fn = JsFunction(frame.module, frame.module.functions[fnidx], args, kwargs, bind_target)
-                fn.cells = JsObject([(ref.name, ref) for ref in cellvars.array])
+                fndef = frame.module.functions[fnidx]
+                fn = JsFunction(frame.module, fndef, args, kwargs, bind_target)
+
+                cells = []
+                for ref in cellvars.array:
+                    if ref.name in fndef.free_names:
+                        cells.append((ref.name, VmReference(ref.name, ref.value)))
+                    else:
+                        cells.append((ref.name, ref))
+                fn.cells = JsObject(cells)
                 frame.stack.append(fn)
             elif instr.opcode == opcodes.obj.UPDATE_ARRAY:
                 tos1 = frame.stack.pop()
@@ -2591,7 +2700,6 @@ class VmRuntime(object):
             elif instr.opcode in binary_op:
                 rhs = frame.stack.pop()
                 lhs = frame.stack.pop()
-                #print(binary_op[instr.opcode], lhs, rhs)
                 frame.stack.append(binary_op[instr.opcode](lhs, rhs))
             elif instr.opcode == opcodes.const.INT:
 
@@ -2656,6 +2764,11 @@ class VmLoader(object):
         xform.disable_warnings=True
         xform.transform(ast)
 
+        xform = VmTransform()
+        xform.transform(ast)
+
+        #print(ast.toString(1))
+
         compiler = VmCompiler()
         module = compiler.compile(ast)
 
@@ -2708,9 +2821,7 @@ class VmLoader(object):
                 runtime.init(mod2)
                 try:
                     rv, mod2_globals = runtime.run()
-                    print(mod2_globals)
                 except Exception as e:
-
                     print("error in ", mod2.path)
                     raise e
 
@@ -2745,13 +2856,6 @@ class VmLoader(object):
         root_mod.path = root_name
 
         return self._load(root_mod, root_dir, root_name)
-
-
-
-
-
-
-
 
 def main():
 
@@ -3224,21 +3328,130 @@ def main():
 
     """
 
-    text1 = """
-
-        //include "./res/daedalus/daedalus.js"
-
-        include "./res/daedalus/daedalus_util.js"
-
-        console.log(generateStyleSheetName())
-        console.log(randomInt(0,100))
-    """
     keys1 = """
 
         o = {a:1}
         x = Object.keys(o)
         y = o.keys(o)
     """
+
+    export_func_default1 = """
+
+        export function parse(text=undefined) {
+            return text
+        }
+    """
+    text1 = """
+
+        x=[].concat([1,2,3]).join("+")
+    """
+
+    text1 = """
+
+        obj = {"_key": "_val"}
+        Object.keys(obj).map(x => console.log(x, obj[x]))
+    """
+
+    text1 = """
+        obj = {"background": "blue"}
+        x = typeof(obj['background'])
+    """
+
+    text1 = """
+        a = "A"
+        b = "B"
+        c = "C"
+        d = "D"
+        x = a + b + c + d
+    """
+
+    text1 = """
+        function r1(obj2) {
+
+            let result = Object.keys(obj2).map(key => {
+                let val = obj2[key]
+                if (typeof(val) === 'object') {
+                    return key + "_" + r1(val)
+                } else {
+                    return key+"="+val
+                }
+            })
+            return result.join(",")
+        }
+
+        let obj = {"a": {"x1": "y1"}, "b": {"x2": "y2"}}
+        let result = r1(obj)
+
+
+    """
+
+    text1 = """
+        let s = "abc"
+        if ((x=s.indexOf("r"))!=-1) {
+            console.log(x)
+        }
+    """
+
+    text1 = """
+        x="abc".match(/A/i)
+    """
+
+
+    text1 = """
+        x = window.dne === undefined
+        y = true === undefined
+    """
+
+
+    text1 = """
+        class A {
+            constructor() {
+                this.x1= y
+            }
+        }
+        p1 = A.prototype
+        p2 = A().prototype
+
+    """
+
+    text1 = """
+
+        a = 123
+
+        pi = 3.1415
+        r = 6
+
+        //s = `a=${a} b=${pi*r*r}m^2`
+        s = `${pi*r*r}`
+
+
+    """
+
+
+    text1 = """
+
+        include "./res/daedalus/daedalus.js"
+
+        //console.log(generateStyleSheetName())
+        //console.log(randomInt(0,100))
+    """
+
+
+
+    if False:
+        tokens = Lexer().lex(text1)
+        parser = Parser()
+        parser.feat_xform_optional_chaining = True
+        parser.python = True
+        ast = parser.parse(tokens)
+        xform = TransformIdentityScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+
+        xform = VmTransform()
+        xform.transform(ast)
+
+        print(ast.toString(1))
 
     #text1 = open("./res/daedalus/daedalus_util.js").read()
     """
@@ -3247,7 +3460,6 @@ def main():
     parser.feat_xform_optional_chaining = True
     parser.python = True
     ast = parser.parse(tokens)
-
     xform = TransformIdentityScope()
     xform.disable_warnings=True
     xform.transform(ast)
@@ -3277,7 +3489,7 @@ def main():
     # T_FOR_IN
     loader = VmLoader()
     #loader.load("./res/daedalus/daedalus.js")
-    loader.run_text(keys1)
+    loader.run_text(text1)
     return
 
     runtime = VmRuntime()
@@ -3290,10 +3502,6 @@ def main():
             print()
             print("-"*60)
         raise
-
-
-
-
 
 if __name__ == '__main__':
     main()

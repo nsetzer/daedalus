@@ -1519,14 +1519,13 @@ class TransformAssignScope(object):
                 # if not token.type == Token.T_METHOD or self.python:
                 scope.define(SC_FUNCTION, child.children[0])
             elif child.type in (Token.T_EXPORT, Token.T_EXPORT_DEFAULT):
-                # TODO: support comma separated sequences
-                # e.g. : export default function a(){}, function b(){}
-                gc = child.children[0]
-                if isNamedFunction(gc):
-                    scope.define(SC_FUNCTION, gc.children[0])
+                args = child.children[1]
+                for gc in args.children:
+                    if isNamedFunction(gc):
+                        scope.define(SC_FUNCTION, gc.children[0])
 
-                elif gc.type == Token.T_CLASS:
-                    scope.define(0, gc.children[0], DF_CLASS)
+                    elif gc.type == Token.T_CLASS:
+                        scope.define(0, gc.children[0], DF_CLASS)
             elif child.type == Token.T_CLASS:
                 scope.define(0, child.children[0], DF_CLASS)
 
@@ -1546,7 +1545,7 @@ class TransformAssignScope(object):
     def visit_function(self, flags, scope, token, parent):
 
         if isNamedFunction(token):
-            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE, Token.T_OBJECT, Token.T_EXPORT, Token.T_EXPORT_DEFAULT):
+            if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE, Token.T_OBJECT, Token.T_EXPORT_ARGS):
                 # this should never happen
                 raise TransformError(parent, "visit function, parent node is not a block scope: %s>%s" % (parent.type, token.type))
         # define the name of the function when it is not an

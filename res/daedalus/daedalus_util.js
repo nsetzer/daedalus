@@ -36,15 +36,21 @@ function randomInt(min, max) {
 }
 
 function object2style_helper(prefix, obj) {
+
     const items = Object.keys(obj).map(key => {
-        const type = typeof(obj[key])
+        const val = obj[key];
+        const type = typeof(val)
         if (type === "object") {
-          return object2style_helper(prefix + key + "-", obj[key])
+            return object2style_helper(prefix + key + "-", val)
         } else {
-            return [prefix + key + ": " + obj[key]]
+            return [prefix + key + ": " + val]
         }
     })
-    return [].concat.apply([], items)
+    let out = []
+    for (let i=0; i< items.length; i++) {
+        out.concat(items[i])
+    }
+    return out
 }
 
 // convert a property object into an inline CSS style string
@@ -52,7 +58,7 @@ function object2style_helper(prefix, obj) {
 //       'padding-top: 4; color: red'
 function object2style(obj) {
     const arr = object2style_helper("", obj)
-    return [].concat.apply([], arr).join(';')
+    return [].concat(arr).join(';')
 }
 
 
@@ -220,7 +226,6 @@ export function StyleSheet(...args) {
         style = args[1]
         name = selector
     }
-
     //https://stackoverflow.com/questions/1720320/how-to-dynamically-create-css-class-in-javascript-and-apply
     if (css_sheet === null) {
         css_sheet = document.createElement('style');
@@ -231,11 +236,7 @@ export function StyleSheet(...args) {
 
     selector_names[name] = style
 
-    if(!(css_sheet.sheet||{}).insertRule){
-        (css_sheet.styleSheet || css_sheet.sheet).addRule(selector, text);
-    } else {
-        css_sheet.sheet.insertRule(selector+"{"+text+"}", css_sheet.sheet.rules.length);
-    }
+    css_sheet.sheet.insertRule(selector+" {"+text+"}", css_sheet.sheet.rules.length);
     return name;
 }
 

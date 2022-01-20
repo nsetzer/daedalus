@@ -51,6 +51,10 @@ class TransformTemplateString(TransformBase):
             for isExpr, text in segments:
                 if not text:
                     continue
+                # TODO: technically, these are STRING_LITERALS, not STRINGS
+                # the values are not quoted - they get used in slightly
+                # different ways by the VM (which needs a STRING) and the formatter
+                # (which assumes a literal)
                 type_ = Token.T_TEMPLATE_EXPRESSION if isExpr else Token.T_STRING
                 tok = Token(type_, 1, 0, text)
                 if isExpr:
@@ -1832,7 +1836,7 @@ class Parser(ParserBase):
                 raise ParseError(node, "unable to export token")
 
         # flatten the exports into a single list
-        arglist = Token(Token.T_ARGLIST, token.line, token.index, "()", [child])
+        arglist = Token(Token.T_EXPORT_ARGS, token.line, token.index, "()", [child])
         i=0;
         while i < len(arglist.children):
             if arglist.children[i].type == Token.T_COMMA:
@@ -1842,7 +1846,7 @@ class Parser(ParserBase):
             else:
                 i += 1
 
-        arglist2 = Token(Token.T_ARGLIST, token.line, token.index, "()", exports)
+        arglist2 = Token(Token.T_EXPORT_ARGS, token.line, token.index, "()", exports)
 
         # the output is:
         #   the list of exported names,
