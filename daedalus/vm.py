@@ -3,10 +3,9 @@
 """
 
 TODO: transformations:
-    - regex
-    - class
-    - template strings
-    - anything else?
+    - instance_of
+    - super
+    - anything that constructs a Token() in the compiler
 
 TODO: update assignments and destructuring assignments must be transformed
 
@@ -60,6 +59,8 @@ import operator
 import ast as pyast
 import math
 import random
+import re
+import time
 
 from . import vm_opcodes as opcodes
 
@@ -233,11 +234,25 @@ class VmReference(object):
 
 class VmTransform(TransformBaseV2):
 
-
     def visit(self, parent, token, index):
 
         if token.type == Token.T_TEMPLATE_STRING:
             self._visit_template_string(parent, token, index)
+
+        if token.type == Token.T_REGEX:
+            self._visit_regex(parent, token, index)
+
+        if token.type == Token.T_CLASS:
+            self._visit_class(parent, token, index)
+
+        if token.type == Token.T_INSTANCE_OF:
+            self._visit_instance_of(parent, token, index)
+
+        if token.type == Token.T_KEYWORD and token.value == "super":
+            token.type = Token.T_LOCAL_VAR
+
+        if token.type == Token.T_KEYWORD and token.value == "finally":
+            token.type = Token.T_ATTR
 
     def _visit_template_string(self, parent, token, index):
 
@@ -262,6 +277,116 @@ class VmTransform(TransformBaseV2):
             node = Token(Token.T_BINARY, token.line, token.index, "+", [temp, node])
 
         parent.children[index] = node
+
+    def _visit_regex(self, parent, token, index):
+
+        expr, flag = token.value[1:].rsplit('/', 1)
+        expr = repr(expr)
+        flag = repr(flag)
+
+        _regex = Token(Token.T_GLOBAL_VAR, token.line, token.index, 'RegExp')
+        _expr = Token(Token.T_STRING, token.line, token.index, expr)
+        _flag = Token(Token.T_STRING, token.line, token.index, flag)
+        _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [_expr, _flag])
+        _call = Token(Token.T_FUNCTIONCALL, token.line, token.index, '', [_regex, _arglist])
+
+        _new = Token(Token.T_NEW, token.line, token.index, 'new', [_call])
+        parent.children[index] = _new
+
+    def _visit_class(self, parent, token, index):
+
+
+        name = token.children[0]
+        parent_class = token.children[1]
+        block1 = token.children[2]
+        closure1 = token.children[3]
+
+        constructor = None
+        methods = []
+        for meth in block1.children:
+
+            if meth.children[0].value == "constructor":
+                constructor = meth
+            else:
+                meth = meth.clone()
+                meth.type = Token.T_LAMBDA
+
+                #T_ASSIGN<6,23,'='>
+                #T_GET_ATTR<6,20,'.'>
+                #T_KEYWORD<6,16,'this'>
+                #T_ATTR<6,21,'x'>
+                _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+                _attr = Token(Token.T_ATTR, token.line, token.index, meth.children[0].value)
+                _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr])
+                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, meth])
+                methods.append(_assign)
+
+        if constructor is not None:
+            methods.extend(constructor.children[2].children)
+
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
+        methods.append(_return)
+
+        if parent_class.children:
+        # if False:
+            parent_class_name = parent_class.children[0].value
+
+            _parent = Token(name.type, token.line, token.index, parent_class_name)
+            _bind = Token(Token.T_ATTR, token.line, token.index, "bind")
+            _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+            _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_parent, _bind])
+
+            _arglist = Token(Token.T_ARGLIST, token.line, token.index, "()", [_this])
+            _fncall = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
+            _super = Token(Token.T_LOCAL_VAR, token.line, token.index, "super")
+            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_super, _fncall])
+
+            # _super = Token("T_CREATE_SUPER", token.line, token.index, "super", [_parent, _this])
+            methods.insert(0, _assign)
+
+        # TODO: copy dict from PARENT_CLASS.prototype
+        #       then update using CLASS.prototype
+        #       -- may require a special python function
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto = Token(Token.T_ATTR, token.line, token.index, "prototype")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _proto])
+        _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, _object])
+        methods.insert(0, _assign)
+
+        if constructor is None:
+
+            _name = Token(Token.T_TEXT, token.line, token.index, 'constructor', [])
+            _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [])
+            _block = Token(Token.T_BLOCK, token.line, token.index, '{}', [])
+            _closure = Token(Token.T_CLOSURE, token.line, token.index, '', [])
+            _meth = Token(Token.T_METHOD, token.line, token.index, '', [_name,_arglist, _block, _closure])
+
+            constructor = _meth
+        else:
+
+            constructor = constructor.clone()
+
+        constructor.children[2].children = methods
+
+        constructor.type = Token.T_FUNCTION
+        constructor.children[0] = name
+
+        parent.children[index] = constructor
+
+    def _visit_instance_of(self, parent, token, index):
+
+        lhs, rhs = token.children
+        _name = Token(Token.T_GLOBAL_VAR, token.line, token.index, '_x_daedalus_js_instance_of')
+        _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [lhs, rhs])
+        _call = Token(Token.T_FUNCTIONCALL, token.line, token.index, '', [_name, _arglist])
+
+        parent.children[index] = _call
+
+    def _visit_super(self, parent, token, index):
+
+        token.type = Token.T_LOCAL_VAR
 
 class VmCompiler(object):
 
@@ -304,7 +429,6 @@ class VmCompiler(object):
             Token.T_STRING: self._visit_string,
             Token.T_OBJECT: self._visit_object,
             Token.T_LIST: self._visit_list,
-            Token.T_REGEX: self._visit_regex,
             Token.T_GET_ATTR: self._visit_get_attr,
             Token.T_SUBSCR: self._visit_subscr,
             Token.T_ATTR: self._visit_attr,
@@ -322,17 +446,11 @@ class VmCompiler(object):
             Token.T_DELETE_VAR: self._visit_delete_var,
             Token.T_FREE_VAR: self._visit_free_var,
             Token.T_CELL_VAR: self._visit_cell_var,
-            Token.T_CLASS: self._visit_class,
             Token.T_NEW: self._visit_new,
-            Token.T_INSTANCE_OF: self._visit_instance_of,
             Token.T_INCLUDE: self._visit_include,
             Token.T_EXPORT: self._visit_export,
             Token.T_EXPORT_DEFAULT: self._visit_export_default,
             Token.T_EXPORT_ARGS: self._visit_export_args,
-            #"T_CREATE_SUPER": self._visit_create_super,
-        }
-
-        self.compile_actions = {
         }
 
         self.functions = []
@@ -560,7 +678,6 @@ class VmCompiler(object):
         self._push_token(depth, VmCompiler.C_VISIT, arglist)
         self._push_token(depth, VmCompiler.C_VISIT, block)
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_l)
-
 
     def _visit_for(self, depth, state, token):
 
@@ -1011,26 +1128,6 @@ class VmCompiler(object):
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
         self._push_instruction(self._build_instr_string(state, token, value))
 
-    def _visit_regex(self, depth, state, token):
-
-        expr, flag = token.value[1:].rsplit('/', 1)
-        expr = repr(expr)
-        flag = repr(flag)
-
-        _regex = Token(Token.T_GLOBAL_VAR, token.line, token.index, 'RegExp')
-        _expr = Token(Token.T_STRING, token.line, token.index, expr)
-        _flag = Token(Token.T_STRING, token.line, token.index, flag)
-        _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [_expr, _flag])
-        _call = Token(Token.T_FUNCTIONCALL, token.line, token.index, '', [_regex, _arglist])
-
-        _new = Token(Token.T_NEW, token.line, token.index, 'new', [_call])
-
-        self._push_token(depth, state, _new)
-
-        #print("regex not implemented")
-        #value = JsString(token.value)
-        #elf._push_instruction(self._build_instr_string(state, token, value))
-
     def _visit_number(self, depth, state, token):
 
         try:
@@ -1055,9 +1152,6 @@ class VmCompiler(object):
         elif token.value == "this":
             opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
             self._push_instruction(VmInstruction(opcode, index, token=token))
-        elif token.value == "super":
-            _sup = Token(Token.T_LOCAL_VAR, token.line, token.index, token.value)
-            return self._visit_text(depth, state, _sup)
         else:
             raise VmCompileError(token, "not implemented")
 
@@ -1190,118 +1284,10 @@ class VmCompiler(object):
             flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
             self._push_token(depth, flag0, expr_call)
 
-    def _visit_class(self, depth, state, token):
-
-        name = token.children[0]
-        parent = token.children[1]
-        block1 = token.children[2]
-        closure1 = token.children[3]
-
-        constructor = None
-        methods = []
-        for meth in block1.children:
-
-            if meth.children[0].value == "constructor":
-                constructor = meth
-            else:
-                meth = meth.clone()
-                meth.type = Token.T_LAMBDA
-
-                #T_ASSIGN<6,23,'='>
-                #T_GET_ATTR<6,20,'.'>
-                #T_KEYWORD<6,16,'this'>
-                #T_ATTR<6,21,'x'>
-                _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
-                _attr = Token(Token.T_ATTR, token.line, token.index, meth.children[0].value)
-                _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr])
-                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, meth])
-                methods.append(_assign)
-
-        if constructor is not None:
-            methods.extend(constructor.children[2].children)
-
-        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
-        _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
-        methods.append(_return)
-
-        if parent.children:
-        # if False:
-            parent_cls = parent.children[0].value
-
-            _parent = Token(name.type, token.line, token.index, parent_cls)
-            _bind = Token(Token.T_ATTR, token.line, token.index, "bind")
-            _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
-            _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_parent, _bind])
-
-            _arglist = Token(Token.T_ARGLIST, token.line, token.index, "()", [_this])
-            _fncall = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
-            _super = Token(Token.T_LOCAL_VAR, token.line, token.index, "super")
-            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_super, _fncall])
-
-            # _super = Token("T_CREATE_SUPER", token.line, token.index, "super", [_parent, _this])
-            methods.insert(0, _assign)
-
-        # TODO: copy dict from PARENT_CLASS.prototype
-        #       then update using CLASS.prototype
-        #       -- may require a special python function
-        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
-        _proto = Token(Token.T_ATTR, token.line, token.index, "prototype")
-        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _proto])
-        _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
-        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, _object])
-        methods.insert(0, _assign)
-
-        if constructor is None:
-
-            _name = Token(Token.T_TEXT, token.line, token.index, 'constructor', [])
-            _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [])
-            _block = Token(Token.T_BLOCK, token.line, token.index, '{}', [])
-            _closure = Token(Token.T_CLOSURE, token.line, token.index, '', [])
-            _meth = Token(Token.T_METHOD, token.line, token.index, '', [_name,_arglist, _block, _closure])
-
-            constructor = _meth
-        else:
-
-            constructor = constructor.clone()
-
-        constructor.children[2].children = methods
-
-        constructor.type = Token.T_FUNCTION
-        constructor.children[0] = name
-        # print(constructor.toString(1))
-
-        arglist = constructor.children[1]
-        block2 = constructor.children[2]
-        closure2 = constructor.children[3]
-
-        opcode, index = self._token2index(name, False)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
-        self._build_function(state|VmCompiler.C_LOAD, token, name, arglist, block2, closure2, autobind=False)
-
-    def _visit_create_super(self, depth, state, token):
-
-        # TODO: not implemented
-        # intent is to load the 'super' keyword and add any missing properties
-        # from the parent class, but bound to the current 'this'
-        # this can be optimized by only generating instructions for functions
-        # that are actually used in the method
-        self._push_instruction(VmInstruction(opcodes.obj.CREATE_SUPER, token=token))
-
-        #self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
-
     def _visit_new(self, depth, state, token):
 
         flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
         self._push_token(depth, flag0, token.children[0])
-
-    def _visit_instance_of(self, depth, state, token):
-
-        lhs, rhs = token.children
-        _name = Token(Token.T_GLOBAL_VAR, token.line, token.index, '_x_daedalus_js_instance_of')
-        _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [lhs, rhs])
-        _call = Token(Token.T_FUNCTIONCALL, token.line, token.index, '', [_name, _arglist])
-
-        self._push_token(depth, state, _call)
 
     def _visit_return(self, depth, state, token):
         self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.RETURN, len(token.children), token=token))
@@ -1663,7 +1649,6 @@ operandsr = [
 
 def jsc(f):
 
-
     text = f(None)
 
     tokens = Lexer().lex(text)
@@ -1674,6 +1659,9 @@ def jsc(f):
 
     xform = TransformIdentityScope()
     xform.disable_warnings=True
+    xform.transform(ast)
+
+    xform = VmTransform()
     xform.transform(ast)
 
     compiler = VmCompiler()
@@ -1979,8 +1967,7 @@ class JsString(JsObject, metaclass=JsStringType):
             return -1
 
     def match(self, regex):
-        print("match not implemented", self, regex)
-        return False
+        return bool(regex.reg.match(self.value))
 
 class JsUndefined(JsObject):
     instance = None
@@ -2006,40 +1993,187 @@ class JsUndefined(JsObject):
 
 JsUndefined.instance = JsUndefined()
 
+class JsTimerFactory(object):
+    def __init__(self, runtime):
+        super(JsTimerFactory, self).__init__()
+        self.runtime = runtime
+
+        self.nextTimerId = 1
+        self.timers = {}
+        self.intervals = {}
+        self.queue = []
+
+    def _setInterval(self, fn, delay, *args):
+
+        timerId = self.nextTimerId
+        self.nextTimerId += 1
+
+        timeout = time.time() + delay/1000.0
+
+        posargs = JsObject()
+
+        frame = self.runtime._new_frame(fn, len(args), args, JsObject())
+        stack = [frame]
+
+        self.intervals[timerId] = (timeout, delay, stack)
+
+        self.queue.append((timeout, timerId))
+
+        return timerId
+
+    def _setTimeout(self, fn, delay, *args):
+
+        timerId = self.nextTimerId
+        self.nextTimerId += 1
+
+        timeout = time.time() + delay/1000.0
+
+        frame = self.runtime._new_frame(fn, len(args), args, JsObject())
+        stack = [frame]
+
+        self.timers[timerId] = (timeout, delay, stack)
+
+        self.queue.append((timeout, timerId))
+
+        return timerId
+
+    def _clearTimeout(self, fn, delay, *args):
+        pass
+
+    def _wait(self):
+        """
+         wait up to 5 seconds for any timer to expire
+        """
+
+        if len(self.timers) == 0:
+            return False
+
+        now = time.time()
+
+        expires_in = 5
+        for _, (timeout, delay, stack) in self.timers.items():
+            expires_in = min(timeout - now, expires_in)
+
+        if expires_in > 0:
+            time.sleep(expires_in)
+
+            # TODO: this pushes a value on the stack for every call
+            #frame = self.stack_frames[-1]
+            #frame.sp -= 3
+
+        return len(self.timers)
+
+    def check(self):
+
+        if self.queue:
+
+            now = time.time()
+            if now > self.queue[0][0]:
+                timeout, timerId = self.queue.pop(0)
+
+                if timerId in self.timers:
+                    stack = self.timers[timerId][2]
+                    del self.timers[timerId]
+                    return stack
+        return None
+
+class JsPromiseFactory(object):
+    def __init__(self, runtime):
+        super(JsPromiseFactory, self).__init__()
+        self.runtime = runtime
+
+    def __call__(self, callback=None):
+        return JsPromise(callback)
+
 class JsPromise(JsObject):
+
+    PENDING = 1
+    FULFILLED = 2
+    REJECTED = 3
 
     def __init__(self, callback=None):
         # callback: (resolve, reject) => {}
         super(JsPromise, self).__init__()
         self.callback = callback
+        self._state = JsPromise.PENDING
         self._result = None
+        self._error = None
+
+        setattr(self, "then", self._then)
+        setattr(self, "catch", self._catch)
+        setattr(self, "finally", self._finally)
+
         self._invoke()
 
     def _invoke(self):
 
         if isinstance(self.callback, JsFunction):
-
             runtime = VmRuntime()
-            runtime.initfn(self.callback)
-            rv, globals = runtime.run()
-            self._result = rv
+            runtime.initfn(self.callback, [self._resolve, self._reject], JsObject())
+            rv, _ = runtime.run()
         else:
-            self._result = self.callback()
+            try:
+                rv = self.callback()
+                self._resolve(rv)
+            except Exception as e:
+                self._reject(e)
 
-    def _then(self, callback=None):
+        if self._state == JsPromise.PENDING:
+            self._state = JsPromise.REJECTED
 
-        result = self._result
+        return
 
-        # callback: (success) => {}
-        return 123
+    def _resolve(self, res):
+        print("resolve promise", res)
+        self._state = JsPromise.FULFILLED
+        self._result = res
 
-    def _catch(self, callback=None):
-        # callback: (error) => {}
-        return 124
+    def _reject(self, err):
+        print("reject promise", res)
+        self._state = JsPromise.REJECTED
+        self._error = err
 
-    def _finally(self, callback=None):
-        # callback: () => {}
-        return 125
+    @jsc
+    def _then(self):
+        return """
+            function _then(onFulfilled, onRejected) {
+                // onFulfilled : value => {}
+                // onRejected : reason => {}
+
+                // TODO: wait for state to be 2 or 3
+
+                console.log(this._state)
+                if (this._state === 2) {
+                    console.log(this._state, "accept", this, this._result)
+                    if (onFulfilled) {
+                        onFulfilled(this._result)
+                    }
+                } else {
+                    console.log(this._state, "reject", this._error)
+                    if (onRejected) {
+                        onRejected(this._error)
+                    }
+                }
+
+                return this
+            }
+        """
+
+    @jsc
+    def _catch(self):
+         return """
+            function _catch(onRejected) {
+                return this._then(undefined, onRejected)
+            }
+        """
+
+    @jsc
+    def _finally(self):
+         return """
+            function _finally(onFinally) {
+                return this._then(onFinally, onFinally)
+            }
+        """
 
 def fetch(url, parameters):
 
@@ -2100,6 +2234,22 @@ class JsNavigator(JsObject):
         self.appVersion = JsString("0")
         self.userAgent = JsString("daedalus")
         self.appName = JsString("daedalus")
+
+class JsRegExp(object):
+    def __init__(self, expr, flags):
+        super(JsRegExp, self).__init__()
+
+        iflags = 0
+
+        cflags = {
+            "i": re.IGNORECASE,
+        }
+
+        for c in flags.value:
+            if c in cflags:
+                iflags |= cflags[c]
+
+        self.reg = re.compile(expr.value, iflags)
 
 # ---
 
@@ -2194,26 +2344,26 @@ class VmRuntime(object):
         self.enable_diag = False
         self.builtins = builtins
 
-    def initfn(self, fn):
+    def initfn(self, fn, args, kwargs):
 
-        mod = VmModule()
-        mod.functions = [fn.fndef]
-        self.init(mod, cells=fn.cells, bind_target=fn.bind_target)
+        frame = self._new_frame(fn, len(args), args, kwargs)
 
-    def init(self, module, cells=None, bind_target=None):
+        self.stack_frames = [frame]
 
-        if cells is None:
-            cells =JsObject()
+        self._init_builtins()
+
+    def init(self, module):
+
+        cells =JsObject()
 
         locals = JsObject()
-        if bind_target is None:
-            locals.setAttr("this", JsUndefined.instance)
-        else:
-            locals.setAttr("this", bind_target)
+        locals.setAttr("this", JsUndefined.instance)
 
         self.stack_frames = [VmStackFrame(module, module.functions[0], locals, cells)]
 
-        g = self.stack_frames[-1].globals
+        self._init_builtins()
+
+    def _init_builtins(self):
 
         console = lambda: None
         console.log = print
@@ -2227,7 +2377,7 @@ class VmRuntime(object):
             self.builtins['console'] = console
             self.builtins['Math'] = _math
             self.builtins['document'] = JsDocument()
-            self.builtins['Promise'] = JsPromise
+            self.builtins['Promise'] = JsPromiseFactory(self)
             self.builtins['fetch'] = fetch
             self.builtins['Set'] = JsSet
             self.builtins['Array'] = JsArray
@@ -2237,7 +2387,14 @@ class VmRuntime(object):
             self.builtins['parseFloat'] = lambda x: x
             self.builtins['parseInt'] = lambda x, base=10: x
             self.builtins['isNaN'] = lambda x: False
-            self.builtins['RegExp'] = lambda expr,flags: False
+            self.builtins['RegExp'] = JsRegExp
+
+        # these must be unqiue to the runtime
+        self.timer = JsTimerFactory(self)
+        self.builtins['setTimeout'] = self.timer._setTimeout
+        self.builtins['setInterval'] = self.timer._setInterval
+        self.builtins['clearTimeout'] = self.timer._clearTimeout
+        self.builtins['wait'] = self.timer._wait
 
     def _compile_fn(self, text, debug=False):
         tokens = Lexer().lex(text)
@@ -2297,13 +2454,67 @@ class VmRuntime(object):
                     print("***")
             raise e
 
+
+    def _new_frame(self, func, argc, args, kwargs):
+        posargs = kwargs #JsObject()
+
+        if func.bind_target:
+            posargs.setAttr("this", func.bind_target)
+        else:
+            posargs.setAttr("this", posargs)
+
+        for i, lbl in enumerate(func.fndef.arglabels):
+
+            if i < len(args):
+                val = args[i] # given value
+            elif not func.args:
+                val = JsUndefined.instance
+            else:
+                val = func.args[i] # default value
+
+            if not posargs._hasAttr(lbl):
+                posargs.setAttr(lbl, val)
+
+        # TODO: rest parameters
+        rest = []
+        if len(args) > len(func.fndef.arglabels):
+            rest = args[len(func.fndef.arglabels):]
+        rest = JsArray(rest)
+
+        if func.fndef.rest_name is not None:
+            posargs.setAttr(func.fndef.rest_name, rest)
+
+        # cell var fix for when a function argument is also a cell var
+        # store the positional argument as a cell var instead of a local var
+        for arglabel in func.fndef.arglabels:
+            if arglabel in func.fndef.cell_names:
+                if not func.cells._hasAttr(arglabel):
+                    ref = VmReference(arglabel, JsUndefined.instance)
+                    func.cells.setAttr(arglabel, ref)
+                ref = func.cells.getAttr(arglabel)
+                ref.value = posargs.getAttr(arglabel)
+
+        new_frame = VmStackFrame(func.module, func.fndef, posargs, func.cells)
+
+        return new_frame
+
     def _run(self):
 
         frame = self.stack_frames[-1]
         instrs = frame.fndef.instrs
         return_value = None
 
+        history = []
+
         while frame.sp < len(instrs):
+
+            tstack = self.timer.check()
+            if tstack != None:
+                history.append((self.stack_frames, frame, instrs, return_value))
+                self.stack_frames = tstack
+                frame = tstack[-1]
+                instrs = frame.fndef.instrs
+                return_value = None
 
             instr = instrs[frame.sp]
 
@@ -2348,43 +2559,8 @@ class VmRuntime(object):
                 func = frame.stack.pop()
 
                 if isinstance(func, JsFunction):
-                    posargs = kwargs #JsObject()
 
-                    if func.bind_target:
-                        posargs.setAttr("this", func.bind_target)
-                    else:
-                        posargs.setAttr("this", posargs)
-
-                    for i, lbl in enumerate(func.fndef.arglabels):
-
-                        if i < len(args):
-                            val = args[i] # given value
-                        else:
-                            val = func.args[i] # default value
-
-                        if not posargs._hasAttr(lbl):
-                            posargs.setAttr(lbl, val)
-
-                    # TODO: rest parameters
-                    rest = []
-                    if len(args) > len(func.fndef.arglabels):
-                        rest = args[len(func.fndef.arglabels):]
-                    rest = JsArray(rest)
-
-                    if func.fndef.rest_name is not None:
-                        posargs.setAttr(func.fndef.rest_name, rest)
-
-                    # cell var fix for when a function argument is also a cell var
-                    # store the positional argument as a cell var instead of a local var
-                    for arglabel in func.fndef.arglabels:
-                        if arglabel in func.fndef.cell_names:
-                            if not frame.cells._hasAttr(arglabel):
-                                ref = VmReference(arglabel, JsUndefined.instance)
-                                func.cells.setAttr(arglabel, ref)
-                            ref = func.cells.getAttr(arglabel)
-                            ref.value = posargs.getAttr(arglabel)
-
-                    new_frame = VmStackFrame(func.module, func.fndef, posargs, func.cells)
+                    new_frame = self._new_frame(func, argc, args, kwargs)
 
                     self.stack_frames.append(new_frame)
                     frame.sp += 1
@@ -2655,14 +2831,11 @@ class VmRuntime(object):
                 tos2 = frame.stack.pop()
                 tos2.array.extend(tos1.array)
                 frame.stack.append(tos2)
-
             elif instr.opcode == opcodes.obj.UPDATE_OBJECT:
                 tos1 = frame.stack.pop()
                 tos2 = frame.stack.pop()
                 tos2.data.update(tos1.data)
                 frame.stack.append(tos2)
-
-
             elif instr.opcode == opcodes.obj.CREATE_OBJECT:
 
                 args = []
@@ -2725,21 +2898,40 @@ class VmRuntime(object):
                 frame.stack.append(None)
             elif instr.opcode == opcodes.const.UNDEFINED:
                 frame.stack.append(JsUndefined.instance)
-
             else:
                 raise Exception("%r" % instr)
 
             frame.sp += 1
 
             if frame.sp >= len(frame.fndef.instrs):
-                self.stack_frames.pop()
-                if len(self.stack_frames) == 0:
-                    break
 
-                frame = self.stack_frames[-1]
-                instrs = frame.fndef.instrs
-                frame.stack.append(None)
+                self.stack_frames.pop()
+
+                if history:
+                    self.stack_frames, frame, instrs, return_value = history.pop()
+                else:
+
+                    if self.timer._wait():
+
+                        if len(self.stack_frames) == 0:
+                            stack = self.timer.check()
+                            if stack:
+                                # TODO: this clobers the return value
+                                # when switching to the timer function
+                                self.stack_frames = stack
+                                frame = self.stack_frames[-1]
+                                instrs = frame.fndef.instrs
+                                return_value = None
+                                continue
+                    if len(self.stack_frames) == 0:
+                        break
+
+                    frame = self.stack_frames[-1]
+                    instrs = frame.fndef.instrs
+                    frame.stack.append(None)
+
                 continue
+        print("runtime exit", self.timer.queue)
 
         return return_value, frame.globals
 
@@ -3182,18 +3374,18 @@ def main():
         let b = false?4:8
     """
 
-    text1 = """
+    constructobj1 = """
         let a = 1, b = 2;
         let o = {a:a, b:b}
     """
 
-    text1 = """
+    objectin1 = """
         let o = {a:1}
         let a1 = "a" in o
         let a2 = "b" in o
     """
 
-    text1 = """
+    typeof1 = """
         //console.log(typeof({})==='object')
 
         class A { constructor() {} }
@@ -3392,9 +3584,7 @@ def main():
         }
     """
 
-    text1 = """
-        x="abc".match(/A/i)
-    """
+
 
 
     text1 = """
@@ -3436,7 +3626,49 @@ def main():
         //console.log(randomInt(0,100))
     """
 
+    text1 = """
+        x="abc".match(/A/i)
+        y="def".match(/A/i)
+    """
 
+    text1 = """
+
+
+        //setTimeout((x)=>{console.log(x)}, 500)
+        function f(x) {
+            console.log("hello " + x)
+        }
+        setTimeout(f, 500, "world")
+
+        wait()
+        console.log("wait over")
+    """
+
+    text1 = """
+
+
+        const p = new Promise((resolve, reject) => {
+            resolve('world')
+        })
+
+        p.then(res=>{console.log("Hello " + res)}).finally(res=>{console.log("done")})
+    """
+
+    text1 = """
+
+
+        fetch("", {}).then(res => {console.log(res)})
+    """
+
+    text1 = """
+
+
+        const p = new Promise((resolve, reject) => {
+            setTimeout(()=>{resolve(true);}, 500)
+        })
+
+        p.then(res=>{console.log("done")})
+    """
 
     if False:
         tokens = Lexer().lex(text1)
