@@ -10,10 +10,40 @@ from tests.util import edit_distance
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityScope, TransformReplaceIdentity, TransformClassToFunction
-from daedalus.vm import VmCompiler, VmRuntime
+from daedalus.vm import VmCompiler, VmRuntime, VmTransform
 
 
 VariableScope.disable_warnings = True
+
+def evaljs(text, diag=False):
+
+    lexer = Lexer()
+    parser = Parser()
+    parser.disable_all_warnings = True
+
+    tokens = lexer.lex(text)
+    ast = parser.parse(tokens)
+
+    xform = TransformIdentityScope()
+    xform.disable_warnings=True
+    xform.transform(ast)
+
+    xform = VmTransform()
+    xform.transform(ast)
+
+    if diag:
+        print(ast.toString(1))
+
+    compiler = VmCompiler()
+    module = compiler.compile(ast)
+
+    if diag:
+        module.dump()
+
+    runtime = VmRuntime()
+    runtime.enable_diag = diag
+    runtime.init(module)
+    return runtime.run()
 
 class VmTestCase(unittest.TestCase):
 
@@ -34,35 +64,14 @@ class VmTestCase(unittest.TestCase):
     def tearDown(self):
         super().tearDown()
 
-    def evaljs(self, text, diag=False):
 
-        tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-
-        xform = TransformIdentityScope()
-        xform.disable_warnings=True
-        xform.transform(ast)
-
-        if diag:
-            print(ast.toString(1))
-
-        compiler = VmCompiler()
-        module = compiler.compile(ast)
-
-        if diag:
-            module.dump()
-
-        runtime = VmRuntime()
-        runtime.enable_diag = diag
-        runtime.init(module)
-        return runtime.run()
 
     def test_assign(self):
 
         text = """
             let x = "abc"
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'].value, "abc")
 
     def test_branch_false(self):
@@ -75,7 +84,7 @@ class VmTestCase(unittest.TestCase):
                 x += 7
             }
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 7)
 
     def test_branch_true(self):
@@ -88,7 +97,7 @@ class VmTestCase(unittest.TestCase):
                 x += 7
             }
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 6)
 
     def test_math_unary_not(self):
@@ -96,7 +105,7 @@ class VmTestCase(unittest.TestCase):
         text = """
             var x = !false
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 1)
 
     def test_function_while(self):
@@ -107,7 +116,7 @@ class VmTestCase(unittest.TestCase):
                 i -= 1
             }
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['i'], 0)
 
     def test_function_simple(self):
@@ -122,7 +131,7 @@ class VmTestCase(unittest.TestCase):
             const c = mult(4, 5)
             const d = mult(1, 2, 3, 4)
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['a'], 8)
         self.assertEqual(globals_.values['b'], 16)
         self.assertEqual(globals_.values['c'], 20)
@@ -141,7 +150,7 @@ class VmTestCase(unittest.TestCase):
 
             const y = factorial(5)
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['y'], 120)
 
     def test_lambda_simple(self):
@@ -152,7 +161,7 @@ class VmTestCase(unittest.TestCase):
             let r2 = add(1)
             let r3 = add(6,7)
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['r1'],  4)
         self.assertEqual(globals_.values['r2'],  3)
         self.assertEqual(globals_.values['r3'], 13)
@@ -169,7 +178,7 @@ class VmTestCase(unittest.TestCase):
             r2 = g()
             r3 = g()
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['r1'], 6)
         self.assertEqual(globals_.values['r2'], 7)
         self.assertEqual(globals_.values['r3'], 8)
@@ -185,7 +194,7 @@ class VmTestCase(unittest.TestCase):
             z = x.a
 
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['y'], 1)
         self.assertEqual(globals_.values['z'], 2)
 
@@ -200,7 +209,7 @@ class VmTestCase(unittest.TestCase):
             x[2] = 12
             d = x[2]
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['a'], 4)
         self.assertEqual(globals_.values['b'], 5)
         self.assertEqual(globals_.values['c'], 6)
@@ -223,7 +232,7 @@ class VmTestCase(unittest.TestCase):
             f()
 
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['g'], 3)
 
     def test_class_simple(self):
@@ -247,7 +256,7 @@ class VmTestCase(unittest.TestCase):
 
             x2 = p.get_x()
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 6)
         self.assertEqual(globals_.values['y'], 7)
         self.assertEqual(globals_.values['x2'], 6)
@@ -283,7 +292,7 @@ class VmTestCase(unittest.TestCase):
             x2 = p.get_x()
             m = p.mul()
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 6)
         self.assertEqual(globals_.values['y'], 7)
         self.assertEqual(globals_.values['x2'], 6)
@@ -302,10 +311,285 @@ class VmTestCase(unittest.TestCase):
             c ??= 4
 
         """
-        result, globals_ = self.evaljs(text, diag=False)
+        result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['a'], 4)
         self.assertEqual(globals_.values['b'], 4)
         self.assertEqual(globals_.values['c'], 1)
+
+class VmBasicTypesTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_template_string(self):
+        text = """
+            let height = 1
+            let s = `{height: ${height+1}em}`
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['s'], "{height: 2em}")
+
+
+class VmLogicTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_logical_and(self):
+        text = """
+            let a = [
+                true && true,
+                true && false,
+                false && true,
+                false && false,
+            ]
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['a'].array, [True, False, False, False])
+
+    def test_logical_or(self):
+        text = """
+            let a = [
+                true || true,
+                true || false,
+                false || true,
+                false || false,
+            ]
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['a'].array, [True, True, True, False])
+
+    def test_ternary(self):
+
+        text = """
+            let a = true?4:8
+            let b = false?4:8
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['a'], 4)
+        self.assertEqual(globals_.values['b'], 8)
+
+    def test_null_coalescing(self):
+
+        text = """
+            let w = 1 ?? 4          // 1
+            let x = 0 ?? 4          // 0
+            let y = undefined ?? 4  // 4
+            let z = null ?? 4       // 4
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['w'], 1)
+        self.assertEqual(globals_.values['x'], 0)
+        self.assertEqual(globals_.values['y'], 4)
+        self.assertEqual(globals_.values['z'], 4)
+
+class VmFunctionTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_lambda1(self):
+
+        text = """
+            const f = (x)=>x
+            x = f(1)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 1)
+
+    def test_lambda2(self):
+
+        text = """
+            const f = a => { return b => { return b+a } }
+            let x = f(6)(7)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 13)
+
+    def test_lambda3(self):
+
+        text = """
+            const f = a => { return b => b+a }
+            let x = f(6)(7)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 13)
+
+    def test_lambda4(self):
+
+        text = """
+            const f = a => b => b+a
+            let x = f(6)(7)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 13)
+
+    @unittest.expectedFailure
+    def test_spread_call(self):
+
+        text = """
+
+            function sum(a,b,c) {return a+b+c}
+            a = [1,2,3]
+            x = sum(...a)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 13)
+
+    def test_cell_lambda_recursion(self):
+
+        text = """
+            //obj2 is a cell variable, and a function argument
+            // it requires special handling when building the stack frame
+
+            function r1(obj2) {
+
+                let result = Object.keys(obj2).map(key => {
+                    let val = obj2[key]
+                    if (typeof(val) === 'object') {
+                        return key + "_" + r1(val)
+                    } else {
+                        return key+"="+val
+                    }
+                })
+                return result.join(",")
+            }
+
+            let obj = {"a": {"x1": "y1"}, "b": {"x2": "y2"}}
+            let result = r1(obj)
+
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], "b_x2=y2,a_x1=y1")
+
+class VmObjectTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_object_construct(self):
+
+        text = """
+            let a = 1, b = 2;
+            let o = {a, b}
+            let t1 = "a" in o
+            let t2 = "c" in o
+        """
+        result, globals_ = evaljs(text, diag=False)
+        obj = globals_.values['o']
+        a = obj.getAttr('a')
+        b = obj.getAttr('b')
+        self.assertEqual(a, 1)
+        self.assertEqual(b, 2)
+        self.assertEqual(globals_.values['t1'], True)
+        self.assertEqual(globals_.values['t2'], False)
+
+    def test_object_construct_spread(self):
+
+        text = """
+            let o1 = {a:0, b:2}
+            let o2 = {a:1, ...o1, c:3}
+        """
+        result, globals_ = evaljs(text, diag=False)
+        obj = globals_.values['o2']
+        a = obj.getAttr('a')
+        b = obj.getAttr('b')
+        c = obj.getAttr('c')
+        self.assertEqual(a, 0)
+        self.assertEqual(b, 2)
+        self.assertEqual(c, 3)
+
+    def test_object_delete(self):
+
+        text = """
+            let o = {a:1, b:2}
+            delete o.a
+            delete o['b']
+
+            let t1 = 'a' in o
+            let t2 = 'b' in o
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['t1'], False)
+        self.assertEqual(globals_.values['t2'], False)
+
+
+class VmTimerTestCase(unittest.TestCase):
+    # test for setTimeout, setInterval, and Promises
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
 
 
 def main():
