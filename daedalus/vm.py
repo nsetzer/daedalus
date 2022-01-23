@@ -3133,85 +3133,12 @@ def main():
     # ----------
     # add these as  tests
 
-    logical1 = """
-        /*
-        let a1 = [
-            true && true,
-            true && false,
-            false && true,
-            false && false,
-        ]
-        console.log(a1[0], a1[1], a1[2], a1[3])
-        */
-        //console.log(0, true && true)
-        //console.log(1, true && false)
-        //console.log(2, false && true)
-        //console.log(3, false && false)
-
-        console.log(0, true  || true)
-        console.log(1, true  || false)
-        console.log(2, false || true)
-        console.log(3, false || false)
-
-        //let a = 0 || 2
-    """
-
-
-    lambd4 = """
-
-    // test 1
-    //const f = (a)=>a
-    //x = f(1)
-
-    // test 2
-    //const f = a => { return b => { return b+a } }
-    //let x = f(6)(7)
-
-    // test 3
-    //const f = a => { return b => b+a }
-    //let x = f(6)(7)
-
-    // test 4
-    const f = a => b => b+a
-    let x = f(6)(7)
-
-    """
-
-    ternary1 = """
-        let a = true?4:8
-        let b = false?4:8
-    """
-
-    text1 = """
-        let a = 1, b = 2;
-        let o = {a:a, b:b}
-    """
-
-    text1 = """
-        let o = {a:1}
-        let a1 = "a" in o
-        let a2 = "b" in o
-    """
-
     text1 = """
         //console.log(typeof({})==='object')
 
         class A { constructor() {} }
         let a = new A()
         let b = typeof(a)
-    """
-
-    spread1 = """
-        let t = {b:3}
-        let o = {a: 1, ...t, c: 5}
-        let sum = o.a + o.b + o.c
-    """
-
-    delete1 = """
-        let t = {a:1, b:3}
-        delete t.a
-        delete t['b']
-        let l = Object.keys(t).length // should be zero
     """
 
     export2 = """
@@ -3242,13 +3169,6 @@ def main():
         //r = f?.[0]
     """
 
-    text1 = """
-        let w = 1 ?? 4          // 1
-        let x = 0 ?? 4          // 0
-        let y = undefined ?? 4  // 4
-        let z = null ?? 4       // 4
-
-    """
     # ----------
 
     # todo
