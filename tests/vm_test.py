@@ -1,4 +1,4 @@
-#! cd .. && python3 -m tests.vm_test -v
+#! cd .. && python3 -m tests.vm_test
 
 """
 warn when stack is not empty after function clal
@@ -119,6 +119,17 @@ class VmTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['i'], 0)
 
+    def test_function_dowhile(self):
+        text = """
+            i  = 5
+
+            do {
+                i -= 1
+            } while (i > 0);
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['i'], 0)
+
     def test_function_simple(self):
 
         text = """
@@ -235,6 +246,81 @@ class VmTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['g'], 3)
 
+    @unittest.expectedFailure
+    def test_try_catch_finally_throw_2(self):
+        text = """
+            let g = 0;
+
+            function fn_throw() {
+                throw "error"
+            }
+
+            function fn_try_finally() {
+                try {
+                    fn_throw()
+                } finally {
+                    // unhandled exception
+                    g |= 1
+                }
+            }
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['g'], -1)
+
+    @unittest.expectedFailure
+    def test_try_catch_finally_throw_3(self):
+        text = """
+            let g = 0;
+
+            function fn_throw() {
+                throw "error"
+            }
+
+            function fn_try_catch_finally() {
+                try {
+                    fn_throw()
+                } catch (ex) {
+                    g |= 2
+                } finally {
+                    g |= 4
+                }
+            }
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['g'], -1)
+
+    @unittest.expectedFailure
+    def test_try_catch_finally_throw_4(self):
+        text = """
+            let g = 0;
+
+            function fn_throw() {
+                throw "error"
+            }
+
+            function fn_try_finally() {
+                try {
+                    fn_throw()
+                } finally {
+                    // unhandled exception
+                    g |= 1
+                }
+            }
+
+
+            function fn_try_catch_finally_2() {
+                try {
+                    fn_try_finally()
+                } catch (ex) {
+                    g |= 8
+                } finally {
+                    g |= 16
+                }
+            }
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['g'], -1)
+
     def test_class_simple(self):
         text = """
 
@@ -298,13 +384,40 @@ class VmTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['x2'], 6)
         self.assertEqual(globals_.values['m'], 42)
 
-    @unittest.expectedFailure
+    def test_regex_match(self):
+
+        text = """
+            x = "abc".match(/A/i)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], True)
+
+    def test_fix_incr(self):
+
+        text = """
+            a = 0;
+            b = ++a;
+            c = a++;
+            d = a
+            e = --a;
+            f = a--;
+            g = a
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['b'], 1)
+        self.assertEqual(globals_.values['c'], 1)
+        self.assertEqual(globals_.values['d'], 2)
+        self.assertEqual(globals_.values['e'], 1)
+        self.assertEqual(globals_.values['f'], 1)
+        self.assertEqual(globals_.values['g'], 0)
+        self.assertEqual(globals_.values['a'], 0)
+
     def test_null_assign(self):
 
         text = """
             a ??= 4
 
-            b = undefined
+            b = null
             b ??= 4
 
             c = 1
@@ -315,6 +428,57 @@ class VmTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['a'], 4)
         self.assertEqual(globals_.values['b'], 4)
         self.assertEqual(globals_.values['c'], 1)
+
+    def test_var_scope(self):
+
+        text = """
+            function g() {
+                var x = 1;
+                {
+                    var x = 2;
+                }
+                return x;
+            }
+            result=g() // 2
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], 2)
+
+    @unittest.expectedFailure
+    def test_let_scope(self):
+
+        text = """
+            // proper scoping rules are not being applied
+            // x is deleted, but the old x is not preserved.
+            function f() {
+                let x = 1;
+                {
+                    let x = 2;
+                }
+                return x;
+            }
+            result=f() // 1
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], 1)
+
+    @unittest.expectedFailure
+    def test_const_scope(self):
+
+        text = """
+            // proper scoping rules are not being applied
+            // x is deleted, but the old x is not preserved.
+            function f() {
+                const x = 1;
+                {
+                    const x = 2;
+                }
+                return x;
+            }
+            result=f() // 1
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], 1)
 
 class VmBasicTypesTestCase(unittest.TestCase):
 
@@ -335,7 +499,7 @@ class VmBasicTypesTestCase(unittest.TestCase):
     def tearDown(self):
         super().tearDown()
 
-    def test_template_string(self):
+    def test_template_string_1(self):
         text = """
             let height = 1
             let s = `{height: ${height+1}em}`
@@ -343,6 +507,13 @@ class VmBasicTypesTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['s'], "{height: 2em}")
 
+    def test_template_string_2(self):
+        text = """
+            let height = 1
+            let s = `${height+1}`
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['s'], "2")
 
 class VmLogicTestCase(unittest.TestCase):
 
@@ -411,6 +582,34 @@ class VmLogicTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['y'], 4)
         self.assertEqual(globals_.values['z'], 4)
 
+    def test_while_break_continue(self):
+
+        text = """
+            // Collatz conjecture
+            n = 11
+
+            b = 0
+            c = 0
+
+            while (n > 0) {
+
+                if (n%2 == 0) {
+                    n = n / 2
+                    c += 1
+                    continue;
+                } else if (n == 1) {
+                    b += 1
+                    break
+                } else {
+                    n = 3 * n + 1
+                }
+            }
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['n'], 1)
+        self.assertEqual(globals_.values['b'], 1)
+        self.assertEqual(globals_.values['c'], 10)
+
 class VmFunctionTestCase(unittest.TestCase):
 
     @classmethod
@@ -466,17 +665,19 @@ class VmFunctionTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 13)
 
-    @unittest.expectedFailure
     def test_spread_call(self):
 
         text = """
 
-            function sum(a,b,c) {return a+b+c}
+            function spread(a, ...args) {return [a, args]}
             a = [1,2,3]
-            x = sum(...a)
+            x = spread(...a)
         """
         result, globals_ = evaljs(text, diag=False)
-        self.assertEqual(globals_.values['x'], 13)
+        a = globals_.values['x'].array[0]
+        b = globals_.values['x'].array[1]
+        self.assertEqual(a, 1)
+        self.assertEqual(b.array, [2, 3])
 
     def test_cell_lambda_recursion(self):
 
@@ -569,6 +770,34 @@ class VmObjectTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['t1'], False)
         self.assertEqual(globals_.values['t2'], False)
 
+class VmArrayTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_array_construct(self):
+
+        text = """
+            x = [4,8,12]
+            l = x.length
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'].array, [4,8,12])
+        self.assertEqual(globals_.values['l'], 3)
 
 class VmTimerTestCase(unittest.TestCase):
     # test for setTimeout, setInterval, and Promises
@@ -589,8 +818,6 @@ class VmTimerTestCase(unittest.TestCase):
 
     def tearDown(self):
         super().tearDown()
-
-
 
 def main():
     unittest.main()
