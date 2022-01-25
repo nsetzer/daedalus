@@ -169,6 +169,12 @@ class VmTransform(TransformBaseV2):
         if token.type == Token.T_INSTANCE_OF:
             self._visit_instance_of(parent, token, index)
 
+        if token.type == Token.T_FOR_IN:
+            self._visit_for_in(parent, token, index)
+
+        if token.type == Token.T_FOR_OF:
+            self._visit_for_of(parent, token, index)
+
         if token.type == Token.T_KEYWORD and token.value == "super":
             token.type = Token.T_LOCAL_VAR
 
@@ -249,6 +255,23 @@ class VmTransform(TransformBaseV2):
         _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
         methods.append(_return)
 
+
+        # the class constructor has a property which is the name of the class
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _attr1 = Token(Token.T_ATTR, token.line, token.index, "constructor")
+        _getattr1 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr1])
+        _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr1, _object])
+        methods.insert(0, _assign)
+
+        _getattr1 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr1])
+        _attr2 = Token(Token.T_ATTR, token.line, token.index, "name")
+        _getattr2 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_getattr1, _attr2])
+        _clsname = Token(Token.T_STRING, token.line, token.index, repr(name.value))
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr2, _clsname])
+
+        methods.insert(1, _assign)
+
         if parent_class.children:
         # if False:
             parent_class_name = parent_class.children[0].value
@@ -275,6 +298,15 @@ class VmTransform(TransformBaseV2):
         _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
         _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, _object])
         methods.insert(0, _assign)
+
+        _this1 = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto1 = Token(Token.T_ATTR, token.line, token.index, "__proto__")
+        _getattr1 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this1, _proto1])
+        _this2 = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto2 = Token(Token.T_ATTR, token.line, token.index, "prototype")
+        _getattr2 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this2, _proto2])
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr1, _getattr2])
+        methods.insert(1, _assign)
 
         if constructor is None:
 
@@ -308,6 +340,103 @@ class VmTransform(TransformBaseV2):
     def _visit_super(self, parent, token, index):
 
         token.type = Token.T_LOCAL_VAR
+
+    def _visit_for_in(self, parent, token, index):
+        """
+
+        convert
+
+            for (expr1 of expr2) {
+                ...
+            }
+
+        Into:
+
+            _iterator_$line_$index = Object.keys(expr2)[Symbol.iterator]()
+            _iterator_result_$line_$index = _iterator_$line_$index.next()
+            while (!_iterator_result_$line_$index.done) {
+                expr1 = _iterator_result_$line_$index.value
+                ...
+                _iterator_result_$line_$index = _iterator_$line_$index.next()
+            }
+
+        """
+        expr_var, expr_seq, body = token.children
+
+        _object = Token(Token.T_GLOBAL_VAR, token.line, token.index, "Object")
+        _attr = Token(Token.T_ATTR, token.line, token.index, "keys")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_object, _attr])
+        _arglist =Token(Token.T_ARGLIST, token.line, token.index, "()", [expr_seq])
+        _call = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
+
+        parent.children[index] = self._for_iter(token, expr_var, _call, body)
+
+    def _visit_for_of(self, parent, token, index):
+        """
+
+        convert
+
+            for (expr1 of expr2) {
+                ...
+            }
+
+        Into:
+
+            _iterator_$line_$index = expr2[Symbol.iterator]()
+            _iterator_result_$line_$index = _iterator_$line_$index.next()
+            while (!_iterator_result_$line_$index.done) {
+                expr1 = _iterator_result_$line_$index.value
+                ...
+                _iterator_result_$line_$index = _iterator_$line_$index.next()
+            }
+
+        """
+        expr_var, expr_seq, body = token.children
+        parent.children[index] = self._for_iter(token, expr_var, expr_seq, body)
+
+    def _for_iter(self, token, expr_var, expr_seq, body):
+
+
+        # _iterator_$line_$index = expr2[Symbol.iterator]()
+        varname1 = "_iterator_%d_%d" % (token.line, token.index)
+        _iterobj = Token(Token.T_LOCAL_VAR, token.line, token.index, varname1)
+        _symbol = Token(Token.T_GLOBAL_VAR, token.line, token.index, "Symbol")
+        _attr = Token(Token.T_ATTR, token.line, token.index, "iterator")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_symbol, _attr])
+        _subscr = Token(Token.T_SUBSCR, token.line, token.index, "", [expr_seq, _getattr])
+        _arglist =Token(Token.T_ARGLIST, token.line, token.index, "()")
+        _rhs = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_subscr, _arglist])
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_iterobj, _rhs])
+        _var = Token(Token.T_VAR, token.line, token.index, "const", [_assign])
+
+        # _iterator_result_$line_$index = _iterator_$line_$index.next()
+        varname2 = "_iterator_result_%d_%d" % (token.line, token.index)
+        _iterresult = Token(Token.T_LOCAL_VAR, token.line, token.index, varname2)
+        _iterator = Token(Token.T_LOCAL_VAR, token.line, token.index, varname1)
+        _next = Token(Token.T_ATTR, token.line, token.index, "next")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_iterator, _next])
+        _arglist =Token(Token.T_ARGLIST, token.line, token.index, "()")
+        _rhs = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
+        _pre = Token(Token.T_ASSIGN, token.line, token.index, "=", [_iterresult, _rhs])
+
+        # while (!_iterator_result_$line_$index.done) {
+        # _iterator_result_$line_$index = _iterator_$line_$index.next()
+        _done = Token(Token.T_ATTR, token.line, token.index, "done")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_iterresult, _done])
+        _not = Token(Token.T_PREFIX, token.line, token.index, "!", [_getattr])
+        _arglist =Token(Token.T_ARGLIST, token.line, token.index, "()", [_not])
+        _value = Token(Token.T_ATTR, token.line, token.index, "value")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_iterresult, _value])
+        # TODO: preserve const or let in some way
+        if expr_var.type == Token.T_VAR:
+            expr_var = expr_var.children[0]
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [expr_var, _getattr])
+        _whilebody = Token(Token.T_BLOCK, token.line, token.index, "{}", [_assign, body, _pre.clone()])
+        _while = Token(Token.T_WHILE, token.line, token.index, "", [_arglist, _whilebody])
+
+        _block = Token(Token.T_BLOCK, token.line, token.index, "{}", [_var, _pre, _while])
+
+        return _block
 
 class VmCompiler(object):
 

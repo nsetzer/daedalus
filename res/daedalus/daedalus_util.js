@@ -168,7 +168,8 @@ function generateStyleSheetName() {
             let c = chars[randomInt(0, chars.length - 1)];
             name += c;
         }
-    } while (selector_names[name]!==undefined);
+    } while (name in selector_names);
+    //} while (selector_names[name]!==undefined);
 
     return name
 }

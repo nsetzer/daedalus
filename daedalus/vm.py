@@ -3,8 +3,6 @@
 """
 
 TODO: transformations:
-    - instance_of
-    - super
     - anything that constructs a Token() in the compiler
 
 TODO: update assignments and destructuring assignments must be transformed
@@ -158,6 +156,34 @@ def jsc(f):
 
     return fn
 
+class JsObjectPropIterator(object):
+    def __init__(self, obj):
+        super(JsObjectPropIterator, self).__init__()
+        self.obj = obj
+
+        if isinstance(obj, JsArray):
+            self.array = obj.array
+        elif isinstance(obj, JsObject):
+            self.array = JsObject.keys(obj).value
+
+        self.index = 0
+
+    def __call__(self):
+        return self
+
+    def next(self):
+
+        result = lambda: None
+        if self.index < len(self.array):
+            result.value = self.array[self.index]
+            result.done = False
+            self.index += 1
+        else:
+            result.value = JsUndefined.instance
+            result.done = True
+
+        return result
+
 class JsObject(object):
 
     type_name = "object"
@@ -172,7 +198,7 @@ class JsObject(object):
 
     def __repr__(self):
         # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
-        s = ",".join([str(s)+":"+str(self.data[s]) for s in self.data.keys()])
+        s = ",".join([str(s) for s in self.data.keys()])
         return "<%s(%s)>" % (self.__class__.__name__, s)
 
     def _hasAttr(self, name):
@@ -207,6 +233,9 @@ class JsObject(object):
         del self.data[name]
 
     def getIndex(self, index):
+        if JsString(index).value == "_x_daedalus_js_prop_iterator":
+            return JsObjectPropIterator(self)
+
         if index in self.data:
             return self.data[index]
         print("get undefined index %s" % index, type(index))
@@ -222,6 +251,10 @@ class JsObject(object):
     def keys(inst):
         x = JsArray(inst.data.keys())
         return x
+
+    @staticmethod
+    def getOwnPropertyNames(object):
+        return JsArray()
 
 class JsObjectCtor(JsObject):
 
@@ -268,6 +301,8 @@ class JsArray(JsObject):
         return "<%s(%s)>" % (self.__class__.__name__, s)
 
     def getIndex(self, index):
+        if JsString(index).value == "_x_daedalus_js_prop_iterator":
+            return JsObjectPropIterator(self)
         if isinstance(index, int):
             return self.array[index]
         return self.getAttr(index)
@@ -315,6 +350,31 @@ class JsArray(JsObject):
 
         seq = [str(s) for s in self.array]
         return JsString(string.value.join(seq))
+
+    @jsc
+    def filter(self):
+        return """
+            function filter(fn) {
+                out = []
+                for (let i=0; i < this.length; i++) {
+                    const v = this[i]
+                    if (fn(v)) {
+                        out.push(v)
+                    }
+                }
+                return out
+            }
+        """
+    @jsc
+    def forEach(self):
+        return """
+            function forEach(fn) {
+                for (let i=0; i < this.length; i++) {
+                    fn(this[i])
+                }
+            }
+        """
+
 
 class JsSet(JsObject):
     type_name = "Set"
@@ -730,7 +790,7 @@ class JsWindow(JsObject):
         pass
 
     def requestIdleCallback(self, callback, options):
-        pass
+        print("requestIdleCallback", callback, options)
 
 class JsNavigator(JsObject):
 
@@ -884,6 +944,8 @@ class VmRuntime(object):
         _math.floor = math.floor
         _math.ceil = math.ceil
         _math.random = random.random
+        _Symbol = lambda: None
+        _Symbol.iterator = "_x_daedalus_js_prop_iterator"
 
         if self.builtins is None:
             self.builtins = {}
@@ -901,6 +963,7 @@ class VmRuntime(object):
             self.builtins['parseInt'] = lambda x, base=10: x
             self.builtins['isNaN'] = lambda x: False
             self.builtins['RegExp'] = JsRegExp
+            self.builtins['Symbol'] = _Symbol
 
         # these must be unqiue to the runtime
         self.timer = JsTimerFactory(self)
@@ -1363,7 +1426,7 @@ class VmRuntime(object):
                 for i in range(instr.args[0]):
                     val = frame.stack.pop()
                     key = frame.stack.pop()
-                    args.append((key, val))
+                    args.insert(0, (key, val))
 
                 frame.stack.append(JsObject(args))
             elif instr.opcode == opcodes.obj.CREATE_CLASS:
@@ -1466,7 +1529,7 @@ class VmLoader(object):
 
         return self._load_text(text)
 
-    def _load_text(self, text):
+    def _load_text(self, text, debug=False):
 
         tokens = Lexer().lex(text)
         parser = Parser()
@@ -1481,7 +1544,8 @@ class VmLoader(object):
         xform = VmTransform()
         xform.transform(ast)
 
-        #print(ast.toString(1))
+        if debug:
+            print(ast.toString(1))
 
         compiler = VmCompiler()
         module = compiler.compile(ast)
@@ -1525,14 +1589,20 @@ class VmLoader(object):
 
             for inc_path in mod.includes:
                 mod2 = visited[inc_path]
-                for name in mod.globals.names:
-                    if name in mod2.globals.values and name not in mod.globals.values:
-                        mod.globals.values[name] = mod2.globals.values[name]
+                for name, value in mod2.globals.values.items():
+                    mod.globals.values[name] = value
+                #for name in mod.globals.names:
+                #    if name in mod2.globals.values and name not in mod.globals.values:
+                #        print(mod_path, name)
+                #        mod.globals.values[name] = mod2.globals.values[name]
 
+            if mod is root_mod:
+                break
             self.runtime.enable_diag = False
             self.runtime.init(mod)
             try:
-                rv, _ = self.runtime.run()
+                rv, _globals = self.runtime.run()
+                print(_globals.values)
             except Exception as e:
                 print("error in ", mod.path)
                 raise e
@@ -1544,7 +1614,7 @@ class VmLoader(object):
         rv, mod_globals = self.runtime.run()
 
         print("return value", rv)
-        print("globals", mod_globals.values)
+        #print("globals", mod_globals.values)
 
 
     def run_path(self, path):
@@ -1558,7 +1628,7 @@ class VmLoader(object):
 
     def run_text(self, text):
 
-        root_mod = self._load_text(text)
+        root_mod = self._load_text(text, True)
         root_dir = "./"
         root_name = "__main__"
         root_mod.path = root_name
@@ -1965,13 +2035,27 @@ def main():
     """
 
     text1 = """
+        obj = {a:0, b:1, c:2}
+
+        s = ""
+        for (const key in obj) {
+            s += `${key}=>${obj[key]};`
+        }
+
+    """
+
+
+    text1 = """
 
         include "./res/daedalus/daedalus.js"
 
         //console.log(generateStyleSheetName())
         //console.log(randomInt(0,100))
-        document.head.toString()
+        //document.head.toString()
+        let e = new DomElement("div")
+        console.log(e.props.id)
     """
+
 
     if False:
         tokens = Lexer().lex(text1)
