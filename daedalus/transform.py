@@ -8,8 +8,6 @@ import hashlib
 from .lexer import Lexer
 from .token import Token, TokenError
 
-
-
 class TransformError(TokenError):
     pass
 
@@ -121,7 +119,7 @@ class TransformGrouping(TransformBase):
                         print("\n%s:"%ref)
                         print("parent", parent.type, parent.value)
                         print("token", token.type, token.value)
-                        print(parent.toString(3))
+                        print("parent", parent.toString(3))
                         raise ref
                     child.type = Token.T_OBJECT
 
@@ -366,7 +364,7 @@ class TransformExtractStyleSheet(TransformBase):
             if child.type == Token.T_TEXT and child.value == 'StyleSheet':
                 rv = self._extract(token, parent)
                 if not rv:
-                    print(token)
+                    print("TransformExtractStyleSheet", token)
                     sys.stderr.write("warning: failed to convert style sheet\n")
 
     def _extract(self, token, parent):
@@ -613,12 +611,24 @@ class Ref(object):
 
     def __init__(self, scname, flags, label, counter):
         super(Ref, self).__init__()
+        # scope flags, or of SC_*
         self.flags = flags
+        # the variable/function/class name
         self.label = label
+        # counts the number of times this reference is read
+        # if the value is zero, the variable is never used.
         self.load_count = 0
+        # the token which generated this regerence
         self.token = None
+        # the scope name, e.g. __main__.__anonymous__
         self.scname = scname
-        # counts which clone this ref is
+        # counts which clone this ref is. clones are generated
+        # whenever a new reference is defined. e.g.
+        #    const x = 123; // new const ref, counter = 0
+        #    {
+        #       const x = 456; // new const ref, counter = 0
+        #    }
+        #    console.log(x) // prints 123 (reg counter = 0)
         self.counter = counter
         # the full scope name for this ref
         s = 'f' if self.flags & SC_FUNCTION else 'b'
@@ -2097,13 +2107,39 @@ class TransformAssignScope(object):
 
         # delete variables in the reverse order that they were defined
         # in this scope
-        if refs:
+        if refs and self.save_vars:
+
+            _save = []
+            _restore = []
             for ref in reversed(refs.values()):
-                tok = Token(Token.T_DELETE_VAR, token.line, token.index, "")
-                tok.ref = ref
-                tok.ref_attr = 8
-                tok.children.append(ref.token.clone())
-                token.children.append(tok)
+
+                # for variable scopes, use a system where there
+                # is a save and then a load to restore the original value
+                # of a label after a block exits
+                # ref counter checks to see if this is not the first time
+                # that this variable was assigned
+                if ref.token.type in [Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR] and ref.counter > 1:
+                    tok = Token(Token.T_SAVE_VAR, token.line, token.index, "", [ref.token.clone()])
+                    tok.ref = ref
+                    tok.ref_attr = 8
+                    _save.append(tok)
+
+                    tok = Token(Token.T_RESTORE_VAR, token.line, token.index, "", [ref.token.clone()])
+                    tok.ref = ref
+                    tok.ref_attr = 8
+                    _restore.insert(0, tok) # reverse order
+
+            if _save or _restore:
+                # TODO: validate that parent is a block or module
+                # its an error or behavior is undefined
+                idx = parent.children.index(token)
+                if token.type != Token.T_BLOCK:
+                    parent.children = parent.children[:idx] + _save + parent.children[idx:] + _restore
+                else:
+                    if parent.type not in (Token.T_BLOCK, Token.T_MODULE):
+                        raise TransformError(token, "expected parent to be a module or block")
+
+                    token.children = _save + token.children + _restore
 
     # -------------------------------------------------------------------------
 
@@ -2337,6 +2373,7 @@ class TransformIdentityScope(TransformAssignScope):
 
     def __init__(self):
         super(TransformIdentityScope, self).__init__()
+        self.save_vars = True
 
     def newScope(self, name, parentScope=None):
         scope = IdentityScope(name, parentScope)
@@ -2359,6 +2396,7 @@ class TransformMinifyScope(TransformAssignScope):
     """
     def __init__(self):
         super(TransformMinifyScope, self).__init__()
+        self.save_vars = False
 
     def newScope(self, name, parentScope=None):
         scope = MinifyVariableScope(name, parentScope)

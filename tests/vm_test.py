@@ -4,13 +4,14 @@
 warn when stack is not empty after function clal
 """
 
+import time
 import unittest
 from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityScope, TransformReplaceIdentity, TransformClassToFunction
-from daedalus.vm import VmCompiler, VmRuntime, VmTransform
+from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmRuntimeException
 
 
 VariableScope.disable_warnings = True
@@ -32,7 +33,7 @@ def evaljs(text, diag=False):
     xform.transform(ast)
 
     if diag:
-        print(ast.toString(1))
+        print("evaljs diag", ast.toString(1))
 
     compiler = VmCompiler()
     module = compiler.compile(ast)
@@ -43,7 +44,11 @@ def evaljs(text, diag=False):
     runtime = VmRuntime()
     runtime.enable_diag = diag
     runtime.init(module)
-    return runtime.run()
+
+    # throws VmRuntimeException
+    result = runtime.run()
+
+    return result
 
 class VmTestCase(unittest.TestCase):
 
@@ -63,8 +68,6 @@ class VmTestCase(unittest.TestCase):
 
     def tearDown(self):
         super().tearDown()
-
-
 
     def test_assign(self):
 
@@ -231,7 +234,7 @@ class VmTestCase(unittest.TestCase):
         text = """
 
             let g = 0
-            function f() {
+            function fn_try_catch_finally() {
                 try {
                     throw "error"
                 } catch (ex) {
@@ -240,14 +243,14 @@ class VmTestCase(unittest.TestCase):
                     g |= 2
                 }
             }
-            f()
+
+            fn_try_catch_finally()
 
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['g'], 3)
 
-    @unittest.expectedFailure
-    def test_try_catch_finally_throw_2(self):
+    def test_try_finally_throw_2(self):
         text = """
             let g = 0;
 
@@ -260,14 +263,20 @@ class VmTestCase(unittest.TestCase):
                     fn_throw()
                 } finally {
                     // unhandled exception
-                    g |= 1
+                    g |= 2
                 }
             }
-        """
-        result, globals_ = evaljs(text, diag=False)
-        self.assertEqual(globals_.values['g'], -1)
 
-    @unittest.expectedFailure
+            fn_try_finally()
+        """
+
+        with self.assertRaises(VmRuntimeException) as e:
+            result, globals_ = evaljs(text, diag=False)
+
+        # check that the finally block was run, even though
+        # the exception is unhandled.
+        self.assertEqual(e.exception.frames[0].globals.values['g'], 2)
+
     def test_try_catch_finally_throw_3(self):
         text = """
             let g = 0;
@@ -285,11 +294,12 @@ class VmTestCase(unittest.TestCase):
                     g |= 4
                 }
             }
+
+            fn_try_catch_finally()
         """
         result, globals_ = evaljs(text, diag=False)
-        self.assertEqual(globals_.values['g'], -1)
+        self.assertEqual(globals_.values['g'], 6)
 
-    @unittest.expectedFailure
     def test_try_catch_finally_throw_4(self):
         text = """
             let g = 0;
@@ -312,14 +322,16 @@ class VmTestCase(unittest.TestCase):
                 try {
                     fn_try_finally()
                 } catch (ex) {
-                    g |= 8
+                    g |= 2
                 } finally {
-                    g |= 16
+                    g |= 4
                 }
             }
+
+            fn_try_catch_finally_2()
         """
         result, globals_ = evaljs(text, diag=False)
-        self.assertEqual(globals_.values['g'], -1)
+        self.assertEqual(globals_.values['g'], 7)
 
     def test_class_simple(self):
         text = """
@@ -444,12 +456,9 @@ class VmTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], 2)
 
-    @unittest.expectedFailure
     def test_let_scope(self):
 
         text = """
-            // proper scoping rules are not being applied
-            // x is deleted, but the old x is not preserved.
             function f() {
                 let x = 1;
                 {
@@ -462,12 +471,9 @@ class VmTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], 1)
 
-    @unittest.expectedFailure
     def test_const_scope(self):
 
         text = """
-            // proper scoping rules are not being applied
-            // x is deleted, but the old x is not preserved.
             function f() {
                 const x = 1;
                 {
@@ -703,7 +709,7 @@ class VmFunctionTestCase(unittest.TestCase):
 
         """
         result, globals_ = evaljs(text, diag=False)
-        self.assertEqual(globals_.values['result'], "b_x2=y2,a_x1=y1")
+        self.assertEqual(globals_.values['result'], "a_x1=y1,b_x2=y2")
 
 class VmObjectTestCase(unittest.TestCase):
 
@@ -818,6 +824,37 @@ class VmTimerTestCase(unittest.TestCase):
 
     def tearDown(self):
         super().tearDown()
+
+    def test_promise_simple(self):
+
+        text = """
+
+        let x = 0;
+        const p = new Promise((resolve, reject) => {
+            resolve(2);
+        })
+
+        p.then(res=>{x=res})
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 2)
+
+    def test_promise_timeout(self):
+
+        text = """
+
+        let x = 0;
+        const p = new Promise((resolve, reject) => {
+            setTimeout(()=>{resolve(4);}, 66)
+        })
+
+        p.then(res=>{x=res})
+        """
+        t0= time.time()
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 4)
+        t1= time.time()
+        self.assertTrue((t1 - t0) > 0.066)
 
 def main():
     unittest.main()

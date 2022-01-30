@@ -165,6 +165,8 @@ class Token(object):
     # these variables are assigned by the transform engine for variable scopes
     T_GLOBAL_VAR = 'T_GLOBAL_VAR'
     T_LOCAL_VAR = 'T_LOCAL_VAR'
+    T_SAVE_VAR = 'T_SAVE_VAR'
+    T_RESTORE_VAR = 'T_RESTORE_VAR'
     T_DELETE_VAR = 'T_DELETE_VAR'
     T_CLOSURE = 'T_CLOSURE'
     T_CELL_VAR = 'T_CELL_VAR'

@@ -494,6 +494,8 @@ class VmCompiler(object):
             Token.T_CATCH: self._visit_catch,
             Token.T_FINALLY: self._visit_finally,
             Token.T_THROW: self._visit_throw,
+            Token.T_SAVE_VAR: self._visit_save_var,
+            Token.T_RESTORE_VAR: self._visit_restore_var,
             Token.T_DELETE_VAR: self._visit_delete_var,
             Token.T_FREE_VAR: self._visit_free_var,
             Token.T_CELL_VAR: self._visit_cell_var,
@@ -1094,30 +1096,44 @@ class VmCompiler(object):
                     var = child
 
                 if var.type == Token.T_LOCAL_VAR:
-
-                    # if already defined, save the current value on the stack
-                    if var.value in self.fn.local_names:
-                        opcode, index = self._token2index(var, True)
-                        #print("push", token.value, "local", var.value)
-                        self._push_token(depth, VmCompiler.C_INSTRUCTION,
-                            VmInstruction(opcode, index, token=token))
-
+                    # TODO: see T_SAVE_VAR/T_DELETE_VAR
+                    ## if already defined, save the current value on the stack
+                    #if var.value in self.fn.local_names:
+                    #    opcode, index = self._token2index(var, True)
+                    #    #print("push", token.value, "local", var.value)
+                    #    self._push_token(depth, VmCompiler.C_INSTRUCTION,
+                    #        VmInstruction(opcode, index, token=token))
+                    pass
 
                 elif var.type == Token.T_GLOBAL_VAR:
-
-                    # if already defined, save the current value on the stack
-                    if var.value in self.fn.globals.names:
-                        opcode, index = self._token2index(var, True)
-                        #print("push", token.value, "global", var.value)
-                        self._push_token(depth, VmCompiler.C_INSTRUCTION,
-                            VmInstruction(opcode, index, token=token))
+                    pass
+                    # TODO: see T_SAVE_VAR/T_DELETE_VAR
+                    ## if already defined, save the current value on the stack
+                    #if var.value in self.fn.globals.names:
+                    #    opcode, index = self._token2index(var, True)
+                    #    #print("push", token.value, "global", var.value)
+                    #    self._push_token(depth, VmCompiler.C_INSTRUCTION,
+                    #        VmInstruction(opcode, index, token=token))
                 else:
                     raise VmCompileError(var, "illegal variable def")
+
+    def _visit_save_var(self, depth, state, token):
+        child = token.children[0]
+        opcode, index = self._token2index(child, True, delete=False)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION,
+            VmInstruction(opcode, index, token=child))
+
+    def _visit_restore_var(self, depth, state, token):
+        child = token.children[0]
+        opcode, index = self._token2index(child, False, delete=False)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION,
+            VmInstruction(opcode, index, token=child))
 
     def _visit_delete_var(self, depth, state, token):
         child = token.children[0]
         opcode, index = self._token2index(child, False, delete=True)
-        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=child))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION,
+            VmInstruction(opcode, index, token=child))
 
     def _visit_binary(self, depth, state, token):
 
@@ -1465,7 +1481,7 @@ class VmCompiler(object):
         flag0 = VmCompiler.C_VISIT
 
         # TODO: third child deletes block variables
-        arglist, block, _ = token.children
+        arglist, block = token.children
         self._push_token(depth, flag0, block)
         self._push_token(depth, flag0|VmCompiler.C_STORE, arglist.children[0])
 

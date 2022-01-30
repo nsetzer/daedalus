@@ -59,6 +59,7 @@ import math
 import random
 import re
 import time
+import traceback
 
 from . import vm_opcodes as opcodes
 
@@ -667,12 +668,12 @@ class JsPromise(JsObject):
         return
 
     def _resolve(self, res):
-        print("resolve promise", res)
+        #print("resolve promise", res)
         self._state = JsPromise.FULFILLED
         self._result = res
 
     def _reject(self, err):
-        print("reject promise", res)
+        #print("reject promise", res)
         self._state = JsPromise.REJECTED
         self._error = err
 
@@ -685,14 +686,11 @@ class JsPromise(JsObject):
 
                 // TODO: wait for state to be 2 or 3
 
-                console.log(this._state)
                 if (this._state === 2) {
-                    console.log(this._state, "accept", this, this._result)
                     if (onFulfilled) {
                         onFulfilled(this._result)
                     }
                 } else {
-                    console.log(this._state, "reject", this._error)
                     if (onRejected) {
                         onRejected(this._error)
                     }
@@ -727,7 +725,6 @@ class JsDocument(JsObject):
     def __init__(self):
         super(JsDocument, self).__init__()
 
-        print("creating a new document")
         self.head = JsElement()
         self.body = JsElement()
 
@@ -761,7 +758,7 @@ class JsElement(JsObject):
         if type_ == "text/css":
             elem = self.getAttr("sheet")
             for rule in elem.rules.array:
-                print(rule)
+                print("!tostring", rule)
         else:
             print("--", self, type_)
             print("--", self.rules.array)
@@ -869,6 +866,13 @@ class VmExceptionContext(object):
         self.value = value
         self.handled = False
         self.other = other  # previous exception
+
+class VmRuntimeException(Exception):
+    def __init__(self, frames, message):
+        super(VmRuntimeException, self).__init__(message)
+        self.frames = frames
+
+
 
 binary_op = {
     opcodes.math.ADD: operator.__add__,
@@ -1019,17 +1023,24 @@ class VmRuntime(object):
             if self.stack_frames:
                 print("***")
                 print("a python error was caught while running javascript")
-                for idx, frame in enumerate(reversed(self.stack_frames)):
-
-                    print("frame", idx)
-                    # print(frame.locals)
-                    # print(frame.globals)
-                    print("  path", frame.module.path)
-                    instr = frame.fndef.instrs[frame.sp]
-                    print("  sp", frame.sp, "line", instr.line, "column", instr.index)
-                    print("***")
+                self._print_trace()
             raise e
 
+    def _get_trace(self):
+        return list(reversed(self.stack_frames))
+
+    def _print_trace(self, frames=None):
+        if frames is None:
+            frames = reversed(self.stack_frames)
+        for idx, frame in enumerate(frames):
+
+            print("frame", idx)
+            # print(frame.locals)
+            # print(frame.globals)
+            print("  path", frame.module.path)
+            instr = frame.fndef.instrs[frame.sp]
+            print("  sp", frame.sp, "line", instr.line, "column", instr.index)
+            print("***")
 
     def _new_frame(self, func, argc, args, kwargs):
         posargs = kwargs #JsObject()
@@ -1171,8 +1182,9 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
                 if frame.stack:
-                    print("stack", frame.stack)
                     print("warning: stack not empty")
+                    self._print_trace()
+                    traceback.print_stack()
                 self.stack_frames.pop()
                 if len(self.stack_frames) == 0:
                     return_value = rv
@@ -1198,10 +1210,10 @@ class VmRuntime(object):
                     if self.exception.handled:
                         self.exception = None
                     else:
+                        trace = self._get_trace()
                         frame_, block = self._unwind()
                         if frame_ is None:
-                            print("unhandled exception")
-                            break
+                            raise VmRuntimeException(trace, "unhandled exception")
                         else:
                             frame = frame_
                             instrs = frame.fndef.instrs
@@ -1223,10 +1235,10 @@ class VmRuntime(object):
                 # TODO: if throw is in side of a catch block... jump to finally instead
                 self.exception = VmExceptionContext(frame.sp, frame.fndef, frame.stack.pop(), self.exception)
 
+                trace = self._get_trace()
                 frame_, block = self._unwind()
                 if frame is None:
-                    print("unhandled exception")
-                    break
+                    raise VmRuntimeException(trace, "unhandled exception")
                 else:
                     frame = frame_
                     instrs = frame.fndef.instrs
@@ -1602,7 +1614,7 @@ class VmLoader(object):
             self.runtime.init(mod)
             try:
                 rv, _globals = self.runtime.run()
-                print(_globals.values)
+                #print(_globals.values)
             except Exception as e:
                 print("error in ", mod.path)
                 raise e
@@ -2056,6 +2068,28 @@ def main():
         console.log(e.props.id)
     """
 
+    text1 = """
+
+        let g = 0;
+
+        function fn_throw() {
+            throw "error"
+        }
+
+        function fn_try_catch_finally() {
+            try {
+                fn_throw()
+            } catch (ex) {
+                g |= 2
+            } finally {
+                g |= 4
+            }
+        }
+
+        fn_try_catch_finally()
+
+        console.log(g)
+    """
 
     if False:
         tokens = Lexer().lex(text1)

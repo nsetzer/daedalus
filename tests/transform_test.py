@@ -75,7 +75,6 @@ class TransformTestCase(unittest.TestCase):
 
         ast, imports, module_imports, exports = getModuleImportExport(ast)
 
-        print(imports, module_imports)
         self.assertEqual(exports, ['f', 'g', 'h'])
 
         expected = TOKEN('T_MODULE', '',
@@ -104,7 +103,6 @@ class TransformTestCase(unittest.TestCase):
 
         ast, imports, module_imports, exports = getModuleImportExport(ast)
 
-        print(imports, module_imports)
         self.assertEqual(exports, ['name'])
 
         expected = TOKEN('T_MODULE', '',

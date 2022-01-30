@@ -643,6 +643,10 @@ class Formatter(object):
                 pass # compiler only
             elif token.type == Token.T_DELETE_VAR:
                 pass # compiler only
+            elif token.type == Token.T_SAVE_VAR:
+                pass # compiler only
+            elif token.type == Token.T_RESTORE_VAR:
+                pass # compiler only
             else:
                 raise FormatError(token, "token not supported: %s" % token.type)
 
