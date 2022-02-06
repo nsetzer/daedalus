@@ -711,6 +711,22 @@ class VmFunctionTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], "a_x1=y1,b_x2=y2")
 
+    def test_reflective_object(self):
+
+        text = """
+            mymodule = (function() {
+                const obj = {
+                    a: function(){return 1},
+                    b: function(){return obj.a()}
+                }
+                return {obj}
+            })()
+            let result = mymodule.obj.b()
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], 1)
+
+
 class VmObjectTestCase(unittest.TestCase):
 
     @classmethod
