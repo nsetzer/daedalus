@@ -68,7 +68,7 @@ from .lexer import Lexer
 from .parser import Parser, ParseError
 from .transform import TransformBaseV2, TransformIdentityScope
 
-from .vm_compiler import VmCompiler, VmTransform, VmInstruction
+from .vm_compiler import VmCompiler, VmTransform, VmInstruction, VmClassTransform
 
 class JsFunction(object):
     def __init__(self, module, fndef, args, kwargs, bind_target):
@@ -165,7 +165,7 @@ class JsObjectPropIterator(object):
         if isinstance(obj, JsArray):
             self.array = obj.array
         elif isinstance(obj, JsObject):
-            self.array = JsObject.keys(obj).value
+            self.array = JsObject.keys(obj).array
 
         self.index = 0
 
@@ -235,6 +235,9 @@ class JsObject(object):
 
     def getIndex(self, index):
         if JsString(index).value == "_x_daedalus_js_prop_iterator":
+            if "_x_daedalus_js_prop_iterator" in self.data:
+                rv =self.data["_x_daedalus_js_prop_iterator"]
+                return rv
             return JsObjectPropIterator(self)
 
         if index in self.data:
@@ -951,6 +954,9 @@ class VmRuntime(object):
         _Symbol = lambda: None
         _Symbol.iterator = "_x_daedalus_js_prop_iterator"
 
+        history = lambda: None
+        history.pushState = lambda x: None
+
         if self.builtins is None:
             self.builtins = {}
             self.builtins['console'] = console
@@ -968,6 +974,7 @@ class VmRuntime(object):
             self.builtins['isNaN'] = lambda x: False
             self.builtins['RegExp'] = JsRegExp
             self.builtins['Symbol'] = _Symbol
+            self.builtins['history'] = history
 
         # these must be unqiue to the runtime
         self.timer = JsTimerFactory(self)
@@ -1137,6 +1144,31 @@ class VmRuntime(object):
                 continue
             elif instr.opcode == opcodes.ctrl.CALL:
 
+                kwargs = JsObject()
+
+                argc = instr.args[0]
+                args = []
+                for i in range(argc):
+                    args.insert(0, frame.stack.pop())
+                func = frame.stack.pop()
+
+                if isinstance(func, JsFunction):
+
+                    new_frame = self._new_frame(func, argc, args, kwargs)
+
+                    self.stack_frames.append(new_frame)
+                    frame.sp += 1
+                    frame = self.stack_frames[-1]
+                    instrs = frame.fndef.instrs
+                    continue
+                elif callable(func):
+                    _rv = func(*args, **kwargs.data)
+                    frame.stack.append(_rv)
+                else:
+                    print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
+
+            elif instr.opcode == opcodes.ctrl.CALL_KW:
+
                 kwargs = frame.stack.pop()
 
                 argc = instr.args[0]
@@ -1158,7 +1190,8 @@ class VmRuntime(object):
                     _rv = func(*args, **kwargs.data)
                     frame.stack.append(_rv)
                 else:
-                    print("Error at line %d column %d" % (instr.line, instr.index))
+                    print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
+
             elif instr.opcode == opcodes.ctrl.CALL_EX:
                 kwargs = frame.stack.pop()
                 posargs = frame.stack.pop()
@@ -1549,6 +1582,9 @@ class VmLoader(object):
         parser.python = True
         ast = parser.parse(tokens)
 
+        xform = VmClassTransform()
+        xform.transform(ast)
+
         xform = TransformIdentityScope()
         xform.disable_warnings=True
         xform.transform(ast)
@@ -1626,7 +1662,9 @@ class VmLoader(object):
         rv, mod_globals = self.runtime.run()
 
         print("return value", rv)
-        #print("globals", mod_globals.values)
+        print("globals", mod_globals.values)
+
+        return rv, mod_globals
 
 
     def run_path(self, path):
@@ -2064,32 +2102,121 @@ def main():
         //console.log(generateStyleSheetName())
         //console.log(randomInt(0,100))
         //document.head.toString()
-        let e = new DomElement("div")
-        console.log(e.props.id)
+        //let e = new DomElement("div")
+        //console.log(e.props.id)
+    """
+    text1 = """
+        //(function() {
+        //    "use strict";
+        //})()
     """
 
     text1 = """
 
-        let g = 0;
+        //function randomInt(min, max) {
+        //    rnd = Math.random()
+        //    min = Math.ceil(min);
+        //    max = Math.floor(max);
+        //    return Math.floor(rnd * (max - min + 1)) + min;
+        //}
+        //console.log(randomInt(0, 100))
 
-        function fn_throw() {
-            throw "error"
-        }
-
-        function fn_try_catch_finally() {
-            try {
-                fn_throw()
-            } catch (ex) {
-                g |= 2
-            } finally {
-                g |= 4
-            }
-        }
-
-        fn_try_catch_finally()
-
-        console.log(g)
     """
+
+    text1 = """
+        //let [a,b,c] = [1,2,3]
+        //console.log(a+b+c)
+    """
+
+
+
+    text1 = """
+
+        mymodule = (function() {
+            function a() {
+                return 0;
+            }
+
+            function b(){
+                return a()
+            }
+
+            return [a, b]
+        })()
+    """
+
+    text1 = """
+
+        mymodule = (function() {
+            class a {
+
+            }
+
+            class b extends a {
+
+            }
+
+            return [a, b]
+        })()
+    """
+
+
+
+    text1 = """
+        include "../morpgsite/frontend/build/static/index.js"
+    """
+
+    text1 = """
+        mymodule = (function() {
+            const obj = {}
+            obj.a = function(){return 1}
+            obj.b = function(){return obj.a()}
+            return {obj}
+        })()
+        y=mymodule.obj.b()
+    """
+
+    text1 = """
+
+
+        mymodule = (function() {
+            const obj = {
+                a: function(){return 1},
+                b: function(){return obj.a()},
+            }
+            return {obj}
+        })()
+        y=mymodule.obj.b()
+
+    """
+
+    text1 = """
+        function r1(arg) {
+            function r2() {
+                return arg.a
+            }
+            return r2
+        }
+        let result = r1({'a':1})();
+    """
+
+    text1 = """
+            function r1(obj2) {
+                let result = Object.keys(obj2).map(key => {
+                    let val = obj2[key]
+                    if (typeof(val) === 'object') {
+                        return r1(val)
+                    } else {
+                        return key+"="+val
+                    }
+                })
+                return result.join(",")
+            }
+
+            let obj = {"a": {"x1": "y1"}, "b": {"x2": "y2"}}
+            let result = r1(obj)
+
+        """
 
     if False:
         tokens = Lexer().lex(text1)
@@ -2097,6 +2224,7 @@ def main():
         parser.feat_xform_optional_chaining = True
         parser.python = True
         ast = parser.parse(tokens)
+        print(ast.toString(1))
         xform = TransformIdentityScope()
         xform.disable_warnings=True
         xform.transform(ast)
@@ -2104,7 +2232,7 @@ def main():
         xform = VmTransform()
         xform.transform(ast)
 
-        print(ast.toString(1))
+        print(ast.toString(2))
 
     #text1 = open("./res/daedalus/daedalus_util.js").read()
     """
@@ -2142,7 +2270,10 @@ def main():
     # T_FOR_IN
     loader = VmLoader()
     #loader.load("./res/daedalus/daedalus.js")
-    loader.run_text(text1)
+    rv, globals_ = loader.run_text(text1)
+
+    if 'obj' in globals_.values:
+        print(JsObject.keys(globals_.values['obj']))
     return
 
 if __name__ == '__main__':

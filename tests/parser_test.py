@@ -1292,6 +1292,82 @@ class ParserClassTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_obj_function(self):
+
+        text = """{"x":2, "y":4, distance(){this.x+this.y}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"x"'),
+                    TOKEN('T_NUMBER', '2')),
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"y"'),
+                    TOKEN('T_NUMBER', '4')),
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_TEXT', 'distance'),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}',
+                        TOKEN('T_BINARY', '+',
+                            TOKEN('T_GET_ATTR', '.',
+                                TOKEN('T_KEYWORD', 'this'),
+                                TOKEN('T_ATTR', 'x')),
+                            TOKEN('T_GET_ATTR', '.',
+                                TOKEN('T_KEYWORD', 'this'),
+                                TOKEN('T_ATTR', 'y')))))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_obj_function(self):
+
+        text = """{"x":0, "y":0, distance(){return this.x+this.y}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"x"'),
+                    TOKEN('T_NUMBER', '0')),
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"y"'),
+                    TOKEN('T_NUMBER', '0')),
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_TEXT', 'distance'),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}',
+                        TOKEN('T_RETURN', 'return',
+                            TOKEN('T_BINARY', '+',
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_KEYWORD', 'this'),
+                                    TOKEN('T_ATTR', 'x')),
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_KEYWORD', 'this'),
+                                    TOKEN('T_ATTR', 'y'))))))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_obj_eval_key(self):
+
+        text = """{[1+2]:3, ["abc"](){}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_LIST', '[]',
+                        TOKEN('T_BINARY', '+',
+                            TOKEN('T_NUMBER', '1'),
+                            TOKEN('T_NUMBER', '2'))),
+                    TOKEN('T_NUMBER', '3')),
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_LIST', '[]',
+                        TOKEN('T_STRING', '"abc"')),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
 class ParserChallengeTestCase(unittest.TestCase):
 
     def _assert(self, expected, text, debug=False):

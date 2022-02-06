@@ -11,7 +11,7 @@ from tests.util import edit_distance
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityScope, TransformReplaceIdentity, TransformClassToFunction
-from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmRuntimeException
+from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform, VmRuntimeException
 
 
 VariableScope.disable_warnings = True
@@ -24,6 +24,9 @@ def evaljs(text, diag=False):
 
     tokens = lexer.lex(text)
     ast = parser.parse(tokens)
+
+    xform = VmClassTransform()
+    xform.transform(ast)
 
     xform = TransformIdentityScope()
     xform.disable_warnings=True
@@ -616,6 +619,29 @@ class VmLogicTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['b'], 1)
         self.assertEqual(globals_.values['c'], 10)
 
+    def test_custom_iterator(self):
+        text = """
+            let iter = {
+                [Symbol.iterator]() {
+                    let done = false
+                    let value = 4
+                    return {
+                        next() {
+                            value += 1
+                            done = value > 10
+                            return {done, value}
+                        }
+                    }
+                }
+            }
+
+            let sum = 0
+            for (let v of iter) {
+                sum += v
+            }
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['sum'], 45)
 class VmFunctionTestCase(unittest.TestCase):
 
     @classmethod

@@ -609,9 +609,9 @@ def scope2str(flags):
 
 class Ref(object):
 
-    def __init__(self, scname, flags, label, counter):
+    def __init__(self, scname, flags, label, counter=1):
         super(Ref, self).__init__()
-        # scope flags, or of SC_*
+        # scope flags, logical or of SC_*
         self.flags = flags
         # the variable/function/class name
         self.label = label
@@ -629,6 +629,7 @@ class Ref(object):
         #       const x = 456; // new const ref, counter = 0
         #    }
         #    console.log(x) // prints 123 (reg counter = 0)
+        # the initial value should be 1
         self.counter = counter
         # the full scope name for this ref
         s = 'f' if self.flags & SC_FUNCTION else 'b'
@@ -1558,6 +1559,16 @@ class TransformAssignScope(object):
             if parent.type not in (Token.T_BLOCK, Token.T_CLASS_BLOCK, Token.T_MODULE, Token.T_OBJECT, Token.T_EXPORT_ARGS):
                 # this should never happen
                 raise TransformError(parent, "visit function, parent node is not a block scope: %s>%s" % (parent.type, token.type))
+
+        ### inside an object square brackets denote an expresion which
+        ### will evaluate to the key value.
+        if parent.type == Token.T_OBJECT:
+            if token.children[0].type == Token.T_LIST:
+                self._push_children(scope, token.children[0], flags)
+            else:
+                self._push_tokens(flags, scope, [token.children[0]], token)
+
+
         # define the name of the function when it is not an
         # anonymous function and not a class constructor.
         ##if not isAnonymousFunction(token) and not isConstructor(token):
@@ -2061,17 +2072,17 @@ class TransformAssignScope(object):
         #    closure = Token(Token.T_CLOSURE, 0, 0, "")
         #    token.children.append(closure)
 
-        closure = Token(Token.T_CLOSURE, 0, 0, "")
+        closure = Token(Token.T_CLOSURE, token.line, token.index, "")
         token.children.append(closure)
 
         for name, ref in sorted(scope.cellvars.items()):
-            tok = Token(Token.T_CELL_VAR, 0, 0, name)
+            tok = Token(Token.T_CELL_VAR, token.line, token.index, name)
             tok.ref = ref
             tok.ref_attr = 8
             closure.children.append(tok)
 
         for name, ref in sorted(scope.freevars.items()):
-            tok = Token(Token.T_FREE_VAR, 0, 0, name)
+            tok = Token(Token.T_FREE_VAR, token.line, token.index, name)
             tok.ref = ref
             tok.ref_attr = 8
             closure.children.append(tok)
@@ -2429,7 +2440,7 @@ class TransformBaseV2(object):
                 if rv is None:
                     index += 1
                 elif isinstance(rv, int):
-                    indx += rv
+                    index += rv
                 else:
                     raise RuntimeError("visit returned non-integer")
 

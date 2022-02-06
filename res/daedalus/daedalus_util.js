@@ -30,9 +30,10 @@ function randomFloat(min, max) {
  * Using Math.round() will give you a non-uniform distribution!
  */
 function randomInt(min, max) {
+    rnd = Math.random()
     min = Math.ceil(min);
     max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(rnd * (max - min + 1)) + min;
 }
 
 function object2style_helper(prefix, obj) {

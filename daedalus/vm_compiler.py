@@ -153,6 +153,116 @@ class VmModule(object):
 
         print("---")
 
+class VmClassTransform(TransformBaseV2):
+
+    def visit(self, parent, token, index):
+
+        if token.type == Token.T_CLASS:
+            self._visit_class(parent, token, index)
+
+    def _visit_class(self, parent, token, index):
+
+        name = token.children[0]
+        parent_class = token.children[1]
+        block1 = token.children[2]
+        #closure1 = token.children[3]
+
+        constructor = None
+        methods = []
+        for meth in block1.children:
+
+            if meth.children[0].value == "constructor":
+                constructor = meth
+            else:
+                meth = meth.clone()
+                meth.type = Token.T_LAMBDA
+
+                _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+                _attr = Token(Token.T_ATTR, token.line, token.index, meth.children[0].value)
+                _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr])
+                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, meth])
+                methods.append(_assign)
+
+        if constructor is not None:
+            methods.extend(constructor.children[2].children)
+
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _return = Token(Token.T_RETURN, token.line, token.index, "return", [_this])
+        methods.append(_return)
+
+        # the class constructor has a property which is the name of the class
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _attr1 = Token(Token.T_ATTR, token.line, token.index, "constructor")
+        _getattr1 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr1])
+        _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr1, _object])
+        methods.insert(0, _assign)
+
+        _getattr1 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _attr1])
+        _attr2 = Token(Token.T_ATTR, token.line, token.index, "name")
+        _getattr2 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_getattr1, _attr2])
+        _clsname = Token(Token.T_STRING, token.line, token.index, repr(name.value))
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr2, _clsname])
+
+        methods.insert(1, _assign)
+
+        if parent_class.children:
+        # if False:
+            parent_class_name = parent_class.children[0].value
+            _parent = Token(name.type, token.line, token.index, parent_class_name)
+            _bind = Token(Token.T_ATTR, token.line, token.index, "bind")
+            _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+            _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_parent, _bind])
+
+            _arglist = Token(Token.T_ARGLIST, token.line, token.index, "()", [_this])
+            _fncall = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
+            _super = Token(Token.T_LOCAL_VAR, token.line, token.index, "super")
+            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_super, _fncall])
+
+            # _super = Token("T_CREATE_SUPER", token.line, token.index, "super", [_parent, _this])
+            methods.insert(0, _assign)
+
+        # TODO: copy dict from PARENT_CLASS.prototype
+        #       then update using CLASS.prototype
+        #       -- may require a special python function
+        _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto = Token(Token.T_ATTR, token.line, token.index, "prototype")
+        _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _proto])
+        _object = Token(Token.T_OBJECT, token.line, token.index, "{}")
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, _object])
+        methods.insert(0, _assign)
+
+        _this1 = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto1 = Token(Token.T_ATTR, token.line, token.index, "__proto__")
+        _getattr1 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this1, _proto1])
+        _this2 = Token(Token.T_KEYWORD, token.line, token.index, "this")
+        _proto2 = Token(Token.T_ATTR, token.line, token.index, "prototype")
+        _getattr2 = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this2, _proto2])
+        _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr1, _getattr2])
+        methods.insert(1, _assign)
+
+        if constructor is None:
+
+            _name = Token(Token.T_TEXT, token.line, token.index, 'constructor', [])
+            _arglist = Token(Token.T_ARGLIST, token.line, token.index, '()', [])
+            _block = Token(Token.T_BLOCK, token.line, token.index, '{}', [])
+            #_closure = Token(Token.T_CLOSURE, token.line, token.index, '', [])
+            _meth = Token(Token.T_METHOD, token.line, token.index, '', [_name,_arglist, _block])
+
+            constructor = _meth
+        else:
+
+            constructor = constructor.clone()
+
+        constructor.children[2].children = methods
+
+        constructor.type = Token.T_FUNCTION
+        constructor.children[0] = name
+
+        #print("new class ", parent.type, name.value, len(constructor.children), constructor.children[3])
+
+        parent.children[index] = constructor
+
 class VmTransform(TransformBaseV2):
 
     def visit(self, parent, token, index):
@@ -180,6 +290,12 @@ class VmTransform(TransformBaseV2):
 
         if token.type == Token.T_KEYWORD and token.value == "finally":
             token.type = Token.T_ATTR
+
+        if token.type == Token.T_VAR:
+            return self._visit_var(parent, token, index)
+
+        if token.type == Token.T_ASSIGN:
+            self._visit_assign(parent, token, index)
 
     def _visit_template_string(self, parent, token, index):
 
@@ -221,7 +337,7 @@ class VmTransform(TransformBaseV2):
         parent.children[index] = _new
 
     def _visit_class(self, parent, token, index):
-
+        raise RuntimeError()
 
         name = token.children[0]
         parent_class = token.children[1]
@@ -272,11 +388,12 @@ class VmTransform(TransformBaseV2):
 
         methods.insert(1, _assign)
 
+        parent_class_name = None
         if parent_class.children:
         # if False:
             parent_class_name = parent_class.children[0].value
 
-            _parent = Token(name.type, token.line, token.index, parent_class_name)
+            _parent = Token(name.type, token.line, token.index, '$' + parent_class_name)
             _bind = Token(Token.T_ATTR, token.line, token.index, "bind")
             _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
             _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_parent, _bind])
@@ -325,6 +442,30 @@ class VmTransform(TransformBaseV2):
 
         constructor.type = Token.T_FUNCTION
         constructor.children[0] = name
+
+        if parent_class_name:
+            # TODO: this still does not pass closure information correctly
+            # its looking like it would be better to have a transform
+            # before the identity transform to take care of classes.
+            TOKEN = lambda t,v, *c: Token(t, token.line, token.index, v, c)
+            constructor.type = Token.T_ANONYMOUS_FUNCTION
+            parent_class_temp = '$' + parent_class_name
+            constructor.children[3].children.append(TOKEN('T_FREE_VAR', parent_class_temp))
+            constructor = TOKEN('T_ASSIGN', '=',
+                TOKEN(token.children[0].type, token.children[0].value),
+                TOKEN('T_FUNCTIONCALL', '',
+                    TOKEN('T_ANONYMOUS_FUNCTION', 'function',
+                        TOKEN('T_TEXT', 'Anonymous'),
+                        TOKEN('T_ARGLIST', '()',
+                            TOKEN('T_LOCAL_VAR', parent_class_temp)),
+                        TOKEN('T_BLOCK', '{}',
+                            TOKEN('T_RETURN', 'return', constructor)),
+                        TOKEN('T_CLOSURE', '',
+                            TOKEN('T_CELL_VAR', parent_class_temp))),
+                    TOKEN('T_ARGLIST', '()',
+                        TOKEN(parent_class.children[0].type, parent_class_name))))
+
+        #print("new class ", parent.type, name.value, len(constructor.children), constructor.children[3])
 
         parent.children[index] = constructor
 
@@ -394,6 +535,61 @@ class VmTransform(TransformBaseV2):
         expr_var, expr_seq, body = token.children
         parent.children[index] = self._for_iter(token, expr_var, expr_seq, body)
 
+    def _visit_var(self, parent, token, index):
+        # remove any  T_VAR node (var, let, const)
+
+        for j, child in enumerate(token.children):
+
+            if child.type != Token.T_ASSIGN:
+
+                _undefined = Token(Token.T_KEYWORD, token.line, token.index, "undefined")
+                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [child, _undefined])
+
+                token.children[j] = _assign
+
+        if parent.type == Token.T_ARGLIST:
+            if len(token.children) != 1:
+                raise VmCompileError(token, "expected arglist var to contain a single child")
+
+            parent.children[index] = token.children[0]
+
+        elif parent.type not in (Token.T_MODULE, token.T_BLOCK):
+            raise VmCompileError(token, "expected parent of let to be block not %s" % parent.type)
+
+        else:
+            parent.children = parent.children[:index] + token.children + parent.children[index+1:]
+            return 0 # don't advance transform iterator
+        return None
+
+    def _visit_assign(self, parent, token, index):
+        """
+        let [a,b,c] = [1,2,3]
+
+        transform an unpack sequence expression into a series of assignments
+        """
+
+        if token.value != "=":
+            return
+
+        lhs, rhs = token.children
+
+        if lhs.type != Token.T_UNPACK_SEQUENCE:
+            return
+
+        # instead of deterministic names, can the compiler generate a unique
+        # incrementing name?
+        varname = "_unpack_%d_%d" % (token.line, token.index)
+        _var = Token(Token.T_LOCAL_VAR, token.index, token.value, varname)
+
+        token.children[0] = _var
+
+        for i, child in enumerate(lhs.children):
+            _index = Token(Token.T_NUMBER, token.line, token.index, str(i))
+            _rhs = Token(Token.T_SUBSCR, token.line, token.index, "", [_var, _index])
+            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [child, _rhs])
+            parent.children.insert(index+1, _assign)
+        #_subscr = Token(Token.T_SUBSCR, token.line, token.index, "", [expr_seq, _getattr])
+
     def _for_iter(self, token, expr_var, expr_seq, body):
 
 
@@ -452,7 +648,6 @@ class VmCompiler(object):
         super(VmCompiler, self).__init__()
 
         self.visit_actions = {
-            Token.T_VAR: self._visit_var,
             Token.T_MODULE: self._visit_module,
             Token.T_ASSIGN: self._visit_assign,
             Token.T_TEXT: self._visit_text,
@@ -471,7 +666,6 @@ class VmCompiler(object):
             Token.T_WHILE: self._visit_while,
             Token.T_DOWHILE: self._visit_dowhile,
             Token.T_FOR: self._visit_for,
-            Token.T_FOR_IN: self._visit_for_in,
             Token.T_CONTINUE: self._visit_continue,
             Token.T_BREAK: self._visit_break,
             Token.T_ARGLIST: self._visit_arglist,
@@ -793,9 +987,6 @@ class VmCompiler(object):
         if arg_init.type != Token.T_EMPTY_TOKEN:
             self._push_token(depth, VmCompiler.C_VISIT, arg_init)
 
-    def _visit_for_in(self, depth, state, token):
-        print("for ... in ... not implemented")
-
     def _visit_postfix(self, depth, state, token):
 
         const_int = VmInstruction(opcodes.const.INT, 1, token=token)
@@ -912,6 +1103,45 @@ class VmCompiler(object):
         self.fn_jumps[self.target_continue[-1]].append(instr0)
         self._push_instruction(instr0)
 
+    def _handle_object_child(self, depth, state, token, child):
+        """ push a <Value, Key> pair onto the stack for the child
+        of an T_OBJECT.
+
+        Javascript allows functions to de defined on objects, and for the
+        keys (including function names) to be expressions when wrapped
+        in square brackets.
+
+        The default case is a binary expression `key:val`
+
+        """
+
+        if child.type == Token.T_FUNCTION:
+
+            if child.children[0].type == Token.T_LIST:
+                name = child.children[0].children[0]
+            else:
+                name = child.children[0].clone()
+                name.type = Token.T_STRING
+                name.value = repr(name.value)
+
+            arglist = child.children[1]
+            block = child.children[2]
+            closure = child.children[3]
+            self._build_function(state|VmCompiler.C_LOAD, child, name, arglist, block, closure, autobind=False)
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, name)
+
+        elif child.type == Token.T_BINARY and child.children[0].type == Token.T_LIST:
+            # support evaluating the lhs when the expression is wrapped in square brackets
+            lhs, rhs = child.children
+            if len(lhs.children) != 1:
+                raise VmCompileError(lhs, "expected single expression")
+            lhs = lhs.children[0]
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, rhs)
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, lhs)
+
+        else:
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, child)
+
     def _visit_object(self, depth, state, token):
 
         unpack = any(child.type == Token.T_SPREAD for child in token.children)
@@ -946,7 +1176,7 @@ class VmCompiler(object):
                     self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
 
                     for child in obj:
-                        self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, child)
+                        self._handle_object_child(depth, state, token, child)
 
             instr = VmInstruction(opcodes.obj.CREATE_OBJECT, 0, token=token)
             self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
@@ -958,7 +1188,7 @@ class VmCompiler(object):
             self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
 
             for child in reversed(token.children):
-                self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, child)
+                self._handle_object_child(depth, state, token, child)
 
     def _visit_list(self, depth, state, token):
         unpack = any(child.type == Token.T_SPREAD for child in token.children)
@@ -1055,7 +1285,7 @@ class VmCompiler(object):
 
     def _visit_block(self, depth, state, token):
 
-        flag0 = VmCompiler.C_VISIT
+        flag0 = VmCompiler.C_VISIT#|VmCompiler.C_LOAD
         for child in reversed(token.children):
             self._push_token(depth, flag0, child)
 
@@ -1068,54 +1298,6 @@ class VmCompiler(object):
 
         for child in reversed(token.children):
             self._push_token(depth, VmCompiler.C_VISIT, child)
-
-    def _visit_var(self, depth, state, token):
-
-        for child in reversed(token.children):
-
-            if child.type == Token.T_ASSIGN:
-                #self._push_token(depth, VmCompiler.C_VISIT, child)
-                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, child.children[0])
-                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, child.children[1])
-
-            else:
-                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, token.children[0])
-                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.UNDEFINED, token=token))
-
-        # for const and let, implement block scoping by saving the current value of
-        # the variable to the stack. later, DELETE_VAR can pop the old value
-        # TODO: order of operations
-
-        if token.value == "const" or token.value == "let":
-
-            for child in reversed(token.children):
-
-                if child.type == Token.T_ASSIGN:
-                    var = child.children[0]
-                else:
-                    var = child
-
-                if var.type == Token.T_LOCAL_VAR:
-                    # TODO: see T_SAVE_VAR/T_DELETE_VAR
-                    ## if already defined, save the current value on the stack
-                    #if var.value in self.fn.local_names:
-                    #    opcode, index = self._token2index(var, True)
-                    #    #print("push", token.value, "local", var.value)
-                    #    self._push_token(depth, VmCompiler.C_INSTRUCTION,
-                    #        VmInstruction(opcode, index, token=token))
-                    pass
-
-                elif var.type == Token.T_GLOBAL_VAR:
-                    pass
-                    # TODO: see T_SAVE_VAR/T_DELETE_VAR
-                    ## if already defined, save the current value on the stack
-                    #if var.value in self.fn.globals.names:
-                    #    opcode, index = self._token2index(var, True)
-                    #    #print("push", token.value, "global", var.value)
-                    #    self._push_token(depth, VmCompiler.C_INSTRUCTION,
-                    #        VmInstruction(opcode, index, token=token))
-                else:
-                    raise VmCompileError(var, "illegal variable def")
 
     def _visit_save_var(self, depth, state, token):
         child = token.children[0]
@@ -1167,16 +1349,13 @@ class VmCompiler(object):
 
         if token.value == "=":
 
-
-
-            self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, token.children[0])
+            lhs, rhs = token.children
+            self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_STORE, lhs)
 
             if state & VmCompiler.C_LOAD:
                 self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.DUP, token=token))
 
-            self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[1])
-
-
+            self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, rhs)
 
         else:
 
@@ -1218,9 +1397,9 @@ class VmCompiler(object):
         try:
             index = self.fn.globals.constdata.index(value)
         except ValueError:
-            if state & VmCompiler.C_LOAD:
-                index = len(self.fn.globals.constdata)
-                self.fn.globals.constdata.append(value)
+            #if state & VmCompiler.C_LOAD:
+            index = len(self.fn.globals.constdata)
+            self.fn.globals.constdata.append(value)
 
         if index == -1:
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
@@ -1235,7 +1414,8 @@ class VmCompiler(object):
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
         except Exception as e:
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
-        self._push_instruction(self._build_instr_string(state, token, value))
+        instr = self._build_instr_string(state, token, value)
+        self._push_instruction(instr)
 
     def _visit_number(self, depth, state, token):
 
@@ -1371,7 +1551,6 @@ class VmCompiler(object):
             pos_count = 0
             kwarg_count = 0
 
-
             seq = []
             for child in reversed(expr_args.children):
                 if child.type == Token.T_ASSIGN:
@@ -1386,8 +1565,12 @@ class VmCompiler(object):
                 else:
                     raise VmCompileError(child, "syntax error: pos after kwarg")
 
-            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.CALL, pos_count, token=token))
-            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, kwarg_count, token=token))
+            if kwarg_count > 0:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.CALL_KW, pos_count, token=token))
+                self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, kwarg_count, token=token))
+            else:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.CALL, pos_count, token=token))
+
             self.seq.extend(seq)
 
             flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
@@ -1552,6 +1735,7 @@ class VmCompiler(object):
             else:
                 raise CompileError(arg, "unexpected argument")
 
+        print("build function", arglist.children, closure)
 
         self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
 
@@ -1561,6 +1745,7 @@ class VmCompiler(object):
             for child in closure.children:
 
                 if child.type == Token.T_FREE_VAR:
+                    print("cellvar load 1")
                     # argument is always a local variable, make a reference to it
                     #_, index = self._token2index(child, True)
                     # index = self.fn.local_names.index(child.value)

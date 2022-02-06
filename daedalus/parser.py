@@ -250,6 +250,7 @@ class Parser(ParserBase):
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_colon, [':']),
+            (L2R, self.visit_comma_before, []),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_keyword, []),
@@ -610,7 +611,7 @@ class Parser(ParserBase):
                         #return -2
                         self.warn(tokens[i2], Parser.W_GROUPING)
 
-            if i1 is not None and tokens[i1].type not in (Token.T_SPECIAL, ):
+            if i1 is not None and tokens[i1].type not in (Token.T_SPECIAL, Token.T_NUMBER, Token.T_STRING):
                 i2 = self.peek_keyword(tokens, token, i1, -1)
                 # TODO: for (x in y) (expr)()
                 # only 1 of these is a valid function call,
@@ -1276,6 +1277,21 @@ class Parser(ParserBase):
 
         return self._offset
 
+    def visit_comma_before(self, parent, tokens, index, operators):
+
+        # fix grouping (objects) prior to parsing commas
+        if parent.type == Token.T_GROUPING:
+            tok = tokens[index]
+            if tok.type == Token.T_FUNCTIONCALL:
+                idx = self.peek_token(tokens, tok, index, 1)
+                if idx is not None and tokens[idx].type == Token.T_GROUPING:
+                    rhs = self.consume(tokens, tok, index, 1)
+                    rhs.type = Token.T_BLOCK
+                    tok.type = Token.T_FUNCTION
+                    tok.children.append(rhs)
+
+        return 1
+
     def visit_comma(self, parent, tokens, index, operators):
         """
         the comma operator is a binary operator where the lhs and rhs are optional
@@ -1284,29 +1300,6 @@ class Parser(ParserBase):
         be omitted
         """
         token = tokens[index]
-
-
-        # --------------
-        # hack for function definitions inside of objects
-        # see visit class for the other half
-        if token.type == Token.T_FUNCTIONCALL and parent.type == Token.T_GROUPING:
-            idx = self.peek_token(tokens, token, index, 1)
-            if idx is not None and tokens[idx].type == Token.T_GROUPING:
-                rhs = self.consume(tokens, token, index, 1)
-                if rhs.type != Token.T_GROUPING:
-                    if self.python:
-                        tmp = Token(Token.T_BLOCK, rhs.line, rhs.index, '{}')
-                        tmp.children= [rhs]
-                        rhs = tmp
-                    else:
-                        self.warn(rhs, Parser.W_BLOCK_UNSAFE)
-                else:
-                    rhs.type = Token.T_BLOCK
-                token.type = Token.T_FUNCTION
-                token.children.append(rhs)
-                return 1
-
-        # --------------
 
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
            token.value not in operators:
@@ -2461,7 +2454,7 @@ def main():  # pragma: no cover
 
     # TODO: types should have a T_ANNOTATION with a single child, the type information
     text1 = "function f<T>(arg: T) : T { return arg }"
-    text1 = "export a, b, c, d from e"
+    text1 = """obj = {["fun"](){}, b:c}"""
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)
