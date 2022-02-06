@@ -1735,8 +1735,6 @@ class VmCompiler(object):
             else:
                 raise CompileError(arg, "unexpected argument")
 
-        print("build function", arglist.children, closure)
-
         self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
 
         if closure and closure.children:
@@ -1745,7 +1743,6 @@ class VmCompiler(object):
             for child in closure.children:
 
                 if child.type == Token.T_FREE_VAR:
-                    print("cellvar load 1")
                     # argument is always a local variable, make a reference to it
                     #_, index = self._token2index(child, True)
                     # index = self.fn.local_names.index(child.value)

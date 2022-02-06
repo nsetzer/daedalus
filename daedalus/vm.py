@@ -826,6 +826,9 @@ class VmReference(object):
         self.name = name
         self.value = value
 
+    def __repr__(self):
+        return "<Ref(%s, %s)>" % (self.name, self.value)
+
 class VmStackFrame(object):
 
     def __init__(self, module, fndef, locals, cells):
@@ -1081,12 +1084,16 @@ class VmRuntime(object):
         # cell var fix for when a function argument is also a cell var
         # store the positional argument as a cell var instead of a local var
         for arglabel in func.fndef.arglabels:
-            if arglabel in func.fndef.cell_names:
-                if not func.cells._hasAttr(arglabel):
-                    ref = VmReference(arglabel, JsUndefined.instance)
-                    func.cells.setAttr(arglabel, ref)
-                ref = func.cells.getAttr(arglabel)
-                ref.value = posargs.getAttr(arglabel)
+            if arglabel in func.fndef.cell_names and arglabel not in func.fndef.free_names:
+                ref = VmReference(arglabel, posargs.getAttr(arglabel))
+                func.cells.setAttr(arglabel, ref)
+                del posargs.data[arglabel]
+
+        # TODO: maybe remove the ref creation from the cellvar.LOAD instr
+        for name in func.fndef.cell_names:
+            if not func.cells._hasAttr(name):
+                ref = VmReference(name, JsUndefined.instance)
+                func.cells.setAttr(name, ref)
 
         new_frame = VmStackFrame(func.module, func.fndef, posargs, func.cells)
 
@@ -1304,18 +1311,21 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.cellvar.LOAD:
                 name = frame.fndef.cell_names[instr.args[0]]
                 if not frame.cells._hasAttr(name):
+                    print("TODO: unreachable?")
                     frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
                 tos = frame.cells.getAttr(name)
                 frame.stack.append(tos)
             elif instr.opcode == opcodes.cellvar.SET:
                 name = frame.fndef.cell_names[instr.args[0]]
                 if not frame.cells._hasAttr(name):
+                    print("TODO: unreachable?")
                     frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
                 tos = frame.stack.pop()
                 frame.cells.getAttr(name).value = tos
             elif instr.opcode == opcodes.cellvar.GET:
                 name = frame.fndef.cell_names[instr.args[0]]
                 if not frame.cells._hasAttr(name):
+                    print("TODO: unreachable?")
                     frame.cells.setAttr(name, VmReference(name, JsUndefined.instance))
                 tos = frame.cells.getAttr(name).value
                 frame.stack.append(tos)
@@ -1449,10 +1459,7 @@ class VmRuntime(object):
 
                 cells = []
                 for ref in cellvars.array:
-                    if ref.name in fndef.free_names:
-                        cells.append((ref.name, VmReference(ref.name, ref.value)))
-                    else:
-                        cells.append((ref.name, ref))
+                    cells.append((ref.name, ref))
                 fn.cells = JsObject(cells)
                 frame.stack.append(fn)
             elif instr.opcode == opcodes.obj.UPDATE_ARRAY:

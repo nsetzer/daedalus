@@ -737,6 +737,27 @@ class VmFunctionTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], "a_x1=y1,b_x2=y2")
 
+    def test_reflective_object(self):
+
+        text = """
+            mymodule = (function() {
+                // this works easily when obj is in a global scope
+                // but is challenging when using cell/free vars
+                // the cell reference must be created before
+                // the obj is instantiated and before the function b
+                // is defined.
+                const obj = {
+                    a: function(){return 1},
+                    b: function(){return obj.a()}
+                }
+                return {obj}
+            })()
+            let result = mymodule.obj.b()
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], 1)
+
+
 class VmObjectTestCase(unittest.TestCase):
 
     @classmethod
