@@ -1415,7 +1415,10 @@ class VmCompiler(object):
         except Exception as e:
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
         instr = self._build_instr_string(state, token, value)
+
         self._push_instruction(instr)
+        if not (state & VmCompiler.C_LOAD):
+            self._push_instruction(VmInstruction(opcodes.stack.POP, token=token))
 
     def _visit_number(self, depth, state, token):
 
@@ -1427,6 +1430,8 @@ class VmCompiler(object):
             op = opcodes.const.FLOAT32
 
         self._push_instruction(VmInstruction(op, val, token=token))
+        if not (state & VmCompiler.C_LOAD):
+            self._push_instruction(VmInstruction(opcodes.stack.POP, token=token))
 
     def _visit_keyword(self, depth, state, token):
 

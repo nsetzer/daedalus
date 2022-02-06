@@ -1222,9 +1222,9 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
                 if frame.stack:
-                    print("warning: stack not empty")
-                    self._print_trace()
-                    traceback.print_stack()
+                    print("warning: stack not empty", frame.stack)
+                    #self._print_trace()
+                    #traceback.print_stack()
                 self.stack_frames.pop()
                 if len(self.stack_frames) == 0:
                     return_value = rv
@@ -2131,27 +2131,11 @@ def main():
     """
 
     text1 = """
-        //let [a,b,c] = [1,2,3]
-        //console.log(a+b+c)
+        let [a,b,c] = [1,2,3]
+        console.log(a+b+c)
     """
 
-
-
-    text1 = """
-
-        mymodule = (function() {
-            function a() {
-                return 0;
-            }
-
-            function b(){
-                return a()
-            }
-
-            return [a, b]
-        })()
-    """
-
+    # this test is the reason for the per-identity transform
     text1 = """
 
         mymodule = (function() {
@@ -2163,67 +2147,19 @@ def main():
 
             }
 
-            return [a, b]
+            return {a, b}
         })()
     """
 
-
-
+    # should not leave anything on the stack
     text1 = """
-        include "../morpgsite/frontend/build/static/index.js"
+        "a";
+        8;
     """
 
     text1 = """
-        mymodule = (function() {
-            const obj = {}
-            obj.a = function(){return 1}
-            obj.b = function(){return obj.a()}
-            return {obj}
-        })()
-        y=mymodule.obj.b()
+        include "../morpgsite/frontend/build/static/index.js";
     """
-
-    text1 = """
-
-
-        mymodule = (function() {
-            const obj = {
-                a: function(){return 1},
-                b: function(){return obj.a()},
-            }
-            return {obj}
-        })()
-        y=mymodule.obj.b()
-
-    """
-
-    text1 = """
-        function r1(arg) {
-            function r2() {
-                return arg.a
-            }
-            return r2
-        }
-        let result = r1({'a':1})();
-    """
-
-    text1 = """
-            function r1(obj2) {
-                let result = Object.keys(obj2).map(key => {
-                    let val = obj2[key]
-                    if (typeof(val) === 'object') {
-                        return r1(val)
-                    } else {
-                        return key+"="+val
-                    }
-                })
-                return result.join(",")
-            }
-
-            let obj = {"a": {"x1": "y1"}, "b": {"x2": "y2"}}
-            let result = r1(obj)
-
-        """
 
     if False:
         tokens = Lexer().lex(text1)
