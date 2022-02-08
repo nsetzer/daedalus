@@ -642,6 +642,43 @@ class VmLogicTestCase(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['sum'], 45)
+
+    def test_for_in_iter_twice(self):
+        text = """
+            o1 = {'a':1, 'b': 2}
+            o2 = {}
+            o3 = {}
+
+            for (const name in o1) {
+                o2[name] = o1[name]*2
+            }
+
+            for (const name in o2) {
+                o3[name] = o2[name]*2
+            }
+
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['o3'].getIndex('a'), 4)
+
+    def test_for_of_iter_twice(self):
+        text = """
+            o1 = [1,2,3]
+            o2 = {}
+            o3 = {}
+
+            for (const idx of o1) {
+                o2[idx] = idx*2
+            }
+
+            for (const idx of o2) {
+                o3[idx] = idx*2
+            }
+
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['o3'].getIndex(1), 2)
+
 class VmFunctionTestCase(unittest.TestCase):
 
     @classmethod
@@ -756,7 +793,6 @@ class VmFunctionTestCase(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], 1)
-
 
 class VmObjectTestCase(unittest.TestCase):
 

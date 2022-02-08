@@ -260,6 +260,9 @@ class JsObject(object):
     def getOwnPropertyNames(object):
         return JsArray()
 
+    def _update(self, other):
+        self.data.update(other.data)
+
 class JsObjectCtor(JsObject):
 
     def __call__(self, *args, **kwargs):
@@ -741,6 +744,16 @@ class JsDocument(JsObject):
         print("createElement:", id(elem), id(elem.getAttr("sheet")))
 
         return elem
+
+    def getElementsByTagName(self, tagname):
+
+        if tagname == "HEAD":
+            return [self.head]
+
+        if tagname == "BODY":
+            return [self.body]
+
+        return []
 
 class JsElement(JsObject):
 
@@ -1401,6 +1414,10 @@ class VmRuntime(object):
                     val = JsString("string")
                 elif isinstance(obj, JsObject):
                     val = JsString(obj.type_name)
+                elif isinstance(obj, JsFunction):
+                    val = JsString("function")
+                elif isinstance(obj, (JsNumber, int, float)):
+                    val = JsString("number")
                 else:
                     print("typename of", obj)
                     val = "<unknown>"
@@ -2158,7 +2175,118 @@ def main():
     """
 
     text1 = """
-        include "../morpgsite/frontend/build/static/index.js";
+        //include "../morpgsite/frontend/build/static/index.js";
+
+        //const document_root = document.getElementById("root")
+        //while (document_root.hasChildNodes()) {
+        //    document_root.removeChild(document_root.lastChild);
+        //}
+        //daedalus.render(document_root, new app.App())
+
+        /*
+        const A = (function() {
+            prototype_x_y = {}
+            super = A ?? (()=>{})
+            function B() {
+                this.__proto__ = prototype_x_y
+                build_class(B, A)
+                super = super.bind(this)
+
+                <constructor>
+
+                return this
+            }
+            A.prototype = prototype_x_y
+            return A
+        })()
+        */
+
+        class A { constructor() {this.x=4}}
+        A.prototype.y = 8
+        A.prototype.f = function(){return this.x} // returned 4
+        A.prototype.g = ()=>{return this.x} // returns undefined
+        a = new A()
+
+        result1 = a.x
+        result2 = a.y
+        result3 = a.f()
+    """
+
+    text1 = """
+    // experimenting with what the class transform must do
+    // in order to convert a class into a set of functions that
+    // the virtual machine can execute
+
+    _object_root = (()=>{})
+
+    function build_class(inst, type) {
+
+        for (let name in type.prototype) {
+            inst.__proto__[name] = type.prototype[name]
+        }
+
+        for (let name2 in inst.__proto__) {
+            v = inst.__proto__[name2]
+            if (typeof(v) === "function") {
+                v = v.bind(inst)
+            }
+            inst[name2] = v
+        }
+
+    }
+
+    const A = (function() {
+        prototype_x_y = {}
+        _super = (undefined ?? _object_root)
+        prototype_x_y._update(_super.prototype)
+        function A(x, y) {
+            this.__proto__ ??= prototype_x_y
+            this.constructor ??= A
+            _super = _super.bind(this)
+            build_class(this, _super)
+
+            this.x = x
+            this.y = y
+
+            return this
+        }
+        A.name = "A"
+        A.prototype = prototype_x_y
+        return A
+    })()
+
+    A.prototype.z = 5
+    A.prototype.f = function(){return this.x*this.y}
+
+    const B = (function() {
+        prototype_x_y = {}
+        _super = (A ?? _object_root)
+        prototype_x_y._update(_super.prototype)
+        prototype_x_y.mymeth = function(){}
+        function B() {
+            this.__proto__ ??= prototype_x_y
+            this.constructor ??= B
+            _super = _super.bind(this)
+            build_class(this, _super)
+
+            _super(6, 7)
+
+            return this
+        }
+        B.name = "B"
+        B.prototype = prototype_x_y
+        return B
+    })()
+
+    a = new A(5,5)
+    b = new B()
+    p = B.prototype
+    // this causes the interpreter to exit without an error
+    // if the function is an empty function
+    console.log(b.mymeth())
+    console.log([a.x, a.y, a.z, a.f(), a.constructor.name])
+    console.log([b.x, b.y, b.z, b.f(), b.constructor.name])
+
     """
 
     if False:

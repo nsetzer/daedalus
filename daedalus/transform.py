@@ -986,7 +986,6 @@ class VariableScope(object):
 
     def popBlockScope(self):
 
-        self.blscope_ids.pop()
         mapping = self.blscope.pop()
 
         for key, ref in mapping.items():
@@ -1390,6 +1389,8 @@ class TransformAssignScope(object):
             Token.T_UNPACK_SEQUENCE: self.visit_unpack_sequence,
             Token.T_UNPACK_OBJECT: self.visit_unpack_object,
             Token.T_FOR: self.visit_for,
+            Token.T_FOR_IN: self.visit_for_in,
+            Token.T_FOR_OF: self.visit_for_of,
             Token.T_GET_ATTR: self.visit_get_attr,
             Token.T_CATCH: self.visit_catch,
 
@@ -1416,6 +1417,8 @@ class TransformAssignScope(object):
             Token.T_ASYNC_ANONYMOUS_GENERATOR: self.finalize_function,
 
             Token.T_FOR: self.finalize_block,
+            Token.T_FOR_IN: self.finalize_block,
+            Token.T_FOR_OF: self.finalize_block,
             Token.T_CATCH: self.finalize_block,
 
             Token.T_LAMBDA: self.finalize_function,
@@ -1997,6 +2000,56 @@ class TransformAssignScope(object):
         self._push_children(scope, body, flags)
         self._push_children(scope, arglist, flags)
 
+    def visit_for_in(self, flags, scope, token, parent):
+        """
+        for a C-Style for loop process the argument list
+        as if it was inside the body of the loop.
+
+        this allows for two consecutive loops to define the same
+        iteration variable as const or with let
+        """
+
+        label, expr, body = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in for loop body")
+
+        # the extra block scope, and finalize, allows for declaring
+        # variables inside of a for arg list
+
+        scope.pushBlockScope()
+        self._push_finalize(scope, token, parent)
+
+        self._push_children(scope, body, flags)
+        self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [label], token)
+        self._push_tokens(ST_VISIT, scope, [expr], token)
+
+    def visit_for_of(self, flags, scope, token, parent):
+        """
+        for a C-Style for loop process the argument list
+        as if it was inside the body of the loop.
+
+        this allows for two consecutive loops to define the same
+        iteration variable as const or with let
+        """
+
+        label, expr, body = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in for loop body")
+
+        # the extra block scope, and finalize, allows for declaring
+        # variables inside of a for arg list
+
+        scope.pushBlockScope()
+        self._push_finalize(scope, token, parent)
+
+        self._push_children(scope, body, flags)
+        self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [label], token)
+        self._push_tokens(ST_VISIT, scope, [expr], token)
+
     def visit_get_attr(self, flags, scope, token, parent):
 
         lhs, rhs = token.children
@@ -2116,9 +2169,13 @@ class TransformAssignScope(object):
 
         refs = scope.popBlockScope()
 
+        # TODO: certain scopes, like for_of, and for_in need a special case
+        #       where the iteration label needs to be deleted
+        #       if not already covered by save / restore
+
         # delete variables in the reverse order that they were defined
         # in this scope
-        if refs and self.save_vars:
+        if refs:
 
             _save = []
             _restore = []
@@ -2129,16 +2186,18 @@ class TransformAssignScope(object):
                 # of a label after a block exits
                 # ref counter checks to see if this is not the first time
                 # that this variable was assigned
-                if ref.token.type in [Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR] and ref.counter > 1:
-                    tok = Token(Token.T_SAVE_VAR, token.line, token.index, "", [ref.token.clone()])
-                    tok.ref = ref
-                    tok.ref_attr = 8
-                    _save.append(tok)
+                if self.save_vars:
+                    if ref.token.type in [Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR] and ref.counter > 1:
+                        tok = Token(Token.T_SAVE_VAR, token.line, token.index, "", [ref.token.clone()])
+                        tok.ref = ref
+                        tok.ref_attr = 8
+                        _save.append(tok)
 
-                    tok = Token(Token.T_RESTORE_VAR, token.line, token.index, "", [ref.token.clone()])
-                    tok.ref = ref
-                    tok.ref_attr = 8
-                    _restore.insert(0, tok) # reverse order
+                        tok = Token(Token.T_RESTORE_VAR, token.line, token.index, "", [ref.token.clone()])
+                        tok.ref = ref
+                        tok.ref_attr = 8
+                        _restore.insert(0, tok) # reverse order
+
 
             if _save or _restore:
                 # TODO: validate that parent is a block or module

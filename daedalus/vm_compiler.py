@@ -225,6 +225,9 @@ class VmClassTransform(TransformBaseV2):
         # TODO: copy dict from PARENT_CLASS.prototype
         #       then update using CLASS.prototype
         #       -- may require a special python function
+
+        # TODO: prototype must be a property of a class constructor
+        #       __proto__ is the reference to the prototype used when constructing a class instance
         _this = Token(Token.T_KEYWORD, token.line, token.index, "this")
         _proto = Token(Token.T_ATTR, token.line, token.index, "prototype")
         _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_this, _proto])
@@ -897,11 +900,11 @@ class VmCompiler(object):
         self.fn_jumps[instr2] = [instr3]  # target, list[source]
 
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr1)
-        self._push_token(depth, VmCompiler.C_VISIT, branch_false)
+        self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, branch_false)
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr2)
-        self._push_token(depth, VmCompiler.C_VISIT, branch_true)
+        self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, branch_true)
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr3)
-        self._push_token(depth, VmCompiler.C_VISIT, arglist)
+        self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, arglist)
 
     def _visit_while(self, depth, state, token):
         arglist, block = token.children
@@ -1365,7 +1368,7 @@ class VmCompiler(object):
 
             lhs, rhs = token.children
             if lhs.type == Token.T_GET_ATTR:
-                self._push_token(depth, VmCompiler.C_VISIT, token.children[1])
+                self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[1])
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
             elif lhs.type == Token.T_SUBSCR:
                 raise NotImplementedError()
@@ -1708,7 +1711,13 @@ class VmCompiler(object):
 
         if token.type == Token.T_LAMBDA and block.type != token.T_BLOCK:
             # TODO: move to transform step?
-            block = Token(Token.T_RETURN, block.line, block.index, "{}", [block])
+            block = Token(Token.T_RETURN, block.line, block.index, "return", [block])
+
+        if not block.children:
+            # block must have at least one instruction otherwise the interpreter exits early
+            _value =Token(Token.T_KEYWORD, block.line, block.index, "undefined")
+            _return = Token(Token.T_RETURN, block.line, block.index, "return", [_value])
+            block.children.append(_return)
 
         fndef = VmFunctionDef(block, self.module.globals)
         fndef._name = token.children[0].value
@@ -1721,6 +1730,7 @@ class VmCompiler(object):
         # determine the arguments to this function
         vartypes= (Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR, Token.T_FREE_VAR)
         if arglist.type in vartypes:
+            # TODO: move this to the transform layer
             # for one argument, mutate to multiple
             arglist = Token(Token.T_ARGLIST, arglist.line, arglist.index, '', [arglist])
 
