@@ -11,7 +11,7 @@ from tests.util import edit_distance
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityScope, TransformReplaceIdentity, TransformClassToFunction
-from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform, VmRuntimeException
+from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
 
 
 VariableScope.disable_warnings = True
@@ -25,7 +25,7 @@ def evaljs(text, diag=False):
     tokens = lexer.lex(text)
     ast = parser.parse(tokens)
 
-    xform = VmClassTransform()
+    xform = VmClassTransform2()
     xform.transform(ast)
 
     xform = TransformIdentityScope()

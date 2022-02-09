@@ -266,6 +266,130 @@ class VmClassTransform(TransformBaseV2):
 
         parent.children[index] = constructor
 
+class VmClassTransform2(TransformBaseV2):
+
+    def __init__(self):
+        super().__init__()
+
+        lexer = Lexer()
+        parser = Parser()
+        parser.disable_all_warnings = True
+
+        template_string = """
+
+        const CLASS_NAME = (function() {
+            PROTOTYPE_X_Y = {}
+            SUPER_X_Y = (CLASS_PARENT ?? (()=>{})) // TODO: use a singleton for the default value
+            for (let name in SUPER_X_Y.prototype) {
+
+                PROTOTYPE_X_Y[name] = SUPER_X_Y.prototype[name]
+            }
+            CLASS_METHODS
+            function CLASS_NAME(CONSTRUCTOR_ARGS) {
+                this.__proto__ ??= PROTOTYPE_X_Y
+                this.constructor ??= CLASS_NAME
+                this._super ??= SUPER_X_Y.bind(this)
+                for (let name in this.__proto__) {
+                    v = this.__proto__[name]
+                    if (typeof(v) === "function") {
+                        v = v.bind(this)
+                    }
+                    this[name] = v
+                }
+                CLASS_CONSTRUCTOR
+                return this
+            }
+            CLASS_NAME.name = CLASS_NAME_STRING
+            CLASS_NAME.prototype = PROTOTYPE_X_Y
+            return CLASS_NAME
+        })()
+
+        """
+
+        tokens = lexer.lex(template_string)
+        self.template = parser.parse(tokens).children[0]
+
+    def _apply(self, cfg):
+
+        cls = self.template.clone()
+
+        stack = [cls]
+        while stack:
+            node = stack.pop()
+            stack.extend(node.children)
+            for i, child in enumerate(node.children):
+
+                if child.value == 'CONSTRUCTOR_ARGS':
+                    node.children = cfg['CONSTRUCTOR_ARGS']
+
+                elif child.value in cfg:
+                    node.children[i] = cfg[child.value].clone()
+
+        return cls
+
+    def visit(self, parent, token, index):
+
+        # TODO: instance of keyword super must be replaced with this.super
+
+        if token.type == Token.T_CLASS:
+            self._visit_class(parent, token, index)
+
+        if token.type == Token.T_KEYWORD and token.value == "super":
+
+            parent.children[index] = Token(Token.T_GET_ATTR, token.line, token.index, ".", [
+                Token(Token.T_KEYWORD, token.line, token.index, "this"),
+                Token(Token.T_ATTR, token.line, token.index, "_super"),
+            ])
+
+
+    def _visit_class(self, parent, token, index):
+
+        class_name = token.children[0]
+        parent_class = token.children[1]
+        block1 = token.children[2]
+
+        class_name_string = Token(Token.T_STRING, 0, 0, repr(class_name.value))
+
+        if parent_class.children:
+            parent_token = parent_class.children[0]
+        else:
+            parent_token = Token(Token.T_KEYWORD, 0, 0, "undefined")
+        print("parent", class_name, parent_class.children, parent_token)
+
+        prototype = Token(Token.T_TEXT, 0, 0, "prototype_%d_%d" % (token.line, token.index))
+        super_token = Token(Token.T_TEXT, 0, 0, "super_%d_%d" % (token.line, token.index))
+
+        constructor = Token(Token.T_BLOCK, 0, 0, "{}")
+        constructor_args = []
+        methods = Token(Token.T_BLOCK, 0, 0, "{}")
+
+        for meth in block1.children:
+
+            if meth.children[0].value == "constructor":
+                constructor_args = meth.children[1].children
+                constructor = meth.children[2]
+            else:
+                meth.type = Token.T_ANONYMOUS_FUNCTION
+
+                _attr =Token(Token.T_ATTR, token.line, token.index, meth.children[0].value)
+                _getattr = Token(Token.T_GET_ATTR, token.line, token.index, ".", [prototype, _attr])
+                _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_getattr, meth])
+
+                methods.children.append(_assign)
+
+        cfg = {
+            "CLASS_NAME": class_name,
+            "CLASS_NAME_STRING": class_name_string,
+            "CLASS_PARENT": parent_token,
+            "PROTOTYPE_X_Y": prototype,
+            "SUPER_X_Y": super_token,
+            "CLASS_CONSTRUCTOR": constructor,
+            "CLASS_METHODS": methods,
+            "CONSTRUCTOR_ARGS": constructor_args,
+        }
+
+        parent.children[index] = self._apply(cfg)
+
 class VmTransform(TransformBaseV2):
 
     def visit(self, parent, token, index):

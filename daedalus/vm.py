@@ -68,7 +68,7 @@ from .lexer import Lexer
 from .parser import Parser, ParseError
 from .transform import TransformBaseV2, TransformIdentityScope
 
-from .vm_compiler import VmCompiler, VmTransform, VmInstruction, VmClassTransform
+from .vm_compiler import VmCompiler, VmTransform, VmInstruction, VmClassTransform, VmClassTransform2
 
 class JsFunction(object):
     def __init__(self, module, fndef, args, kwargs, bind_target):
@@ -381,7 +381,6 @@ class JsArray(JsObject):
                 }
             }
         """
-
 
 class JsSet(JsObject):
     type_name = "Set"
@@ -1119,8 +1118,9 @@ class VmRuntime(object):
         return_value = None
 
         history = []
-
+        self.steps = 0
         while frame.sp < len(instrs):
+            self.steps += 1
 
             tstack = self.timer.check()
             if tstack != None:
@@ -1606,7 +1606,7 @@ class VmLoader(object):
         parser.python = True
         ast = parser.parse(tokens)
 
-        xform = VmClassTransform()
+        xform = VmClassTransform2()
         xform.transform(ast)
 
         xform = TransformIdentityScope()
@@ -1686,6 +1686,7 @@ class VmLoader(object):
         rv, mod_globals = self.runtime.run()
 
         print("return value", rv)
+        print("steps", self.runtime.steps)
         print("globals", mod_globals.values)
 
         return rv, mod_globals
@@ -2183,23 +2184,26 @@ def main():
         //}
         //daedalus.render(document_root, new app.App())
 
-        /*
-        const A = (function() {
-            prototype_x_y = {}
-            super = A ?? (()=>{})
-            function B() {
-                this.__proto__ = prototype_x_y
-                build_class(B, A)
-                super = super.bind(this)
+    """
 
-                <constructor>
 
-                return this
-            }
-            A.prototype = prototype_x_y
-            return A
-        })()
-        */
+    text1 = """
+
+        class A{
+            constructor(x,y){ this.x=x; this.y=y}
+            area() { return this.x * this.y }
+        }
+
+        class B extends A {
+            constructor(){super(6,7)}
+        }
+
+        let b = B()
+        console.log(b.area)
+        let r = b.area()
+    """
+
+    text1 = """
 
         class A { constructor() {this.x=4}}
         A.prototype.y = 8
@@ -2210,84 +2214,9 @@ def main():
         result1 = a.x
         result2 = a.y
         result3 = a.f()
+        result4 = a.g() // doesnt work yet (can't differentiate lambda / function)
     """
 
-    text1 = """
-    // experimenting with what the class transform must do
-    // in order to convert a class into a set of functions that
-    // the virtual machine can execute
-
-    _object_root = (()=>{})
-
-    function build_class(inst, type) {
-
-        for (let name in type.prototype) {
-            inst.__proto__[name] = type.prototype[name]
-        }
-
-        for (let name2 in inst.__proto__) {
-            v = inst.__proto__[name2]
-            if (typeof(v) === "function") {
-                v = v.bind(inst)
-            }
-            inst[name2] = v
-        }
-
-    }
-
-    const A = (function() {
-        prototype_x_y = {}
-        _super = (undefined ?? _object_root)
-        prototype_x_y._update(_super.prototype)
-        function A(x, y) {
-            this.__proto__ ??= prototype_x_y
-            this.constructor ??= A
-            _super = _super.bind(this)
-            build_class(this, _super)
-
-            this.x = x
-            this.y = y
-
-            return this
-        }
-        A.name = "A"
-        A.prototype = prototype_x_y
-        return A
-    })()
-
-    A.prototype.z = 5
-    A.prototype.f = function(){return this.x*this.y}
-
-    const B = (function() {
-        prototype_x_y = {}
-        _super = (A ?? _object_root)
-        prototype_x_y._update(_super.prototype)
-        prototype_x_y.mymeth = function(){}
-        function B() {
-            this.__proto__ ??= prototype_x_y
-            this.constructor ??= B
-            _super = _super.bind(this)
-            build_class(this, _super)
-
-            _super(6, 7)
-
-            return this
-        }
-        B.name = "B"
-        B.prototype = prototype_x_y
-        return B
-    })()
-
-    a = new A(5,5)
-    b = new B()
-    p = B.prototype
-    // this causes the interpreter to exit without an error
-    // if the function is an empty function
-    console.log(b.mymeth())
-    console.log([a.x, a.y, a.z, a.f(), a.constructor.name])
-    console.log([b.x, b.y, b.z, b.f(), b.constructor.name])
-
-    """
 
     if False:
         tokens = Lexer().lex(text1)
@@ -2295,7 +2224,11 @@ def main():
         parser.feat_xform_optional_chaining = True
         parser.python = True
         ast = parser.parse(tokens)
+
+        xform = VmClassTransform2()
+        xform.transform(ast)
         print(ast.toString(1))
+
         xform = TransformIdentityScope()
         xform.disable_warnings=True
         xform.transform(ast)
@@ -2303,7 +2236,7 @@ def main():
         xform = VmTransform()
         xform.transform(ast)
 
-        print(ast.toString(2))
+        print(ast.toString(1))
 
     #text1 = open("./res/daedalus/daedalus_util.js").read()
     """
