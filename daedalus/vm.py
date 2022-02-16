@@ -253,7 +253,7 @@ class JsObject(object):
 
     @staticmethod
     def keys(inst):
-        x = JsArray(inst.data.keys())
+        x = JsArray([JsString(s) for s in inst.data.keys()])
         return x
 
     @staticmethod
@@ -329,6 +329,19 @@ class JsArray(JsObject):
     def push(self, item):
         self.array.append(item)
 
+    def pop(self):
+        return self.array.pop()
+
+
+    def slice(self, start=None, end=None):
+
+        if start is None and end is None:
+            return JsArray(self.array[:])
+        elif end is None:
+            return JsArray(self.array[start:])
+        else:
+            return JsArray(self.array[start:end])
+
     @property
     def length(self):
         return len(self.array)
@@ -358,6 +371,10 @@ class JsArray(JsObject):
         seq = [str(s) for s in self.array]
         return JsString(string.value.join(seq))
 
+    @staticmethod
+    def isArray(other):
+        return isinstance(other, JsArray)
+
     @jsc
     def filter(self):
         return """
@@ -377,7 +394,7 @@ class JsArray(JsObject):
         return """
             function forEach(fn) {
                 for (let i=0; i < this.length; i++) {
-                    fn(this[i])
+                    fn(this[i], i)
                 }
             }
         """
@@ -393,14 +410,30 @@ class JsSet(JsObject):
         else:
             self.seq = set()
 
+    @property
+    def size(self):
+        return len(self.seq)
+
 def _apply_value_operation(cls, op, a, b):
     if not isinstance(b, JsObject):
         b = cls(b)
 
+    if a is None:
+        a = JsString("null")
+
+    if b is None:
+        b = JsString("null")
+
+    if isinstance(a, JsUndefined):
+        a = JsString("undefined")
+
+    if isinstance(b, JsUndefined):
+        b = JsString("undefined")
+
     if isinstance(a, JsString) or isinstance(b, JsString):
-        if isinstance(a, (int, float)):
+        if isinstance(a, (int, float, str)):
             a = JsString(a)
-        if isinstance(b, (int, float)):
+        if isinstance(b, (int, float, str)):
             b = JsString(b)
         return JsString(op(a.value, b.value))
     else:
@@ -482,7 +515,7 @@ class JsString(JsObject, metaclass=JsStringType):
 
     def getIndex(self, index):
         if index < len(self.value):
-            return self.value[index]
+            return JsString(self.value[index])
         print("get undefined index %s" % index)
         return JsUndefined.instance
 
@@ -517,6 +550,9 @@ class JsString(JsObject, metaclass=JsStringType):
 
     def match(self, regex):
         return bool(regex.reg.match(self.value))
+
+    def startsWith(self, substr):
+        return bool(self.value.startswith(substr.value))
 
 class JsUndefined(JsObject):
     instance = None
@@ -730,19 +766,38 @@ class JsDocument(JsObject):
     def __init__(self):
         super(JsDocument, self).__init__()
 
+        self.html = JsElement()
         self.head = JsElement()
         self.body = JsElement()
+
+        self.html.setAttr("type", JsString("html"))
+        self.head.setAttr("type", JsString("head"))
+        self.body.setAttr("type", JsString("body"))
+
+        self.html.children = JsArray([self.head, self.body])
 
     @staticmethod
     def createElement(name):
 
         elem = JsElement()
+        elem.setAttr("type", name)
 
-        elem.setAttr("sheet", JsElement())
+        if name.value == "style":
+            elem.setAttr("sheet", JsElement())
 
-        print("createElement:", id(elem), id(elem.getAttr("sheet")))
+        print("+++createElement:", name)
 
         return elem
+
+    @staticmethod
+    def createTextNode(text):
+
+        dom = JsElement()
+        dom.setAttr("type", JsString("TEXT_ELEMENT"))
+        dom.setAttr("nodeValue", text)
+        print("+++createElement: text", text)
+
+        return dom
 
     def getElementsByTagName(self, tagname):
 
@@ -754,35 +809,76 @@ class JsDocument(JsObject):
 
         return []
 
+    def getElementById(self, elemid):
+
+        if elemid == "root":
+            return self.body
+
+
+
+
+
 class JsElement(JsObject):
 
     def __init__(self):
         super(JsElement, self).__init__(None)
 
         self.rules = JsArray()
-        self.children = []
+        self.children = JsArray()
+        self.style = JsObject()
 
     #def __repr__(self):
     #    x = super().__repr__()
     #    return "<JsElement(" + str(self.rules) + "," + str(self.children) + ")>" + x
 
-    def toString(self):
-        print("!tostring", id(self))
+    def toString(self, depth=0):
 
         type_ = self.getAttr("type")
-        if type_ == "text/css":
-            elem = self.getAttr("sheet")
-            for rule in elem.rules.array:
-                print("!tostring", rule)
+
+        if type_:
+
+            if type_.value == "sheet":
+                return ">?sheet"
+            elif type_.value == "text/css":
+                elem = self.getAttr("sheet")
+                s = "  "*depth + "<style>\n"
+                for rule in elem.rules.array:
+                    s += "  "*depth
+                    s += rule
+                    s += "\n"
+                s += "  "*depth
+                s += "</style>"
+                return JsString(s)
+            elif type_.value == "TEXT_ELEMENT":
+                return "  "*depth + self.getAttr("nodeValue")
+            else:
+                s = "  "*depth + "<%s" % type_
+                for key in JsObject.keys(self).array:
+                    key=key.value
+                    if key == "type" or key.startswith("_$"):
+                        continue
+                    attr =  self.getAttr(key)
+                    if key == "className":
+                        key = "class"
+                    s += " %s=\"%s\"" % (key, attr)
+                s += ">\n"
+                for child in self.children.array:
+                    s += child.toString(depth + 1)
+                    s += "\n"
+                s += "  "*depth + "</%s>" % type_
+
+                return JsString(s)
         else:
-            print("--", self, type_)
-            print("--", self.rules.array)
-            for child in self.children:
-                child.toString()
+            return "undefined type"
+
 
     def appendChild(self, child):
-        self.children.append(child)
+        self.children.push(child)
         print("appendChild:",  id(self), child)
+
+    def insertBefore(self, child, other):
+        self.children.push(child)
+        print("insertBefore:",  id(self), child)
 
     def insertRule(self, text, index=0):
         print("insertRule:", id(self), text)
@@ -790,6 +886,13 @@ class JsElement(JsObject):
 
     def addRule(self, selector, text):
         self.insertRule(selector + " {" + text + "}", self.rules.length)
+
+    def hasChildNodes(self):
+        return self.children.length > 0
+
+    @property
+    def lastChild(self):
+        return self.children.array[-1]
 
 class JsWindow(JsObject):
 
@@ -967,7 +1070,7 @@ class VmRuntime(object):
         _math.ceil = math.ceil
         _math.random = random.random
         _Symbol = lambda: None
-        _Symbol.iterator = "_x_daedalus_js_prop_iterator"
+        _Symbol.iterator = JsString("_x_daedalus_js_prop_iterator")
 
         history = lambda: None
         history.pushState = lambda x: None
@@ -1122,6 +1225,9 @@ class VmRuntime(object):
         while frame.sp < len(instrs):
             self.steps += 1
 
+
+
+
             tstack = self.timer.check()
             if tstack != None:
                 history.append((self.stack_frames, frame, instrs, return_value))
@@ -1131,6 +1237,10 @@ class VmRuntime(object):
                 return_value = None
 
             instr = instrs[frame.sp]
+
+            if frame.stack and isinstance(frame.stack[-1], str):
+                print("str", repr(frame.stack[-1]), instr.line, instr.opcode)
+                raise VmRuntimeException(self._get_trace(), "found str on stack")
 
             if self.enable_diag:
                 #name = frame.local_names[instr.args[0]]
@@ -1186,6 +1296,7 @@ class VmRuntime(object):
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
+                    raise Exception("not callable")
 
             elif instr.opcode == opcodes.ctrl.CALL_KW:
 
@@ -1211,6 +1322,7 @@ class VmRuntime(object):
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
+                    raise Exception("not callable")
 
             elif instr.opcode == opcodes.ctrl.CALL_EX:
                 kwargs = frame.stack.pop()
@@ -1231,6 +1343,7 @@ class VmRuntime(object):
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d" % (instr.line, instr.index))
+                    raise Exception("not callable")
 
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
@@ -1681,13 +1794,15 @@ class VmLoader(object):
 
 
         print("=*" + "="*68)
-        self.runtime.enable_diag = True
+        #self.runtime.enable_diag = True
         self.runtime.init(root_mod)
-        rv, mod_globals = self.runtime.run()
+        try:
+            rv, mod_globals = self.runtime.run()
 
-        print("return value", rv)
-        print("steps", self.runtime.steps)
-        print("globals", mod_globals.values)
+            print("return value", rv)
+            print("globals", mod_globals.values)
+        finally:
+            print("steps", self.runtime.steps)
 
         return rv, mod_globals
 
@@ -2217,6 +2332,103 @@ def main():
         result4 = a.g() // doesnt work yet (can't differentiate lambda / function)
     """
 
+    text1 = """
+        # this should not trigger save/restore
+        seq = [1,2,3]
+        function f() {
+            if (false) {
+                while (seq.length>0) {
+                    let unit = seq.pop()
+                }
+            } else {
+                while (seq.length>0) {
+                    let unit = seq.pop()
+                }
+            }
+        }
+        result = f()
+    """
+
+    text1 = """
+        include "../morpgsite/frontend/build/static/index.js";
+
+        const document_root = document.getElementById("root")
+        while (document_root.hasChildNodes()) {
+            document_root.removeChild(document_root.lastChild);
+        }
+        app = new app.App()
+        console.log(app)
+
+        daedalus.render(document_root, app)
+        daedalus.workLoop()
+
+        console.log(document.html.toString())
+
+        /*
+        function render(elem) {
+
+            if (elem.type === "TEXT_ELEMENT") {
+                console.log(elem.props.nodeValue)
+            } else {
+
+                s = `<${elem.type}`;
+                for (const prop in elem.props) {
+                    s += ` ${prop}="${elem.props[prop]}"`;
+                }
+                s += ">"
+                console.log(s)
+                for (const child of elem.children) {
+                    render(child)
+                }
+                console.log(`</${elem.type}>`)
+            }
+        }
+
+        render(app)
+        */
+
+    """
+
+    text1 = """
+        include "./res/daedalus/daedalus.js";
+
+        console.log(daedalus)
+
+        const style = {
+            body: StyleSheet({
+                margin:0,
+                padding:0,
+            }),
+            main: StyleSheet({
+                width: "100%",
+                "text-align": "center",
+            })
+        };
+
+        class App extends DomElement {
+
+            constructor() {
+                super("div", {className: style.main})
+                this.appendChild(new TextElement("Hello World"))
+            }
+        }
+
+        const document_root = document.getElementById("root")
+        app = new App()
+        render(document_root, app)
+        workLoop()
+        console.log("--document----")
+        console.log(document.html.toString())
+        console.log("--------------")
+
+    """
+
+
+
+    # current bugs:
+    #   - do not bind of already bound functions om the prototype
+    #   - popping a block scope must delete vars not saved/restored
+    #   -
 
     if False:
         tokens = Lexer().lex(text1)

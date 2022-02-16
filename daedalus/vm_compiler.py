@@ -354,7 +354,6 @@ class VmClassTransform2(TransformBaseV2):
             parent_token = parent_class.children[0]
         else:
             parent_token = Token(Token.T_KEYWORD, 0, 0, "undefined")
-        print("parent", class_name, parent_class.children, parent_token)
 
         prototype = Token(Token.T_TEXT, 0, 0, "prototype_%d_%d" % (token.line, token.index))
         super_token = Token(Token.T_TEXT, 0, 0, "super_%d_%d" % (token.line, token.index))
@@ -680,7 +679,7 @@ class VmTransform(TransformBaseV2):
 
             parent.children[index] = token.children[0]
 
-        elif parent.type not in (Token.T_MODULE, token.T_BLOCK):
+        elif parent.type not in (Token.T_MODULE, token.T_BLOCK, Token.T_EXPORT_ARGS):
             raise VmCompileError(token, "expected parent of let to be block not %s" % parent.type)
 
         else:
@@ -1429,12 +1428,14 @@ class VmCompiler(object):
     def _visit_save_var(self, depth, state, token):
         child = token.children[0]
         opcode, index = self._token2index(child, True, delete=False)
+        print("vmc: save %s" % child, child.line, child.index)
         self._push_token(depth, VmCompiler.C_INSTRUCTION,
             VmInstruction(opcode, index, token=child))
 
     def _visit_restore_var(self, depth, state, token):
         child = token.children[0]
         opcode, index = self._token2index(child, False, delete=False)
+        print("vmc: restore %s" % child, child.line, child.index)
         self._push_token(depth, VmCompiler.C_INSTRUCTION,
             VmInstruction(opcode, index, token=child))
 
