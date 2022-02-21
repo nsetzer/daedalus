@@ -328,7 +328,7 @@ class JsFile(object):
         self.mtime = os.stat(self.source_path).st_mtime
 
         if not self.quiet:
-            sys.stderr.write("%10d %.2f %s\n" % (len(source), t2 - t1, self.source_path))
+            sys.stderr.write("%10d %.2f %s\n" % (len(self.source), t2 - t1, self.source_path))
 
     def _get_imports_exports(self, ast):
 

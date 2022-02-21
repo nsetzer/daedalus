@@ -76,12 +76,12 @@ class BuildCLI(CLI):
         minify = args.minify
         onefile = args.onefile
         index_js = os.path.abspath(args.index_js)
-        if args.path:
-            paths = paths.split(":")
+        if args.paths:
+            paths = args.paths.split(":")
         else:
             paths = []
 
-        paths.insert(0, os.path.split(js_root)[0])
+        paths.insert(0, os.path.split(index_js)[0])
 
         envparams = args.env
         staticdata = {"daedalus": {"env": dict([s.split('=', 1) for s in envparams])}}

@@ -1050,7 +1050,7 @@ class Parser(ParserBase):
             i1 = self.peek_keyword(tokens, token, index, -1)
             if i1 is not None:
                 tok1 = tokens[i1]
-                if tok1.type == Token.T_KEYWORD and tok1.value == 'import':
+                if tok1.type == Token.T_KEYWORD and tok1.value == 'import' or tok1.value == 'export':
                     return 1
 
         rhs = self.consume(tokens, token, index, 1)
@@ -1828,6 +1828,8 @@ class Parser(ParserBase):
                 stack.append(node.children[0])
             elif node.type == Token.T_COMMA:
                 stack.extend(node.children)
+            elif node.type == Token.T_SPECIAL and node.value == "*":
+                pass
             else:
                 raise ParseError(node, "unable to export token")
 
@@ -2457,7 +2459,7 @@ def main():  # pragma: no cover
 
     # TODO: types should have a T_ANNOTATION with a single child, the type information
     text1 = "function f<T>(arg: T) : T { return arg }"
-    text1 = "export a, b, c, d from e"
+    text1 = "export * from e"
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

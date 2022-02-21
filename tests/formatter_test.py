@@ -952,6 +952,19 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    @unittest.expectedFailure
+    def test_001_export_from(self):
+
+        text = """
+            export a from b
+        """
+        expected = "export a from b"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
     def test_001_computed_property(self):
 
         text = """

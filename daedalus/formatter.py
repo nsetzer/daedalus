@@ -487,12 +487,22 @@ class Formatter(object):
             elif token.type == Token.T_EXPORT:
                 # when minifying, serialize export. the builder
                 # will remove the export keyword when building
-                seq.append((depth, None, token.children[0]))
+                tmp = False
+                for child in reversed(token.children[1].children):
+                    if tmp:
+                        seq.append((depth, Token.T_SPECIAL, ', '))
+                    seq.append((depth, None, child))
+                    tmp = True
                 seq.append((depth, Token.T_SPECIAL, 'export'))
             elif token.type == Token.T_EXPORT_DEFAULT:
                 # when minifying, serialize export. the builder
                 # will remove the export keyword when building
-                seq.append((depth, None, token.children[0]))
+                tmp = False
+                for child in reversed(token.children[1].children):
+                    if tmp:
+                        seq.append((depth, Token.T_SPECIAL, ', '))
+                    seq.append((depth, None, child))
+                    tmp = True
                 seq.append((depth, Token.T_SPECIAL, 'default'))
                 seq.append((depth, Token.T_SPECIAL, 'export'))
             elif token.type == Token.T_SUBSCR:
