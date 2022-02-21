@@ -112,9 +112,9 @@ class Token(object):
     T_CLASS_BLOCK = "T_CLASS_BLOCK"
     T_CONTINUE = "T_CONTINUE"
     T_DEFAULT = "T_DEFAULT"
-    T_DOWHILE = "T_DOWHILE"
     T_EXPORT = "T_EXPORT"
     T_EXPORT_DEFAULT = "T_EXPORT_DEFAULT"
+    T_EXPORT_ARGS = "T_EXPORT_ARGS"
     T_IMPORT = "T_IMPORT"
     T_IMPORT_JS_MODULE = "T_IMPORT_JS_MODULE"
     T_IMPORT_JS_MODULE_AS = "T_IMPORT_JS_MODULE_AS"
@@ -122,17 +122,21 @@ class Token(object):
     T_PYIMPORT = "T_PYIMPORT"
     T_INCLUDE = "T_INCLUDE"
     T_FINALLY = "T_FINALLY"
+
+    T_DOWHILE = "T_DOWHILE"
+    T_WHILE = "T_WHILE"
     T_FOR = "T_FOR"
     T_FOR_OF = "T_FOR_OF"
     T_FOR_AWAIT_OF = "T_FOR_AWAIT_OF"
     T_FOR_IN = "T_FOR_IN"
+
     T_NEW = "T_NEW"
     T_RETURN = "T_RETURN"
     T_SWITCH = "T_SWITCH"
     T_THROW = "T_THROW"
     T_TRY = "T_TRY"
     T_VAR = "T_VAR"
-    T_WHILE = "T_WHILE"
+
     T_OPTIONAL_CHAINING = "T_OPTIONAL_CHAINING"
     T_NULLISH_COALESCING = "T_NULLISH_COALESCING"
     T_NULLISH_ASSIGN = "T_NULLISH_ASSIGN"
@@ -164,6 +168,8 @@ class Token(object):
     # these variables are assigned by the transform engine for variable scopes
     T_GLOBAL_VAR = 'T_GLOBAL_VAR'
     T_LOCAL_VAR = 'T_LOCAL_VAR'
+    T_SAVE_VAR = 'T_SAVE_VAR'
+    T_RESTORE_VAR = 'T_RESTORE_VAR'
     T_DELETE_VAR = 'T_DELETE_VAR'
     T_CLOSURE = 'T_CLOSURE'
     T_CELL_VAR = 'T_CELL_VAR'

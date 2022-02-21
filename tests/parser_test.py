@@ -6,6 +6,7 @@ from tests.util import edit_distance, parsecmp, TOKEN
 
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser as ParserBase, ParseError
+from daedalus.transform import TransformMinifyScope, TransformIdentityScope
 
 class Parser(ParserBase):
     def __init__(self):
@@ -902,9 +903,9 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_TEXT', 'v1')),
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_VAR', 'const',
                         TOKEN('T_ASSIGN', '=',
                             TOKEN('T_TEXT', 'v1'),
@@ -919,9 +920,9 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_TEXT', 'a')),
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_FUNCTION', 'function',
                         TOKEN('T_TEXT', 'a'),
                         TOKEN('T_ARGLIST', '()'),
@@ -936,9 +937,9 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_TEXT', 'A')),
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_CLASS', 'class',
                         TOKEN('T_TEXT', 'A'),
                         TOKEN('T_KEYWORD', 'extends'),
@@ -952,10 +953,10 @@ class ParserKeywordTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_EXPORT', 'export',
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_TEXT', 'v1'),
                     TOKEN('T_TEXT', 'v2')),
-                TOKEN('T_ARGLIST', '()',
+                TOKEN('T_EXPORT_ARGS', '()',
                     TOKEN('T_VAR', 'let',
                         TOKEN('T_TEXT', 'v1'),
                         TOKEN('T_TEXT', 'v2')))))
@@ -1288,6 +1289,82 @@ class ParserClassTestCase(unittest.TestCase):
                         TOKEN('T_ATTR', 'Y'))),
                 TOKEN('T_CLASS_BLOCK', '{}'))
         )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_obj_function(self):
+
+        text = """{"x":2, "y":4, distance(){this.x+this.y}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"x"'),
+                    TOKEN('T_NUMBER', '2')),
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"y"'),
+                    TOKEN('T_NUMBER', '4')),
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_TEXT', 'distance'),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}',
+                        TOKEN('T_BINARY', '+',
+                            TOKEN('T_GET_ATTR', '.',
+                                TOKEN('T_KEYWORD', 'this'),
+                                TOKEN('T_ATTR', 'x')),
+                            TOKEN('T_GET_ATTR', '.',
+                                TOKEN('T_KEYWORD', 'this'),
+                                TOKEN('T_ATTR', 'y')))))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_obj_function(self):
+
+        text = """{"x":0, "y":0, distance(){return this.x+this.y}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"x"'),
+                    TOKEN('T_NUMBER', '0')),
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_STRING', '"y"'),
+                    TOKEN('T_NUMBER', '0')),
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_TEXT', 'distance'),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}',
+                        TOKEN('T_RETURN', 'return',
+                            TOKEN('T_BINARY', '+',
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_KEYWORD', 'this'),
+                                    TOKEN('T_ATTR', 'x')),
+                                TOKEN('T_GET_ATTR', '.',
+                                    TOKEN('T_KEYWORD', 'this'),
+                                    TOKEN('T_ATTR', 'y'))))))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_obj_eval_key(self):
+
+        text = """{[1+2]:3, ["abc"](){}}"""
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_OBJECT', '{}',
+                TOKEN('T_BINARY', ':',
+                    TOKEN('T_LIST', '[]',
+                        TOKEN('T_BINARY', '+',
+                            TOKEN('T_NUMBER', '1'),
+                            TOKEN('T_NUMBER', '2'))),
+                    TOKEN('T_NUMBER', '3')),
+                TOKEN('T_FUNCTION', '',
+                    TOKEN('T_LIST', '[]',
+                        TOKEN('T_STRING', '"abc"')),
+                    TOKEN('T_ARGLIST', '()'),
+                    TOKEN('T_BLOCK', '{}'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -1793,9 +1870,9 @@ class ParserTypeAnnotationTestCase(unittest.TestCase):
                         TOKEN('T_TEXT', 'y'),
                         TOKEN('T_KEYWORD', 'int')))))
         self.assertFalse(parsecmp(expected, ast, False))
+
 def main():
     unittest.main()
-
 
 if __name__ == '__main__':
     main()

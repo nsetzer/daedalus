@@ -30,21 +30,28 @@ function randomFloat(min, max) {
  * Using Math.round() will give you a non-uniform distribution!
  */
 function randomInt(min, max) {
+    rnd = Math.random()
     min = Math.ceil(min);
     max = Math.floor(max);
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(rnd * (max - min + 1)) + min;
 }
 
 function object2style_helper(prefix, obj) {
+
     const items = Object.keys(obj).map(key => {
-        const type = typeof(obj[key])
+        const val = obj[key];
+        const type = typeof(val)
         if (type === "object") {
-          return object2style_helper(prefix + key + "-", obj[key])
+            return object2style_helper(prefix + key + "-", val)
         } else {
-            return [prefix + key + ": " + obj[key]]
+            return [prefix + key + ": " + val]
         }
     })
-    return [].concat.apply([], items)
+    let out = []
+    for (let i=0; i< items.length; i++) {
+        out.concat(items[i])
+    }
+    return out
 }
 
 // convert a property object into an inline CSS style string
@@ -52,7 +59,7 @@ function object2style_helper(prefix, obj) {
 //       'padding-top: 4; color: red'
 function object2style(obj) {
     const arr = object2style_helper("", obj)
-    return [].concat.apply([], arr).join(';')
+    return [].concat(arr).join(';')
 }
 
 
@@ -162,7 +169,8 @@ function generateStyleSheetName() {
             let c = chars[randomInt(0, chars.length - 1)];
             name += c;
         }
-    } while (selector_names[name]!==undefined);
+    } while (name in selector_names);
+    //} while (selector_names[name]!==undefined);
 
     return name
 }
@@ -220,7 +228,6 @@ export function StyleSheet(...args) {
         style = args[1]
         name = selector
     }
-
     //https://stackoverflow.com/questions/1720320/how-to-dynamically-create-css-class-in-javascript-and-apply
     if (css_sheet === null) {
         css_sheet = document.createElement('style');
@@ -231,11 +238,7 @@ export function StyleSheet(...args) {
 
     selector_names[name] = style
 
-    if(!(css_sheet.sheet||{}).insertRule){
-        (css_sheet.styleSheet || css_sheet.sheet).addRule(selector, text);
-    } else {
-        css_sheet.sheet.insertRule(selector+"{"+text+"}", css_sheet.sheet.rules.length);
-    }
+    css_sheet.sheet.insertRule(selector+" {"+text+"}", css_sheet.sheet.rules.length);
     return name;
 }
 

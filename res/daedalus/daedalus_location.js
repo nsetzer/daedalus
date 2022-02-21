@@ -3,8 +3,6 @@
 patch the history object to fire an event every time the location changes
 */
 
-include './daedalus_element.js'
-
 function _sendEvent() {
     const myEvent = new CustomEvent('locationChangedEvent', {
       detail: {path: location.pathname},

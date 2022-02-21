@@ -145,52 +145,65 @@ class ResultType(object):
     STRING    = 0x09
     NUMBER    = 0x08
 
+# opcodes are integers less than or equal to 0x7F
+# ctrl, stack    0x00-0x1F
+# *vars          0x20-0x2F
+# comp, math     0x30-0x4F
+# object         0x50-0x6f
+# const          0x77-0x7F
+
 class ctrl(IntEnum):
     NOP =            0x00, 0  # NOP
-    #BLOCK =          0x01, 0  #
     LOOP =           0x01, 0  #        ; start of loop construct
     IF =             0x02, 1  #        ; conditional jump
-    ELSE =           0x03, 1  #        ; unconditional jump
-    END =            0x04, 0  #        ; end of a block, loop, if
-    JUMP =           0x05, 1  #        ; unconditional jump
-    RETURN =         0x06, 1  # numargs;
-    TRY =            0x07, 0
-    CATCH =          0x08, 0
-    FINALLY =        0x09, 0
-    TRYEND =         0x0A, 0
-    THROW =          0x0B, 0
+    IFNULL =         0x03, 0  # nullish coalescing operator
+    ELSE =           0x04, 1  #        ; unconditional jump
+    END =            0x05, 0  #        ; end of a block, loop, if
+    JUMP =           0x06, 1  #        ; unconditional jump
+    RETURN =         0x07, 1  # numargs;
+    TRY =            0x08, 0
+    CATCH =          0x09, 0
+    FINALLY =        0x0A, 0
+    TRYEND =         0x0B, 0
+    THROW =          0x0C, 0
 
-    CALL    =        0x0C, 1
-    CALL_EX =        0x0D, 1
+    CALL    =        0x0D, 1
+    CALL_KW =        0x0E, 1
+    CALL_EX =        0x0F, 1
 
-    IFNULL     =     0x0E, 0  # nullish coalescing operator
-    _RESERVED2 =     0x0F, 0
-    _RESERVED3 =     0x10, 0
-    _RESERVED4 =     0x11, 0
+    INCLUDE =        0x10, 1
+    IMPORT  =        0x11, 1
 
 class stack(IntEnum):
-    ROT2 = 0x12
-    ROT3 = 0x13
-    ROT4 = 0x14
-    DUP  = 0x15
-    POP  = 0x16
+    ROT2 = 0x1B
+    ROT3 = 0x1C
+    ROT4 = 0x1D
+    DUP  = 0x1E
+    POP  = 0x1F
 
 class localvar(IntEnum):
-    GET    = 0x17, 1  # varindex
-    SET    = 0x18, 1  # varindex
-    DELETE = 0x19, 1  # varindex
+    _RESERVED = 0x20, 1  # varindex
+    GET       = 0x21, 1  # varindex
+    SET       = 0x22, 1  # varindex
+    DELETE    = 0x23, 1  # varindex
 
 class globalvar(IntEnum):
-    GET    = 0x1A, 1  # globalindex
-    SET    = 0x1B, 1  # globalindex
-    DELETE = 0x1C, 1  # globalindex
+    _RESERVED = 0x24, 1
+    GET       = 0x25, 1  # globalindex
+    SET       = 0x26, 1  # globalindex
+    DELETE    = 0x27, 1  # globalindex
 
 class cellvar(IntEnum):
-    LOAD      =  0x20, 1  # cellindex
-    GET      =  0x22, 1  # cellindex
-    SET      =  0x23, 1  # cellindex
-    DELETE   =  0x24, 1  # cellindex
+    LOAD     =  0x28, 1  # cellindex
+    GET      =  0x29, 1  # cellindex
+    SET      =  0x2A, 1  # cellindex
+    DELETE   =  0x2B, 1  # cellindex
 
+class freevar(IntEnum):
+    LOAD     =  0x2C, 1  # cellindex
+    GET      =  0x2D, 1  # cellindex
+    SET      =  0x2E, 1  # cellindex
+    DELETE   =  0x2F, 1  # cellindex
 
 class const(IntEnum):
 
@@ -202,7 +215,6 @@ class const(IntEnum):
     BOOL      = 0x7D, 0
     UNDEFINED = 0x7E, 0
     NULL      = 0x7F, 0
-
 
 class comp(IntEnum):
     LT  = 0x31
@@ -275,6 +287,7 @@ def getEnum(val):
         value2enum.update(lookup(localvar))
         value2enum.update(lookup(globalvar))
         value2enum.update(lookup(cellvar))
+        value2enum.update(lookup(freevar))
         value2enum.update(lookup(const))
         value2enum.update(lookup(comp))
         value2enum.update(lookup(stack))
@@ -286,11 +299,16 @@ def getEnum(val):
 
 def main():
 
+
+
     print(localvar.GET)
     print(localvar.GET.argcount)
 
     print(getEnum(0x50))
     print(getEnum(0x50).argcount)
+
+    print("total", len(value2enum))
+    print("remaining", 0x7F - len(value2enum))
 
 if __name__ == '__main__':
     main()

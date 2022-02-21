@@ -8,7 +8,7 @@ from tests.util import edit_distance
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.formatter import Formatter, isalphanum
-from daedalus.transform import TransformMinifyScope
+from daedalus.transform import TransformMinifyScope, TransformIdentityScope
 
 class FormatterUtilTestCase(unittest.TestCase):
 
@@ -1512,7 +1512,7 @@ class FormatterTestCase(unittest.TestCase):
             }
 
         """
-        expected = """let a={[Symbol.iterator](){let c=false;let d=-1;return{next(){d+=1;c=d+1<10;return{'done':c,'value':d}}}}};for(let b of a){console.log(b)}"""
+        expected = """let a={[Symbol.iterator](){let c=false;let d=-1;return{next(){d+=1;c=d+1<10;return{'done':c,'value':d}}}}};for(let b of a){console.log(b);}"""
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -1555,6 +1555,48 @@ class FormatterTestCase(unittest.TestCase):
                 break label;
             }
         """, "label:while(True){break label}")
+
+    def test_const_scope_identity(self):
+        text = """
+            function f() {
+                const x = 1;
+                {
+                    const x = 2;
+                }
+                return x;
+            }
+            result=f() // 1
+        """
+        expected = "function f(){const x=1;{const x=2;}return x};result=f()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformIdentityScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_const_scope_minify(self):
+        text = """
+            function f() {
+                const x = 1;
+                {
+                    const x = 2;
+                }
+                return x;
+            }
+            result=f() // 1
+        """
+        expected = "function a(){const c=1;{const c=2;}return c};b=a()"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        xform = TransformMinifyScope()
+        xform.disable_warnings=True
+        xform.transform(ast)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
 
 class FormatterStressTestCase(unittest.TestCase):
 

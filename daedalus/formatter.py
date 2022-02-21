@@ -485,24 +485,26 @@ class Formatter(object):
                 # the builder uses the information and removes the ast node
                 sys.stdout.write("include not implemented\n")
             elif token.type == Token.T_EXPORT:
+                # TODO: support export from syntax
                 # when minifying, serialize export. the builder
                 # will remove the export keyword when building
-                tmp = False
+                insert = False
                 for child in reversed(token.children[1].children):
-                    if tmp:
-                        seq.append((depth, Token.T_SPECIAL, ', '))
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ","))
                     seq.append((depth, None, child))
-                    tmp = True
+                    insert = True
                 seq.append((depth, Token.T_SPECIAL, 'export'))
             elif token.type == Token.T_EXPORT_DEFAULT:
+                # TODO: support export from syntax
                 # when minifying, serialize export. the builder
                 # will remove the export keyword when building
-                tmp = False
+                insert = False
                 for child in reversed(token.children[1].children):
-                    if tmp:
-                        seq.append((depth, Token.T_SPECIAL, ', '))
+                    if insert:
+                        seq.append((depth, Token.T_SPECIAL, ","))
                     seq.append((depth, None, child))
-                    tmp = True
+                    insert = True
                 seq.append((depth, Token.T_SPECIAL, 'default'))
                 seq.append((depth, Token.T_SPECIAL, 'export'))
             elif token.type == Token.T_SUBSCR:
@@ -641,6 +643,10 @@ class Formatter(object):
                 pass # compiler only
             elif token.type == Token.T_DELETE_VAR:
                 pass # compiler only
+            elif token.type == Token.T_SAVE_VAR:
+                pass # compiler only
+            elif token.type == Token.T_RESTORE_VAR:
+                pass # compiler only
             else:
                 raise FormatError(token, "token not supported: %s" % token.type)
 
@@ -678,6 +684,7 @@ def main():  # pragma: no cover
     text1 = """ let x : List[int] | List[float] """
     text1 = """ x : a | x """
     text1 = """ x = NaN """
+    text1 = """ export let a=1 """
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 
