@@ -665,8 +665,10 @@ class PythonRef(Ref):
         super(PythonRef, self).__init__(scname, scflags, label, counter)
 
     def identity(self):
-        s = 'f' if self.flags & SC_FUNCTION else 'b'
-        return "%s#%s%d" % (self.label, s, self.counter)
+        if self.counter > 1:
+            s = 'f' if self.flags & SC_FUNCTION else 'b'
+            return "%s#%s%d" % (self.label, s, self.counter)
+        return self.label
 
     def clone(self, scflags):
         return PythonRef(self.scname, scflags, self.label, self.counter+1)
@@ -739,6 +741,8 @@ class VariableScope(object):
         self.fnscope = {}
         self.blscope = [{}]
         self.blscope_stale = {}
+        self.blscope_tags = [""]
+        self.blscope_jump_tokens = [[]]
 
         self.blscope_ids = [0,]
         self.blscope_next_id = 1
@@ -798,8 +802,9 @@ class VariableScope(object):
         # may define the same variable identifier, but it will
         # have a different closure
         if label in self.blscope_stale:
-            return self.blscope_stale[label]
-
+            #print("found stale", label)
+            #return self.blscope_stale[label]
+            return None
         return None
 
     def _define_function(self, token):
@@ -811,6 +816,7 @@ class VariableScope(object):
         return None
 
     def _define_impl(self, scflags, token, type_):
+        #print("ref define", scope2str(scflags), token, type_)
 
         if token.type not in (Token.T_TEXT, ):
             raise TokenError(token, "unexpected token type %s" % token.type)
@@ -964,10 +970,12 @@ class VariableScope(object):
         token.ref = ref
         return ref
 
-    def pushBlockScope(self):
+    def pushBlockScope(self, tag=None):
         self.blscope_ids.append(self.blscope_next_id)
         self.blscope_next_id += 1
         self.blscope.append({})
+        self.blscope_tags.append(tag) # experimental
+        self.blscope_jump_tokens.append([]) # experimental
 
     def _warn_def(self, key, ref):
         if ref.load_count == 0:
@@ -987,6 +995,8 @@ class VariableScope(object):
     def popBlockScope(self):
 
         mapping = self.blscope.pop()
+        self.blscope_tags.pop()
+        self.blscope_jump_tokens.pop()
 
         for key, ref in mapping.items():
             self._warn_def(key, ref)
@@ -1085,6 +1095,14 @@ class IdentityScope(VariableScope):
     def _createRef(self, scflags, label, type_):
         return IdentityRef(self._getScopeName(), scflags, label, 1)
 
+class IdentityBlockScope(VariableScope):
+    """
+    A VariableScope that does not transform labels
+    """
+
+    def _createRef(self, scflags, label, type_):
+        return PythonRef(self._getScopeName(), scflags, label, 1)
+
 class MinifyVariableScope(VariableScope):
 
     def __init__(self, name, parent=None):
@@ -1149,7 +1167,6 @@ ST_GLOBAL   = SC_GLOBAL << 12
 ST_FUNCTION = SC_FUNCTION << 12
 ST_BLOCK    = SC_BLOCK << 12
 ST_CONST    = SC_CONST << 12
-
 
 isConstructor = lambda token: token.type == Token.T_METHOD and token.children[0].value == "constructor"
 isFunction = lambda token: token.type in (
@@ -1391,6 +1408,8 @@ class TransformAssignScope(object):
             Token.T_FOR: self.visit_for,
             Token.T_FOR_IN: self.visit_for_in,
             Token.T_FOR_OF: self.visit_for_of,
+            Token.T_DOWHILE: self.visit_dowhile,
+            Token.T_WHILE: self.visit_while,
             Token.T_GET_ATTR: self.visit_get_attr,
             Token.T_CATCH: self.visit_catch,
 
@@ -1398,6 +1417,9 @@ class TransformAssignScope(object):
             # python module we assume a transform has already been
             # run to remove methods and classes
             Token.T_CLASS: self.visit_class,
+
+            Token.T_BREAK: self.visit_break,
+            Token.T_CONTINUE: self.visit_continue,
 
 
             # Token.T_GROUPING: self.visit_error,
@@ -1419,12 +1441,18 @@ class TransformAssignScope(object):
             Token.T_FOR: self.finalize_block,
             Token.T_FOR_IN: self.finalize_block,
             Token.T_FOR_OF: self.finalize_block,
+            Token.T_WHILE: self.finalize_block,
+            Token.T_DOWHILE: self.finalize_block,
             Token.T_CATCH: self.finalize_block,
+            # TODO: missing finally block?
 
             Token.T_LAMBDA: self.finalize_function,
 
             Token.T_BLOCK: self.finalize_block,
             Token.T_MODULE: self.finalize_module,
+
+            Token.T_BREAK: self.finalize_break,
+            Token.T_CONTINUE: self.finalize_continue,
 
             Token.T_CLASS: self.finalize_class,
 
@@ -1661,6 +1689,7 @@ class TransformAssignScope(object):
 
         else:
             self._push_children(scope, token, 0)
+
 
     def _h_get_attr(self, token, attr):
         # TODO: consider using the form `${token}?.${attr}`
@@ -1994,7 +2023,7 @@ class TransformAssignScope(object):
 
         # the extra block scope, and finalize, allows for declaring
         # variables inside of a for arg list
-        scope.pushBlockScope()
+        scope.pushBlockScope("loop")
         self._push_finalize(scope, token, parent)
 
         self._push_children(scope, body, flags)
@@ -2018,7 +2047,7 @@ class TransformAssignScope(object):
         # the extra block scope, and finalize, allows for declaring
         # variables inside of a for arg list
 
-        scope.pushBlockScope()
+        scope.pushBlockScope("loop")
         self._push_finalize(scope, token, parent)
 
         self._push_children(scope, body, flags)
@@ -2043,12 +2072,70 @@ class TransformAssignScope(object):
         # the extra block scope, and finalize, allows for declaring
         # variables inside of a for arg list
 
-        scope.pushBlockScope()
+        scope.pushBlockScope("loop")
         self._push_finalize(scope, token, parent)
 
         self._push_children(scope, body, flags)
         self._push_tokens(ST_VISIT | ST_STORE | (flags & ST_SCOPE_MASK), scope, [label], token)
         self._push_tokens(ST_VISIT, scope, [expr], token)
+
+    def visit_dowhile(self, flags, scope, token, parent):
+
+        body, expr = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in for loop body")
+
+        scope.pushBlockScope("loop")
+        self._push_finalize(scope, token, parent)
+
+        self._push_children(scope, body, flags)
+        self._push_tokens(ST_VISIT, scope, [expr], token)
+
+    def visit_while(self, flags, scope, token, parent):
+
+        expr, body = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in for loop body")
+
+        scope.pushBlockScope("loop")
+        self._push_finalize(scope, token, parent)
+
+        self._push_children(scope, body, flags)
+        self._push_tokens(ST_VISIT, scope, [expr], token)
+
+    def visit_break(self, flags, scope, token, parent):
+
+        self._push_finalize(scope, token, parent)
+
+        idx = -1
+        for i, refs in reversed(list(enumerate(scope.blscope))):
+            scope.blscope_jump_tokens[i].append(token)
+            tag = scope.blscope_tags[i]
+            if tag == "loop":
+                idx = i
+                break
+
+        if idx < 0:
+            raise TransformError(token, "break found outside loop")
+
+
+    def visit_continue(self, flags, scope, token, parent):
+        self._push_finalize(scope, token, parent)
+
+        idx = -1
+        for i, refs in reversed(list(enumerate(scope.blscope))):
+            scope.blscope_jump_tokens[i].append(token)
+            tag = scope.blscope_tags[i]
+            if tag == "loop":
+                idx = i
+                break
+
+        if idx < 0:
+            raise TransformError(token, "continue found outside loop")
 
     def visit_get_attr(self, flags, scope, token, parent):
 
@@ -2175,10 +2262,23 @@ class TransformAssignScope(object):
 
         # delete variables in the reverse order that they were defined
         # in this scope
+        #if refs:
+        #    for ref in reversed(refs.values()):
+        #        tok = Token(Token.T_DELETE_VAR, token.line, token.index, "")
+        #        tok.ref = ref
+        #        tok.ref_attr = 8
+        #        tok.children.append(ref.token.clone())
+        #        token.children.append(tok)
+
+        # print("jump refs", scope.blscope_jump_tokens[-1])
+        # blscope_jump tokens can be used to work out if a variable
+        # needs to be deleted prior to a break or continue.
+
         if refs:
 
             _save = []
             _restore = []
+            _delete = []
             for ref in reversed(refs.values()):
 
                 # for variable scopes, use a system where there
@@ -2186,17 +2286,22 @@ class TransformAssignScope(object):
                 # of a label after a block exits
                 # ref counter checks to see if this is not the first time
                 # that this variable was assigned
-                if self.save_vars:
-                    if ref.token.type in [Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR] and ref.counter > 1:
-                        tok = Token(Token.T_SAVE_VAR, token.line, token.index, "", [ref.token.clone()])
-                        tok.ref = ref
-                        tok.ref_attr = 8
-                        _save.append(tok)
-
-                        tok = Token(Token.T_RESTORE_VAR, token.line, token.index, "", [ref.token.clone()])
-                        tok.ref = ref
-                        tok.ref_attr = 8
-                        _restore.insert(0, tok) # reverse order
+                #if self.save_vars:
+                #if ref.token.type in [Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR] and ref.counter > 1:
+                #    tok = Token(Token.T_SAVE_VAR, token.line, token.index, "", [ref.token.clone()])
+                #    tok.ref = ref
+                #    tok.ref_attr = 8
+                #    _save.append(tok)
+                #    tok = Token(Token.T_RESTORE_VAR, token.line, token.index, "", [ref.token.clone()])
+                #    tok.ref = ref
+                #    tok.ref_attr = 8
+                #    _restore.insert(0, tok) # reverse order
+                #else:
+                #print("ref delete", ref)
+                tok = Token(Token.T_DELETE_VAR, token.line, token.index, "", [ref.token.clone()])
+                tok.ref = ref
+                tok.ref_attr = 8
+                _delete.insert(0, tok) # reverse order
 
 
             if _save or _restore:
@@ -2204,12 +2309,39 @@ class TransformAssignScope(object):
                 # its an error or behavior is undefined
                 idx = parent.children.index(token)
                 if token.type != Token.T_BLOCK:
-                    parent.children = parent.children[:idx] + _save + parent.children[idx:] + _restore
+                    parent.children = parent.children[:idx] + _save + parent.children[idx:idx+1] + _restore + parent.children[idx+1:]
                 else:
                     if parent.type not in (Token.T_BLOCK, Token.T_MODULE):
-                        raise TransformError(token, "expected parent to be a module or block")
+                        #print(parent.toString(1))
+                        #raise TransformError(token, "expected parent to be a module or block (found %s)" % parent.type)
+                        print("<%s:%d:%d> expected parent to be a module or block (found %s)" % (token.type, token.line, token.index, parent.type))
 
                     token.children = _save + token.children + _restore
+
+            if _delete:
+                if token.type in (Token.T_FOR):
+                    if parent.type not in (Token.T_BLOCK, Token.T_MODULE):
+                        raise TransformError(token, "expected parent to be a module or block (found %s)" % parent.type)
+                    #token.children[1].children.extend(_delete)
+                    idx = parent.children.index(token)
+                    for t in reversed(_delete):
+                        parent.children.insert(idx+1, t)
+                    pass
+                elif token.type in (Token.T_FOR, Token.T_FOR_OF, Token.T_FOR_IN):
+                    token.children[2].children.extend(_delete)
+                elif token.type in (Token.T_BLOCK):
+                    token.children.extend(_delete)
+
+
+    def finalize_break(self, flags, scope, token, parent):
+
+        #print(scope.blscope_jump_tokens[-1])
+        #for tag, refs in reversed(list(zip(scope.blscope_tags, scope.blscope))):
+        #    print("tag", tag, list(refs.values()))
+        pass
+
+    def finalize_continue(self, flags, scope, token, parent):
+        pass
 
     # -------------------------------------------------------------------------
 
@@ -2443,10 +2575,22 @@ class TransformIdentityScope(TransformAssignScope):
 
     def __init__(self):
         super(TransformIdentityScope, self).__init__()
-        self.save_vars = True
 
     def newScope(self, name, parentScope=None):
         scope = IdentityScope(name, parentScope)
+        scope.disable_warnings = self.disable_warnings
+        return scope
+
+class TransformIdentityBlockScope(TransformAssignScope):
+    """
+    transform, but does not minify
+    """
+
+    def __init__(self):
+        super(TransformIdentityBlockScope, self).__init__()
+
+    def newScope(self, name, parentScope=None):
+        scope = IdentityBlockScope(name, parentScope)
         scope.disable_warnings = self.disable_warnings
         return scope
 
@@ -2466,7 +2610,6 @@ class TransformMinifyScope(TransformAssignScope):
     """
     def __init__(self):
         super(TransformMinifyScope, self).__init__()
-        self.save_vars = False
 
     def newScope(self, name, parentScope=None):
         scope = MinifyVariableScope(name, parentScope)
@@ -3230,12 +3373,42 @@ def main_unused():
         }
     """
 
-    text = mod2_text
+
+    text = """
+        function f() {
+            let x = 1;
+            while (true) {
+
+                {
+                    break
+
+                    let x = 3
+                }
+                let x = 2;
+            }
+            return x;
+        }
+    """
+
+    text = """
+
+function f() {
+                const x = 1;
+                {
+                    const x = 2;
+                }
+                return x;
+            }
+            result=f() // 1
+
+    """
 
     tokens = Lexer().lex(text)
     parser =  Parser()
     ast = parser.parse(tokens)
 
+    xform = TransformIdentityBlockScope()
+    xform.transform(ast)
 
 
     print(ast.toString(1))

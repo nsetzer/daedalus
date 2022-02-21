@@ -10,7 +10,7 @@ from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
-from daedalus.transform import VariableScope, TransformIdentityScope, TransformReplaceIdentity, TransformClassToFunction
+from daedalus.transform import VariableScope, TransformIdentityBlockScope, TransformReplaceIdentity, TransformClassToFunction
 from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
 
 
@@ -28,9 +28,9 @@ def evaljs(text, diag=False):
     xform = VmClassTransform2()
     xform.transform(ast)
 
-    xform = TransformIdentityScope()
+    xform = TransformIdentityBlockScope()
     xform.disable_warnings=True
-    xform.transform(ast)
+    globals = xform.transform(ast)
 
     xform = VmTransform()
     xform.transform(ast)
@@ -663,21 +663,24 @@ class VmLogicTestCase(unittest.TestCase):
 
     def test_for_of_iter_twice(self):
         text = """
-            o1 = [1,2,3]
-            o2 = {}
-            o3 = {}
-
+            o1 = [0,1,2]
+            o2 = [0,0,0]
+            o3 = [0,0,0]
+            n = 0
             for (const idx of o1) {
-                o2[idx] = idx*2
+                o2[idx] = idx
+                n += 1
             }
 
             for (const idx of o2) {
-                o3[idx] = idx*2
+                o3[idx] = idx
+                n += 1
             }
 
         """
         result, globals_ = evaljs(text, diag=False)
-        self.assertEqual(globals_.values['o3'].getIndex(1), 2)
+        self.assertEqual(globals_.values['o3'].getIndex(1), 1)
+        self.assertEqual(globals_.values['n'], 6)
 
 class VmFunctionTestCase(unittest.TestCase):
 

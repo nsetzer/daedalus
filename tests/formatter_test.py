@@ -1499,7 +1499,7 @@ class FormatterTestCase(unittest.TestCase):
             }
 
         """
-        expected = """let a={[Symbol.iterator](){let c=false;let d=-1;return{next(){d+=1;c=d+1<10;return{'done':c,'value':d}}}}};for(let b of a){console.log(b)}"""
+        expected = """let a={[Symbol.iterator](){let c=false;let d=-1;return{next(){d+=1;c=d+1<10;return{'done':c,'value':d}}}}};for(let b of a){console.log(b);}"""
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -1554,7 +1554,7 @@ class FormatterTestCase(unittest.TestCase):
             }
             result=f() // 1
         """
-        expected = "function f(){const x=1;{;const x=2;}return x};result=f()"
+        expected = "function f(){const x=1;{const x=2;}return x};result=f()"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformIdentityScope()
@@ -1575,7 +1575,7 @@ class FormatterTestCase(unittest.TestCase):
             }
             result=f() // 1
         """
-        expected = "function a(){const c=1;{const c=2}return c};b=a()"
+        expected = "function a(){const c=1;{const c=2;}return c};b=a()"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()

@@ -66,7 +66,7 @@ from . import vm_opcodes as opcodes
 from .token import Token, TokenError
 from .lexer import Lexer
 from .parser import Parser, ParseError
-from .transform import TransformBaseV2, TransformIdentityScope
+from .transform import TransformBaseV2, TransformIdentityBlockScope
 
 from .vm_compiler import VmCompiler, VmTransform, VmInstruction, VmClassTransform, VmClassTransform2
 
@@ -139,7 +139,7 @@ def jsc(f):
     parser.python = True
     ast = parser.parse(tokens)
 
-    xform = TransformIdentityScope()
+    xform = TransformIdentityBlockScope()
     xform.disable_warnings=True
     xform.transform(ast)
 
@@ -331,7 +331,6 @@ class JsArray(JsObject):
 
     def pop(self):
         return self.array.pop()
-
 
     def slice(self, start=None, end=None):
 
@@ -1108,7 +1107,7 @@ class VmRuntime(object):
         parser.python = True
         ast = parser.parse(tokens)
 
-        xform = TransformIdentityScope()
+        xform = TransformIdentityBlockScope()
         xform.disable_warnings=True
         xform.transform(ast)
 
@@ -1722,7 +1721,7 @@ class VmLoader(object):
         xform = VmClassTransform2()
         xform.transform(ast)
 
-        xform = TransformIdentityScope()
+        xform = TransformIdentityBlockScope()
         xform.disable_warnings=True
         xform.transform(ast)
 
@@ -2423,7 +2422,19 @@ def main():
 
     """
 
+    text1 = """
 
+        let x =0 ;
+        do {
+
+            x += 2;
+            {
+                break
+                let x = 3
+            }
+
+        }    while (x < 5);
+    """
 
     # current bugs:
     #   - do not bind of already bound functions om the prototype
@@ -2441,7 +2452,7 @@ def main():
         xform.transform(ast)
         print(ast.toString(1))
 
-        xform = TransformIdentityScope()
+        xform = TransformIdentityBlockScope()
         xform.disable_warnings=True
         xform.transform(ast)
 
