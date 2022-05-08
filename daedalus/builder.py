@@ -855,7 +855,13 @@ class Builder(object):
                 "}\n" \
                 "</script>\n";
         if self.platform == "qt":
-            return "<script type=\"text/javascript\" src=\"./static/qwebchannel.js\"></script>"
+            return "<script type=\"text/javascript\" src=\"./static/qwebchannel.js\"></script>\n" \
+                "<script type=\"text/javascript\">\n" \
+                "window.channel = new QWebChannel(qt.webChannelTransport, (channel)=>{\n" \
+                "    console.log(\"channel init\")\n" \
+                "})\n" \
+                "</script>"
+
         return ""
 
     def getHtmlRender(self, render_function, root):
