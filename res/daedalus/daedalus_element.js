@@ -54,10 +54,10 @@ export class DomElement {
         )
     }
 
-    _update(element) {} // implementation is patched in
+    _update(element, debug=false) {} // implementation is patched in
 
-    update() {
-        this._update(this)
+    update(debug=false) {
+        this._update(this, debug)
     }
 
     updateState(state, doUpdate) {

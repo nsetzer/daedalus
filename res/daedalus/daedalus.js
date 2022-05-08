@@ -44,7 +44,7 @@ export function render(container, element) {
     }
 }
 
-export function render_update(element) {
+export function render_update(element, debug=false) {
     // update the element if it is not already dirty
     // (an update has already been queued)
     // do not update the element if it does not have a fiber
@@ -56,7 +56,8 @@ export function render_update(element) {
             children: [element],
             _fibers: [],
             alternate: null,
-            partial: true // indicates this is a psuedo fiber
+            partial: true, // indicates this is a psuedo fiber
+            debug: debug,
         }
         updatequeue.push(fiber)
     }
@@ -188,6 +189,10 @@ function reconcileChildren(parentFiber) {
         })
     }
 
+    if (parentFiber.debug) {
+        console.log("do reconcileChildren")
+    }
+
     // get the last fiber in the current work chain
     // if a parent has multiple children, prev.next may
     // already be populated. overwriting prev.next with
@@ -196,6 +201,8 @@ function reconcileChildren(parentFiber) {
     while (prev.next) {
         prev = prev.next;
     }
+
+    let children_out_of_order = false;
 
     parentFiber.children.forEach(
         (element, index) => {
@@ -247,8 +254,13 @@ function reconcileChildren(parentFiber) {
                 dom: oldFiber ? oldFiber.dom : null,
                 element: element,
                 index: index,
-                oldIndex: oldIndex
+                oldIndex: oldIndex,
+                debug: parentFiber?.debug,
             };
+
+            if (index !== oldIndex) {
+                children_out_of_order = true;
+            }
 
             if (!newFiber.parent.dom) {
                 console.error(`element parent is not mounted id: ${element.props.id} effect: ${effect}`);
@@ -277,8 +289,31 @@ function reconcileChildren(parentFiber) {
             workstack.push(newFiber);
 
 
+
+
         }
     )
+
+    if (children_out_of_order === true) {
+        // this is somewhat of a hack. reordering children
+        // requires a second step to verify the order
+        const newFiber = {
+            type: parentFiber.type,
+            effect: "SORT_CHILDREN",
+            props: parentFiber.props,
+            children: parentFiber.children.slice(),
+            _fibers: [],
+            parent: parentFiber.parent,
+            //alternate: parentFiber.alternate,
+            dom: parentFiber.dom,
+            debug: parentFiber.debug,
+        };
+
+        prev.next = newFiber;
+        prev = newFiber;
+
+        workstack.push(newFiber);
+    }
 
     // now that all children have been processed, mark fibers for deletion
 
@@ -331,6 +366,10 @@ function commitWork(fiber) {
         return
     }
 
+    if (fiber?.debug) {
+        console.log("commitWork: " + fiber.effect)
+    }
+
     if (fiber.effect === 'CREATE') {
 
         // the fibers are created in the same order as the children
@@ -359,6 +398,27 @@ function commitWork(fiber) {
     } else if (fiber.effect === 'DELETE') {
         fiber.alternate.alternate = null // prevent memory leak
         removeDomNode(fiber)
+    } else if (fiber.effect === 'SORT_CHILDREN') {
+        // after updating all of the children, verify that they
+        // are all in the correct order
+
+        //console.log(Array.from(fiber.dom.childNodes).map((node,idx)=>{
+        //    return [node._$fiber.index, idx]
+        //}))
+
+        Array.from(fiber.dom.childNodes).forEach((node,idx)=>{
+            let expected_index = node._$fiber.index
+            if (node._$fiber.index !== idx) {
+                fiber.dom.removeChild(node);
+                fiber.dom.insertBefore(node,
+                    fiber.dom.children[expected_index]);
+            }
+        })
+
+        //console.log(Array.from(fiber.dom.childNodes).map((node,idx)=>{
+        //    return [node._$fiber.index, idx]
+        //}))
+
     }
 }
 
@@ -414,6 +474,10 @@ function updateDomNode(fiber) {
     }
 
     dom._$fiber = fiber // allow access to the virtual dom element
+
+    if (fiber.debug) {
+        console.log("update", fiber.oldIndex, fiber.index)
+    }
 
     if (fiber.oldIndex != fiber.index && parentDom) {
         // TODO: this will fail if there is a move and a delete or insert
