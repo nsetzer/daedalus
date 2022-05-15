@@ -90,10 +90,12 @@ function serializeParameters(obj) {
  * return an object mapping of string to list of strings
  */
 export function parseParameters(text=undefined) {
-    let match,
-        search = /([^&=]+)=?([^&]*)/g,
-        decode = s => decodeURIComponent(s.replace(/\+/g, " ")),
-        query  = (text===undefined)?window.location.search.substring(1):text;
+    let match;
+    let search = /([^&=]+)=?([^&]*)/g
+    let decode = s => decodeURIComponent(s.replace(/\+/g, " "))
+    //let search_term = window.location.search;
+    let search_term = (new URL(window.location.protocol + "//" + window.location.hostname + window.daedalus_location)).search
+    let query  = (text===undefined)?search_term.substring(1):text;
 
     let urlParams = {};
     while (match = search.exec(query)) {

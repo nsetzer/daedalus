@@ -171,6 +171,8 @@ export class Router {
     }
 
     handleLocationChanged(location) {
+        // location should be everything after the host name in the url
+
         // find the first matching route and displat that child
         let auth = this.isAuthenticated()
         let index=0;
@@ -180,13 +182,15 @@ export class Router {
                 index += 1;
                 continue
             }
-            const match = locationMatch(item.re, location)
+
+            const match = locationMatch(item.re, (new URL(window.location.protocol + "//" + window.location.hostname + location)).pathname)
             if (match !== null) {
 
                 // if the location results in a new child to be diplayed
                 // then display that child. otherwise there is no need
                 // to update the child
                 let fn = (element) => this.setElement(index, location, match, element)
+
                 if (this.doRoute(item, fn, match)) {
                     return
                 }
