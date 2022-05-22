@@ -1,11 +1,11 @@
 
 import os, sys
 
-from PyQt5.QtCore import QUrl
-from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor, QWebEngineUrlSchemeHandler
-from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings, QWebEngineProfile, QWebEnginePage
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
-from PyQt5.QtWebChannel import QWebChannel
+from PyQt6.QtCore import QUrl, QObject
+from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor, QWebEngineUrlSchemeHandler,  QWebEngineSettings, QWebEngineProfile, QWebEnginePage
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWebChannel import QWebChannel
 
 class Handler(QWebEngineUrlSchemeHandler):
     # https://doc.qt.io/qt-6.2/qwebengineurlschemehandler.html
@@ -42,22 +42,23 @@ class DaedalusWebView(QWidget):
         self.engine = QWebEngineView(self)
         # "storage" here is the name of the profile
         # only one application can be running using the same profile at a time
-        self.profile =  QWebEngineProfile("storage", self.engine)
-        self.intercept = Intercept()
-        self.handler = Handler()
-        self.profile.installUrlSchemeHandler(b"http://", self.handler)
-        self.profile.installUrlSchemeHandler(b"https://", self.handler)
-        self.profile.setUrlRequestInterceptor(self.intercept)
-        self.page = QWebEnginePage(self.profile, self.engine)
+        #self.profile =  QWebEngineProfile("storage", self.engine)
+        #self.intercept = Intercept()
+        #self.handler = Handler()
+        #self.profile.installUrlSchemeHandler(b"http://", self.handler)
+        #self.profile.installUrlSchemeHandler(b"https://", self.handler)
+        #self.profile.setUrlRequestInterceptor(self.intercept)
+        #self.page = QWebEnginePage(self.profile, self.engine)
 
         # disable cors
         # https://doc-snapshots.qt.io/qt6-dev/qwebenginesettings.html
         settings = self.engine.settings()
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         #settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
 
-        self.page.setUrl(self.url)
-        self.engine.setPage(self.page)
+        #self.page.setUrl(self.url)
+        #self.engine.setPage(self.page)
+        self.engine.load(self.url)
 
         self.channel = QWebChannel(self.engine.page());
         self.engine.page().setWebChannel(self.channel)
@@ -92,4 +93,5 @@ class DaedalusWebView(QWidget):
         Note: registered objects are not available in JS until
         the channel is initizlaied, which happens after window.load
         """
+        print("--", isinstance(obj, QObject))
         self.channel.registerObject(name, obj)
