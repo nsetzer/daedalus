@@ -96,3 +96,13 @@ let obj = {
 When specifying an object the 'key' can be an arbitrary constant expression
 each token will be merged into a single string. This allows for an easier
 way to specify CSS properties.
+
+
+## UTF-32 support
+utf-32 escape sequences are transformed into utf-16 surrogate pairs
+
+```javascript
+let s1 = "\U0001F441" // utf-32
+let s2 = "\uD83D\uDC41" //utf-16
+s1==s2
+```

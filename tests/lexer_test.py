@@ -99,6 +99,16 @@ class LexerInputTestCase(unittest.TestCase):
 
         self.assertFalse(lexcmp(expected, tokens, False))
 
+    def test_002_str_3(self):
+        """lexer should convert utf32 sequences to utf16"""
+
+        text = "'\\U0001f441'"
+        expected = [
+            Token(Token.T_STRING, 1, 0, "'\\uD83D\\uDC41'"),
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
 
     def test_003_multiline(self):
 

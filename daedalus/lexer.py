@@ -438,6 +438,9 @@ class Lexer(LexerBase):
                 raise self._error("unterminated string")
 
             elif c == "\\":
+                # to convert utf-32 to utf-16
+                #
+
                 # expect exactly one character after an escape
                 # pass through unmodified, let the downstream
                 # parser/compiler handle string processing.
@@ -449,7 +452,24 @@ class Lexer(LexerBase):
 
                 if c is None:
                     raise self._error("expected character")
-                self._putch(c)
+
+                if c == 'U':
+                    # rewrite utf32 escape sequences as utf-16 surrogate pairs
+                    utf32 = ""
+                    try:
+                        for i in range(8):
+                            utf32 += self._getch()
+                    except StopIteration:
+                        utf32 = None
+                    if len(utf32) != 8:
+                        raise self._error("expected utf32 sequence")
+                    a,b,c,d = chr(int(utf32, 16)).encode("utf-16")[2:]
+                    # already put the first slash
+                    utf32 = "u%04X\\u%04X" % (b<<8|a, d<<8|c)
+                    for c in utf32:
+                        self._putch(c)
+                else:
+                    self._putch(c)
 
             elif c == "\n" and string_terminal != '`':
                 raise self._error("unterminated string")
