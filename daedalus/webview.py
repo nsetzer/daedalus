@@ -1,7 +1,8 @@
 
-import os, sys
-
-from PyQt6.QtCore import QUrl, QObject
+import os
+import sys
+import logging
+from PyQt6.QtCore import QUrl, QObject, pyqtSignal
 from PyQt6.QtWebEngineCore import QWebEngineUrlRequestInterceptor, QWebEngineUrlSchemeHandler,  QWebEngineSettings, QWebEngineProfile, QWebEnginePage
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
@@ -28,9 +29,28 @@ class Intercept(QWebEngineUrlRequestInterceptor):
         # info.redirect(url)
         return
 
+class Page(QWebEnginePage):
+
+    consoleLogMessage = pyqtSignal(int, str, int, str) # level, message, lineno, sourceId
+
+    levels = {
+        QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel: logging.INFO,
+        QWebEnginePage.JavaScriptConsoleMessageLevel.WarningMessageLevel: logging.WARN,
+        QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel: logging.ERROR,
+    }
+    def __init__(self, profile=None, parent=None):
+        super(Page, self).__init__(profile, parent)
+
+    def javaScriptConsoleMessage(self, level, message, lineno, sourceId):
+        self.consoleLogMessage.emit(Page.levels[level], message, lineno, sourceId)
+
 class DaedalusWebView(QWidget):
+    consoleLogMessage = pyqtSignal(int, str, int, str) # level, message, lineno, sourceId
+
     def __init__(self, html_path):
         super(DaedalusWebView, self).__init__()
+        # TODO: this should use the builder api to all fast rebuilds
+        #       and support pre-built html
         self.url = QUrl.fromLocalFile(os.path.abspath(html_path))
 
         # https://doc.qt.io/qt-6/qwebengineurlrequestinterceptor.html
@@ -42,7 +62,11 @@ class DaedalusWebView(QWidget):
         self.engine = QWebEngineView(self)
         # "storage" here is the name of the profile
         # only one application can be running using the same profile at a time
-        #self.profile =  QWebEngineProfile("storage", self.engine)
+        self.profile =  QWebEngineProfile("daedalus", self.engine)
+        self.page = Page(self.profile, self.engine)
+        self.page.consoleLogMessage.connect(self.consoleLogMessage)
+        self.engine.setPage(self.page)
+
         #self.intercept = Intercept()
         #self.handler = Handler()
         #self.profile.installUrlSchemeHandler(b"http://", self.handler)
@@ -54,10 +78,10 @@ class DaedalusWebView(QWidget):
         # https://doc-snapshots.qt.io/qt6-dev/qwebenginesettings.html
         settings = self.engine.settings()
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
-        #settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
 
         #self.page.setUrl(self.url)
-        #self.engine.setPage(self.page)
+
         self.engine.load(self.url)
 
         self.channel = QWebChannel(self.engine.page());

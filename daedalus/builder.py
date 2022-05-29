@@ -10,6 +10,7 @@ from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
     TransformConstEval, getModuleImportExport
 from .formatter import Formatter
 from ast import literal_eval
+import pickle
 
 def findFile(name, search_paths):
     """
@@ -239,15 +240,21 @@ class JsFile(object):
     def __init__(self, path, name=None, source_type=1, platform=None, quiet=False):
         super(JsFile, self).__init__()
         self.path = path
-        self.imports = {}
-        self.module_imports = {}
-        self.default_export = None
-        self.exports = []
-        self.source_type = source_type
-        self.mtime = 0
-        self.size = 0
         self.ast = None
+        # imports are a dictionary of file_path => list of included names
+        self.imports = {}
+        # module_imports are a dictionary for module_name => list of included names
+        self.module_imports = {}
+        # exports are a list of exported names from this ast module
+        self.exports = []
+
+        # styles is a list of strings, each string is a single valid css rule
         self.styles = []
+
+        self.source_type = source_type
+        self.source = None
+        self.mtime = 0  # modified time from the last time this was loaded
+        self.size = 0
         self.quiet = quiet
 
         if not name:
@@ -272,11 +279,22 @@ class JsFile(object):
             token: the token that was the source of the exception
             ex: exception instance or string
         """
+        source = None
+
         if self.source:
-            source_lines = self.source.split("\n")
-            line_start = token.line - 3
-            line_end = min(token.line + 3, len(source_lines))
-            print(len(source_lines), line_start, line_end)
+            source = self.source
+        elif self.source_path and os.path.exists(self.source_path):
+            source = self.getSource()
+
+        if source:
+            offset_b = 3 # lines before error
+            offset_a = 3 # lines after error
+
+            source_lines = source.split("\n")
+
+            line_start = token.line - offset_b
+            line_end = min(token.line + offset_a, len(source_lines))
+
             b_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(line_start, token.line)]
             a_lines = ["%4d: %s" % (i + 1, source_lines[i]) for i in range(token.line, line_end)]
 
@@ -297,55 +315,83 @@ class JsFile(object):
         with open(self.source_path, "r") as rf:
             return rf.read()
 
-    def load(self):
+    def load(self, force=False):
 
         t1 = time.time()
-        self.source = self.getSource()
-        self.size = len(self.source)
 
-        error = None
-        try:
-            tokens = Lexer().lex(self.source)
-            for token in tokens:
-                token.file = self.source_path
-            parser = Parser()
-            ast = parser.parse(tokens)
-            TransformConstEval().transform(ast)
-            uid = TransformExtractStyleSheet.generateUid(self.source_path)
-            tr1 = TransformExtractStyleSheet(uid)
-            tr1.transform(ast)
-            self.styles = tr1.getStyles()
-        except TokenError as e:
-            error = self._newBuildError(e.token, e)
+        dirpath, filename = os.path.split(self.source_path)
+        cachename = os.path.splitext(filename)[0] + ".ast"
+        cachedir = os.path.join(dirpath, "__pycache__")
+        cachepath = os.path.join(dirpath, "__pycache__", cachename)
 
-        if error:
-            raise error
+        self.ast = None
+        # try to load the file data from the cache
+        if force is False and os.path.exists(cachepath):
 
-        self.ast = self._get_imports_exports(ast)
+            mtime1 = os.stat(self.source_path).st_mtime
+            mtime2 = os.stat(cachepath).st_mtime
 
-        t2 = time.time()
+            if mtime1 < mtime2:
+                try:
+                    with open(cachepath, 'rb') as f:
+                        self.size, self.ast, self.imports, \
+                            self.module_imports, self.exports, \
+                            self.styles = pickle.load(f)
+                except pickle.PickleError:
+                    self.ast = None
+                except ValueError:
+                    self.ast = None
+
+        if self.ast is None:
+
+            source = self.getSource()
+            error = None
+            try:
+                tokens = Lexer().lex(source)
+                for token in tokens:
+                    token.file = self.source_path
+                parser = Parser()
+                ast = parser.parse(tokens)
+                TransformConstEval().transform(ast)
+                uid = TransformExtractStyleSheet.generateUid(self.source_path)
+                tr1 = TransformExtractStyleSheet(uid)
+                tr1.transform(ast)
+                self.styles = tr1.getStyles()
+            except TokenError as e:
+                error = self._newBuildError(e.token, e)
+
+            if error:
+                raise error
+
+            self.size = len(source)
+            self.ast, self.imports, self.module_imports, self.exports = \
+                getModuleImportExport(ast, self.source_type != 2)
+
+            if not os.path.exists(cachedir):
+                os.makedirs(cachedir)
+
+            data = (self.size, self.ast, self.imports,
+                self.module_imports, self.exports, self.styles)
+            with open(cachepath, 'wb') as f:
+                pickle.dump(data, f)
 
         self.mtime = os.stat(self.source_path).st_mtime
 
+        t2 = time.time()
+
         if not self.quiet:
-            sys.stderr.write("%10d %.2f %s\n" % (len(self.source), t2 - t1, self.source_path))
-
-    def _get_imports_exports(self, ast):
-
-        ast, imports, module_imports, exports = getModuleImportExport(ast, self.source_type != 2)
-
-        self.imports = imports
-        self.module_imports = module_imports
-        self.exports = exports
-
-        return ast
+            sys.stderr.write("%10d %.2f %s\n" % (
+                self.size, t2 - t1, self.source_path))
 
     def reload(self):
         if self.source_path:
-            mtime = os.stat(self.source_path).st_mtime
-            if mtime > self.mtime:
-                self.load()
-                return True
+            if self.mtime == 0:
+                self.load(False)
+            else:
+                mtime = os.stat(self.source_path).st_mtime
+                if mtime > self.mtime:
+                    self.load()
+            return True
         return False
 
 class JsModule(object):
@@ -566,6 +612,7 @@ class Builder(object):
             source_type = 1
             modname = os.path.splitext(os.path.split(path)[1])[0]
         else:
+            raise Exception("document source_type and remove this")
             modname = path
             path = self._name2path(modname)
             source_type = 2
