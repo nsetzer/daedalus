@@ -423,6 +423,9 @@ class VmTransform(TransformBaseV2):
         if token.type == Token.T_ASSIGN:
             self._visit_assign(parent, token, index)
 
+        if token.type == Token.T_IMPORT_MODULE:
+            self._visit_import_module(parent, token, index)
+
     def _visit_template_string(self, parent, token, index):
 
         node = None
@@ -716,6 +719,38 @@ class VmTransform(TransformBaseV2):
             parent.children.insert(index+1, _assign)
         #_subscr = Token(Token.T_SUBSCR, token.line, token.index, "", [expr_seq, _getattr])
 
+    def _visit_import_module(self, parent, token, index):
+
+        print(len(token.children))
+        obj = token.children[0]
+
+        # TODO: if this is moved into the compiler the extra assignment
+        # can be replaced with a DUPTOP and a final POP
+        assignments = []
+        _module = Token(Token.T_GLOBAL_VAR, token.line, token.index, token.value)
+        for pair in obj.children:
+            src, tgt = pair.children
+            # TODO: this is a work around for a possible issue in how the
+            # post processing handles objects for python mode, keys are
+            # converted to strings. for module imports the primary type
+            # should be an attribute list, not a T_OBJECT
+            if src.type == Token.T_STRING:
+                try:
+                    src = Token(Token.T_ATTR, token.line, token.index, pyast.literal_eval(src.value))
+                except SyntaxError as e:
+                    raise VmCompileError(src, "unable to parse identifier")
+                except Exception as e:
+                    raise VmCompileError(src, "unable to parse identifier")
+            else:
+                src = Token(Token.T_ATTR, token.line, token.index, src.value)
+
+            _rhs = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_module, src])
+            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [tgt, _rhs])
+            assignments.append(_assign)
+        token.children = []
+
+        parent.children = parent.children[:index+1] + assignments + parent.children[index+1:]
+
     def _for_iter(self, token, expr_var, expr_seq, body):
 
 
@@ -821,6 +856,7 @@ class VmCompiler(object):
             Token.T_CELL_VAR: self._visit_cell_var,
             Token.T_NEW: self._visit_new,
             Token.T_INCLUDE: self._visit_include,
+            Token.T_IMPORT_MODULE: self._visit_import_module,
             Token.T_EXPORT: self._visit_export,
             Token.T_EXPORT_DEFAULT: self._visit_export_default,
             Token.T_EXPORT_ARGS: self._visit_export_args,
@@ -829,11 +865,13 @@ class VmCompiler(object):
         self.functions = []
         self.includes = []
 
-    def compile(self, ast, path=None):
+        self._repl = False
+
+    def compile(self, ast, path=None, globals_=None):
 
         self.module = VmModule()
         self.module.path = path
-        self.module.globals = VmGlobals()
+        self.module.globals = VmGlobals() if globals_ is None else globals_
         self.module.functions = [VmFunctionDef(ast, self.module.globals)]
 
         fnidx = 0
@@ -1422,8 +1460,20 @@ class VmCompiler(object):
 
     def _visit_module(self, depth, state, token):
 
+        # the last node in repl mode must be loaded
+        first = self._repl
+
         for child in reversed(token.children):
-            self._push_token(depth, VmCompiler.C_VISIT, child)
+            # a lone local/global var has no side effect
+            # loading will push something on the stack, which is
+            # valid only in the repl and otherwise should be an exception
+            # consider a new C flag, for a conditional load
+            if first or child.type in (Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR):
+                flags = VmCompiler.C_VISIT|VmCompiler.C_LOAD
+            else:
+                flags = VmCompiler.C_VISIT
+            self._push_token(depth, flags, child)
+            first = False
 
     def _visit_save_var(self, depth, state, token):
         child = token.children[0]
@@ -1515,7 +1565,6 @@ class VmCompiler(object):
         self._push_instruction(VmInstruction(opcode, index, token=token))
 
     def _visit_text(self, depth, state, token):
-
         opcode, index = self._token2index(token, state & VmCompiler.C_LOAD)
 
         self._push_instruction(VmInstruction(opcode, index, token=token))
@@ -1816,7 +1865,10 @@ class VmCompiler(object):
     def _visit_include(self, depth, state, token):
         path = pyast.literal_eval(token.children[0].value)
         self.includes.append(path)
-        pass
+
+    def _visit_import_module(self, depth, state, token):
+        print("*** module import not implemented")
+        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, 0, token=token))
 
     def _visit_export(self, depth, state, token):
         node = token.children[1]

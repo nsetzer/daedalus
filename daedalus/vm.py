@@ -813,10 +813,6 @@ class JsDocument(JsObject):
         if elemid == "root":
             return self.body
 
-
-
-
-
 class JsElement(JsObject):
 
     def __init__(self):
@@ -897,8 +893,6 @@ class JsWindow(JsObject):
 
     def __init__(self):
         super(JsWindow, self).__init__()
-
-
 
     def addEventListener(self, event, callback):
         pass
@@ -992,8 +986,6 @@ class VmRuntimeException(Exception):
         super(VmRuntimeException, self).__init__(message)
         self.frames = frames
 
-
-
 binary_op = {
     opcodes.math.ADD: operator.__add__,
     opcodes.math.SUB: operator.__sub__,
@@ -1041,6 +1033,8 @@ class VmRuntime(object):
         self.enable_diag = False
         self.builtins = builtins
 
+        self.warn_stack = True
+
     def initfn(self, fn, args, kwargs):
 
         frame = self._new_frame(fn, len(args), args, kwargs)
@@ -1049,7 +1043,7 @@ class VmRuntime(object):
 
         self._init_builtins()
 
-    def init(self, module):
+    def init(self, module, builtins=True):
 
         cells =JsObject()
 
@@ -1058,7 +1052,8 @@ class VmRuntime(object):
 
         self.stack_frames = [VmStackFrame(module, module.functions[0], locals, cells)]
 
-        self._init_builtins()
+        if builtins:
+            self._init_builtins()
 
     def _init_builtins(self):
 
@@ -1151,6 +1146,7 @@ class VmRuntime(object):
             raise e
 
     def _get_trace(self):
+        """ get stack frames """
         return list(reversed(self.stack_frames))
 
     def _print_trace(self, frames=None):
@@ -1223,9 +1219,6 @@ class VmRuntime(object):
         self.steps = 0
         while frame.sp < len(instrs):
             self.steps += 1
-
-
-
 
             tstack = self.timer.check()
             if tstack != None:
@@ -1346,7 +1339,7 @@ class VmRuntime(object):
 
             elif instr.opcode == opcodes.ctrl.RETURN:
                 rv = frame.stack.pop()
-                if frame.stack:
+                if frame.stack and self.warn_stack:
                     print("warning: stack not empty", frame.stack)
                     #self._print_trace()
                     #traceback.print_stack()
@@ -1699,6 +1692,26 @@ class VmRuntime(object):
 
         return return_value, frame.globals
 
+def vmGetAst(text):
+
+    tokens = Lexer().lex(text)
+    parser = Parser()
+    parser.feat_xform_optional_chaining = True
+    parser.python = True
+    ast = parser.parse(tokens)
+
+    xform = VmClassTransform2()
+    xform.transform(ast)
+
+    xform = TransformIdentityBlockScope()
+    xform.disable_warnings=True
+    xform.transform(ast)
+
+    xform = VmTransform()
+    xform.transform(ast)
+
+    return ast
+
 class VmLoader(object):
     def __init__(self,):
         super(VmLoader, self).__init__()
@@ -1708,33 +1721,19 @@ class VmLoader(object):
     def _load_path(self, path):
         text = open(path).read()
 
-        return self._load_text(text)
+        ast = self._load_text(text)
+        compiler = VmCompiler()
+        module = compiler.compile(ast)
+        return module
 
     def _load_text(self, text, debug=False):
 
-        tokens = Lexer().lex(text)
-        parser = Parser()
-        parser.feat_xform_optional_chaining = True
-        parser.python = True
-        ast = parser.parse(tokens)
-
-        xform = VmClassTransform2()
-        xform.transform(ast)
-
-        xform = TransformIdentityBlockScope()
-        xform.disable_warnings=True
-        xform.transform(ast)
-
-        xform = VmTransform()
-        xform.transform(ast)
+        ast = vmGetAst(text)
 
         if debug:
             print(ast.toString(1))
 
-        compiler = VmCompiler()
-        module = compiler.compile(ast)
-
-        return module
+        return ast
 
     def _fix_mod(self, mod):
 
@@ -1791,7 +1790,6 @@ class VmLoader(object):
                 print("error in ", mod.path)
                 raise e
 
-
         print("=*" + "="*68)
         #self.runtime.enable_diag = True
         self.runtime.init(root_mod)
@@ -1805,7 +1803,6 @@ class VmLoader(object):
 
         return rv, mod_globals
 
-
     def run_path(self, path):
 
         path = os.path.abspath(path)
@@ -1817,7 +1814,9 @@ class VmLoader(object):
 
     def run_text(self, text):
 
-        root_mod = self._load_text(text, True)
+        ast = self._load_text(text)
+        compiler = VmCompiler()
+        root_mod = compiler.compile(ast)
         root_dir = "./"
         root_name = "__main__"
         root_mod.path = root_name
@@ -2436,12 +2435,17 @@ def main():
         }    while (x < 5);
     """
 
+    text1 = """
+        from module daedalus import {DomElement=x, TextElement, StyleSheet}
+        console.log(x)
+    """
+
     # current bugs:
     #   - do not bind of already bound functions om the prototype
     #   - popping a block scope must delete vars not saved/restored
     #   -
 
-    if False:
+    if True:
         tokens = Lexer().lex(text1)
         parser = Parser()
         parser.feat_xform_optional_chaining = True
@@ -2502,6 +2506,22 @@ def main():
     if 'obj' in globals_.values:
         print(JsObject.keys(globals_.values['obj']))
     return
+
+def main2():
+    # test for cli
+
+    #ast = vmGetAst("x = x + 1 function f() { return 0 } ")
+    ast = vmGetAst("console.log(123)")
+    print(ast.toString(1))
+    compiler = VmCompiler()
+    mod = compiler.compile(ast)
+    mod.dump()
+    runtime = VmRuntime()
+    runtime.init(mod)
+    rv, _ = runtime.run()
+    print(rv)
+
+    # repl test
 
 if __name__ == '__main__':
     main()

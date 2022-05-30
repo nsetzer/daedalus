@@ -2458,6 +2458,8 @@ def main():  # pragma: no cover
     text1 = "function f<T>(arg: T) : T { return arg }"
     text1 = "export * from e"
     text1 = """obj = {["fun"](){}, b:c}"""
+    text1 = """x = "\\U0001f441" """
+    text1 = """from module x import {a=b, c}"""
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

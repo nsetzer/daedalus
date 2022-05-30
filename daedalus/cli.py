@@ -1,0 +1,308 @@
+
+import os
+import sys
+import argparse
+import logging
+import time
+import cProfile
+
+from .builder import Builder
+from .server import SampleServer
+from .lexer import Lexer
+from .parser import Parser
+from .formatter import Formatter
+from .transform import TransformMinifyScope
+
+
+from .cli_util import build
+
+from .vm import vmGetAst, VmRuntime
+from .vm_compiler import VmCompiler
+from .vm_repl import Repl
+
+class Clock(object):
+    def __init__(self, text):
+        super(Clock, self).__init__()
+        self.text = text
+
+    def __enter__(self):
+        self.ts = time.perf_counter()
+        return self
+
+    def __exit__(self, *args):
+        self.te = time.perf_counter()
+        print("%s: %.6f" % (self.text, self.te - self.ts))
+
+        return False
+
+class CLI(object):
+    def __init__(self):
+        super(CLI, self).__init__()
+
+    def register(self, parser):
+        pass
+
+    def execute(self, args):
+        pass
+
+class BuildCLI(CLI):
+    """
+    compile javascript and create the release html + js
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('build',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--onefile', action='store_true')
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('--static', type=str, default="./static")
+        subparser.add_argument('index_js')
+        subparser.add_argument('out')
+
+    def execute(self, args):
+
+        outdir = args.out
+        staticdir = args.static
+        platform = args.platform
+        minify = args.minify
+        onefile = args.onefile
+        index_js = os.path.abspath(args.index_js)
+        if args.paths:
+            paths = args.paths.split(":")
+        else:
+            paths = []
+
+        paths.insert(0, os.path.split(index_js)[0])
+
+        envparams = args.env
+        staticdata = {"daedalus": {"env": dict([s.split('=', 1) for s in envparams])}}
+
+        build(outdir, index_js,
+            staticdir=staticdir,
+            staticdata=staticdata,
+            paths=paths,
+            platform=platform,
+            minify=minify,
+            onefile=onefile)
+
+class BuildProfileCLI(CLI):
+    """
+    compile a js and html file with the python profiler enabled
+    """
+
+    def register(self, parser):
+
+        subparser = parser.add_parser('build-profile',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--onefile', action='store_true')
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('--static', type=str, default=None)
+        subparser.add_argument('index_js')
+        subparser.add_argument('out')
+
+    def execute(self, args):
+
+        cProfile.runctx(
+            "cli.execute(args)",
+            {"cli": BuildCLI(), "args": args},
+            {},
+            filename=None,
+            sort='cumtime')
+
+class ServeCLI(CLI):
+    """ serve a page
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('serve',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--onefile', action='store_true')
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--host', default='0.0.0.0', type=str)
+        subparser.add_argument('--port', default=4100, type=int)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('--static', type=str, default="./static")
+        subparser.add_argument('--cert', type=str, default=None)
+        subparser.add_argument('--keyfile', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+        paths.insert(0, os.path.split(jspath)[0])
+
+        static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
+
+        server = SampleServer(args.host, args.port,
+            args.index_js, paths,
+            static_data, args.static, platform=args.platform, onefile=args.onefile, minify=args.minify)
+        server.setCert(args.cert, args.keyfile)
+        server.run()
+
+class FormatCLI(CLI):
+    """ reformat a js file
+    """
+    def register(self, parser):
+        subparser = parser.add_parser('format',
+            aliases=['fmt'],
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('in_js')
+        subparser.add_argument('out_js')
+
+    def execute(self, args):
+
+
+        if args.in_js == "-":
+            text = sys.stdin.read()
+        else:
+            path_in = os.path.abspath(args.in_js)
+            with open(path_in, "r") as rf:
+                text = rf.read()
+
+        with Clock("lex"):
+            tokens = Lexer().lex(text)
+
+        with Clock("parse"):
+            ast = Parser().parse(tokens)
+
+        if args.minify:
+            with Clock("minify"):
+                TransformMinifyScope().transform(ast)
+
+        with Clock("format"):
+            out_text = Formatter({'minify': args.minify}).format(ast)
+
+        if args.out_js == "-":
+            sys.stdout.write(out_text)
+            sys.stdout.write("\n")
+
+        else:
+            path_out = os.path.abspath(args.out_js)
+            with open(path_out, "w") as wf:
+                wf.write(out_text)
+                wf.write("\n")
+
+class AstCLI(CLI):
+    """ print ast for source file
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('ast',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+
+        with open(jspath) as rf:
+            text = rf.read()
+
+        ast = vmGetAst(text)
+
+        print(ast.toString(3))
+
+class DisCLI(CLI):
+    """ print disassembly for a js file
+    """
+    def register(self, parser):
+        subparser = parser.add_parser('dis',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+
+        ast = vmGetAst(open(jspath).read())
+        compiler = VmCompiler()
+        mod = compiler.compile(ast)
+        mod.dump()
+
+class RunCLI(CLI):
+    """ run a script
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('run',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('index_js')
+
+    def execute(self, args):
+
+        paths = []
+        if args.paths:
+            paths = args.paths.split(":")
+
+        jspath = os.path.abspath(args.index_js)
+
+        cc = compile_file(jspath, quiet=True)
+
+        ast = vmGetAst(open(jspath).read())
+        compiler = VmCompiler()
+        mod = compiler.compile(ast)
+        runtime = VmRuntime()
+        runtime.init(mod)
+        rv, _ = runtime.run()
+        return 0 # todo return proper exit status
+
+def register_parsers(parser):
+
+    BuildCLI().register(parser)
+    BuildProfileCLI().register(parser)
+    ServeCLI().register(parser)
+    FormatCLI().register(parser)
+    AstCLI().register(parser)
+    DisCLI().register(parser)
+    RunCLI().register(parser)

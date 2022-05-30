@@ -48,7 +48,3 @@ daedalus serve ./examples/minesweeper.js
 python examples/server.py
 ```
 
-### Roadmap
-
-* Enhance support for pre-compiled style sheets
-* Javascript Modules

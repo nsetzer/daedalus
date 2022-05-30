@@ -12,6 +12,7 @@ from .lexer import Lexer
 from .parser import Parser
 from .formatter import Formatter
 from .transform import TransformMinifyScope
+from .webview import export_webchannel_js
 
 def makedirs(path):
     if not os.path.exists(path):
@@ -20,7 +21,6 @@ def makedirs(path):
 def copy_staticdir(staticdir, outdir, verbose=False):
 
     if staticdir and os.path.exists(staticdir):
-
 
         for dirpath, dirnames, filenames in os.walk(staticdir):
             if verbose:
@@ -88,3 +88,10 @@ def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platfor
 
     copy_staticdir(staticdir, outdir, verbose)
     copy_favicon(builder, outdir, verbose)
+
+    if platform == "qt":
+        qt_path_output = os.path.join(outdir, "static", "qwebchannel.js")
+        if not os.path.exists(qt_path_output):
+            export_webchannel_js(qt_path_output)
+
+

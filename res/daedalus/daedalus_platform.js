@@ -118,6 +118,7 @@ export const platform = {
     userAgent: navigator.userAgent,
     platform: build_platform || 'web',
     isAndroid: build_platform === 'android',
+    isQt: build_platform === 'qt',
     isMobile: (!!isMobile.any())
 }
 
