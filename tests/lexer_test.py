@@ -355,7 +355,6 @@ class LexerBasicTestCase(unittest.TestCase):
             Lexer().lex(text)
         self.assertTrue("Unexpected End of Sequence" in str(e.exception))
 
-
     def test_007_expr_async(self):
         text = "function* () {}"
         expected = [
@@ -449,12 +448,51 @@ class LexerBasicTestCase(unittest.TestCase):
 
         self.assertFalse(lexcmp(expected, tokens, False))
 
-class LexerBasicErrorTestCase(unittest.TestCase):
+class LexerCustomTestCase(unittest.TestCase):
 
-    def test_001_spread_final(self):
-        text = ".."
-        with self.assertRaises(LexError):
-            Lexer().lex(text)
+    def test_001_pyimport_1(self):
+        text = "pyimport .modname"
+        expected = [
+            Token(Token.T_TEXT, 1, 0, 'pyimport'),
+            Token(Token.T_SPECIAL_IMPORT, 1, 9, '.'),
+            Token(Token.T_TEXT, 1, 10, 'modname'),
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
+
+    def test_001_pyimport_2(self):
+        text = "pyimport ..modname"
+        expected = [
+            Token(Token.T_TEXT, 1, 0, 'pyimport'),
+            Token(Token.T_SPECIAL_IMPORT, 1, 9, '..'),
+            Token(Token.T_TEXT, 1, 10, 'modname'),
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
+
+    def test_001_pyimport_3(self):
+        text = "pyimport ...modname"
+        expected = [
+            Token(Token.T_TEXT, 1, 0, 'pyimport'),
+            Token(Token.T_SPECIAL_IMPORT, 1, 9, '...'),
+            Token(Token.T_TEXT, 1, 10, 'modname'),
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
+
+    def test_001_pyimport_4(self):
+        text = "pyimport ....modname"
+        expected = [
+            Token(Token.T_TEXT, 1, 0, 'pyimport'),
+            Token(Token.T_SPECIAL_IMPORT, 1, 9, '....'),
+            Token(Token.T_TEXT, 1, 10, 'modname'),
+        ]
+        tokens = list(Lexer().lex(text))
+
+        self.assertFalse(lexcmp(expected, tokens, False))
 
 class LexerStringTestCase(unittest.TestCase):
 
@@ -493,7 +531,6 @@ class LexerStringTestCase(unittest.TestCase):
         tokens = list(Lexer().lex(text))
 
         self.assertFalse(lexcmp(expected, tokens, False))
-
 
     def test_001_join(self):
 

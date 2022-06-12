@@ -70,7 +70,7 @@ class Repl(object):
 
         self.prompt = get_prompt()
         self.compiler = VmCompiler()
-        self._repl = True
+        self.compiler._repl = True
         self.runtime = VmRuntime()
         self.runtime._init_builtins()
         self.runtime.warn_stack = False

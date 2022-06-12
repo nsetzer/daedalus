@@ -128,23 +128,6 @@ class IntEnum(object, metaclass=IntEnumType):
         else:
           super().__setattr__(name, value)
 
-class ResultType(object):
-
-    NULL      = 0x1F
-    UNDEFINED = 0x1E
-    ANY       = 0x1D
-
-    OBJECT    = 0x19
-    LIST      = 0x18
-    TUPLE     = 0x17
-    SET       = 0x16
-    FUNCTION  = 0x15
-
-    TRUE      = 0x11
-    FALSE     = 0x10
-    STRING    = 0x09
-    NUMBER    = 0x08
-
 # opcodes are integers less than or equal to 0x7F
 # ctrl, stack    0x00-0x1F
 # *vars          0x20-0x2F
@@ -171,15 +154,18 @@ class ctrl(IntEnum):
     CALL_KW =        0x0E, 1
     CALL_EX =        0x0F, 1
 
-    INCLUDE =        0x10, 1
-    IMPORT  =        0x11, 1
+    INCLUDE  =        0x10, 0 # insert TOS into current global namespace
+    IMPORT   =        0x11, 0 # import a module or relative path
+    IMPORT2  =        0x13, 0 # experiment, to cache import result
+    IMPORTPY =        0x14, 0
+    EXPORT   =        0x15, 0 # return from module
 
 class stack(IntEnum):
-    ROT2 = 0x1B
-    ROT3 = 0x1C
-    ROT4 = 0x1D
-    DUP  = 0x1E
-    POP  = 0x1F
+    ROT2 = 0x1B, 0
+    ROT3 = 0x1C, 0
+    ROT4 = 0x1D, 0
+    DUP  = 0x1E, 0
+    POP  = 0x1F, 0
 
 class localvar(IntEnum):
     _RESERVED = 0x20, 1  # varindex
@@ -212,7 +198,7 @@ class const(IntEnum):
     FLOAT64   = 0x7A, 1  # 8 byte float
     STRING    = 0x7B, 1  # dataindex
     BYTES     = 0x7C, 1  # dataindex
-    BOOL      = 0x7D, 0
+    BOOL      = 0x7D, 1
     UNDEFINED = 0x7E, 0
     NULL      = 0x7F, 0
 
@@ -264,10 +250,10 @@ class obj(IntEnum):
     UPDATE_ARRAY    = 0x58
     UPDATE_OBJECT   = 0x59
 
-    CREATE_OBJECT   = 0x5A
-    CREATE_ARRAY    = 0x5B
-    CREATE_TUPLE    = 0x5C
-    CREATE_SET      = 0x5D
+    CREATE_OBJECT   = 0x5A, 1
+    CREATE_ARRAY    = 0x5B, 1
+    CREATE_TUPLE    = 0x5C, 1
+    CREATE_SET      = 0x5D, 1
 
     # fnidx, argcount
     # arg is number of function arguments

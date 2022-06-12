@@ -12,9 +12,38 @@ from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityBlockScope, TransformReplaceIdentity, TransformClassToFunction
 from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
+from daedalus import vm_opcodes as opcodes
 
 
 VariableScope.disable_warnings = True
+
+def disjs(text, index=0):
+
+    lexer = Lexer()
+    parser = Parser()
+    parser.disable_all_warnings = True
+
+    tokens = lexer.lex(text)
+    ast = parser.parse(tokens)
+
+    xform = VmClassTransform2()
+    xform.transform(ast)
+
+    xform = TransformIdentityBlockScope()
+    xform.disable_warnings=True
+    globals = xform.transform(ast)
+
+    xform = VmTransform()
+    xform.transform(ast)
+
+    compiler = VmCompiler()
+    module = compiler.compile(ast)
+
+    instrs = module.functions[index].instrs
+
+    instrs = [(b.opcode, b.args) for b in instrs]
+
+    return instrs
 
 def evaljs(text, diag=False):
 
@@ -941,6 +970,48 @@ class VmTimerTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['x'], 4)
         t1= time.time()
         self.assertTrue((t1 - t0) > 0.066)
+
+class VmImportTest(unittest.TestCase):
+    # test for setTimeout, setInterval, and Promises
+
+    @classmethod
+    def setUpClass(cls):
+        pass
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_dis_import(self):
+
+        text = """
+        import module daedalus
+        """
+        instrs = disjs(text)
+        expected = [
+            (opcodes.const.STRING, (0,)),
+            (opcodes.ctrl.IMPORT, ()),
+            (opcodes.ctrl.IMPORT2, ()),
+            (opcodes.globalvar.SET, (0,)),
+            (opcodes.ctrl.EXPORT, ())
+        ]
+        self.assertEqual(expected, instrs)
+
+
+    def test_pyimport(self):
+
+        text = """
+        pyimport math
+        const x = math.sqrt(16)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 4)
 
 def main():
     unittest.main()

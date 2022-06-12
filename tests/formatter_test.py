@@ -18,11 +18,6 @@ class FormatterUtilTestCase(unittest.TestCase):
         self.assertTrue(isalphanum("\u263A", "\u263A"))
         self.assertTrue(isalphanum("function", "_name"))
 
-
-
-
-
-
 class FormatterTestCase(unittest.TestCase):
 
     @classmethod
@@ -694,6 +689,66 @@ class FormatterTestCase(unittest.TestCase):
             }
         """
         expected = "class A extends X.Y{constructor(){super()}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_class_privates_a(self):
+
+        text = """
+        class A{#PRIVATE_FIELD#PRIVATE_FIELD_DEFAULT=0#privateMethod(){return 0}}
+        """
+        expected = "class A{#PRIVATE_FIELD#PRIVATE_FIELD_DEFAULT=0#privateMethod(){return 0}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_class_privates_b(self):
+
+        text = """
+        class A {
+          #PRIVATE_FIELD;
+          #PRIVATE_FIELD_DEFAULT=0;
+          #privateMethod() {
+            return 0;
+          }
+        }
+        """
+        expected = "class A{#PRIVATE_FIELD#PRIVATE_FIELD_DEFAULT=0#privateMethod(){return 0}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_class_static_privates_a(self):
+
+        text = """
+        class A{static #PRIVATE_STATIC_FIELD; static #PRIVATE_STATIC_FIELD_DEFAULT=0; static #privateStaticMethod(){return 0}}
+        """
+        expected = "class A{static #PRIVATE_STATIC_FIELD static #PRIVATE_STATIC_FIELD_DEFAULT=0 static#privateStaticMethod(){return 0}}"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast)
+
+        self.assertEqual(expected, output)
+
+    def test_001_class_static_privates_b(self):
+
+        text = """
+        class A {
+          static #PRIVATE_STATIC_FIELD;
+          static #PRIVATE_STATIC_FIELD_DEFAULT = 0;
+          static #privateStaticMethod() {
+            return 0;
+          }
+        }
+        """
+        expected = "class A{static #PRIVATE_STATIC_FIELD static #PRIVATE_STATIC_FIELD_DEFAULT=0 static#privateStaticMethod(){return 0}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)

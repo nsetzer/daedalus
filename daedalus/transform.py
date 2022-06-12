@@ -1400,6 +1400,7 @@ class TransformAssignScope(object):
             Token.T_OBJECT: self.visit_object,
             Token.T_RECORD: self.visit_object,
             Token.T_BINARY: self.visit_binary,
+            Token.T_IMPORT_MODULE: self.visit_import_module,
             Token.T_PYIMPORT: self.visit_pyimport,
             Token.T_EXPORT: self.visit_export,
             Token.T_EXPORT_DEFAULT: self.visit_export,
@@ -1980,6 +1981,28 @@ class TransformAssignScope(object):
             token.children[0].type = Token.T_STRING
             token.children[0].value = repr(token.children[0].value)
 
+    def visit_import_module(self, flags, scope, token, parent):
+
+        scflags = (flags & ST_SCOPE_MASK) >> 12
+
+        # fix the list of import names. Instead of an object
+        # it should be an argument list with pairs
+        # each pair is an ATTR (from the module to import)
+        # and the target Global or Local Variable
+        # this allows for renaming of the variables
+        token.children[0].type = Token.T_ARGLIST
+        for idx, argtoken in enumerate(token.children[0].children):
+            if argtoken.type == Token.T_ASSIGN:
+                argtoken.children[0].type = Token.T_ATTR
+                scope.define(scflags, argtoken.children[1])
+            else:
+                scope.define(scflags, argtoken)
+                lhs = argtoken.clone(type=Token.T_ATTR)
+                rhs = argtoken
+                tok = token.clone(type=Token.T_ASSIGN, value="=")
+                tok.children = [lhs, rhs]
+                token.children[0].children[idx] = tok
+
     def visit_pyimport(self, flags, scope, token, parent):
 
         scflags = (flags & ST_SCOPE_MASK) >> 12
@@ -1988,9 +2011,24 @@ class TransformAssignScope(object):
         if token.children[0].value:
             scope.define(scflags, token.children[0])
 
-        # for each value in the fromlist
-        for argtoken in token.children[2].children:
-            scope.define(scflags, argtoken)
+        # fix the list of import names. Instead of an object
+        # it should be an argument list with pairs
+        # each pair is an ATTR (from the module to import)
+        # and the target Global or Local Variable
+        # this allows for renaming of the variables
+        token.children[2].type = Token.T_ARGLIST
+        for idx, argtoken in enumerate(token.children[2].children):
+            if argtoken.type == Token.T_ASSIGN:
+                argtoken.children[0].type = Token.T_ATTR
+                scope.define(scflags, argtoken.children[1])
+            else:
+                scope.define(scflags, argtoken)
+                lhs = argtoken.clone(type=Token.T_ATTR)
+                rhs = argtoken
+                tok = token.clone(type=Token.T_ASSIGN, value="=")
+                tok.children = [lhs, rhs]
+                token.children[2].children[idx] = tok
+
 
     def visit_export(self, flags, scope, token, parent):
 
@@ -3402,6 +3440,8 @@ function f() {
             result=f() // 1
 
     """
+
+    text = """from module x import {a=b,c} """
 
     tokens = Lexer().lex(text)
     parser =  Parser()

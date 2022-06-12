@@ -343,6 +343,11 @@ class Formatter(object):
                 out.append((depth, token.type, token.value))
             elif token.type == Token.T_KEYWORD:
 
+                if token.value == "static" and len(token.children)>0:
+                    #seq.append((depth, Token.T_SPECIAL, ';'))
+                    for child in reversed(token.children):
+                        seq.append((depth, None, child))
+                    seq.append((depth, Token.T_SPECIAL, ' '))
                 out.append((depth, token.type, token.value))
             elif token.type == Token.T_STATIC_PROPERTY:
 
@@ -685,6 +690,10 @@ def main():  # pragma: no cover
     text1 = """ x : a | x """
     text1 = """ x = NaN """
     text1 = """ export let a=1 """
+    text1 = """
+    class C {static #g static #f() {}  f2(){}}
+    """
+
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 

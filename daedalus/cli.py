@@ -208,7 +208,9 @@ class FormatCLI(CLI):
                 wf.write("\n")
 
 class AstCLI(CLI):
-    """ print ast for source file
+    """ print ast for a compiled source file
+
+    any transforms required to run the source file in the VM are performed.
     """
 
     def register(self, parser):
@@ -239,6 +241,8 @@ class AstCLI(CLI):
 
 class DisCLI(CLI):
     """ print disassembly for a js file
+
+    displays the opcodes and variables for each function
     """
     def register(self, parser):
         subparser = parser.add_parser('dis',
@@ -287,14 +291,12 @@ class RunCLI(CLI):
 
         jspath = os.path.abspath(args.index_js)
 
-        cc = compile_file(jspath, quiet=True)
-
-        ast = vmGetAst(open(jspath).read())
-        compiler = VmCompiler()
-        mod = compiler.compile(ast)
         runtime = VmRuntime()
-        runtime.init(mod)
-        rv, _ = runtime.run()
+        search_path = os.environ.get('DAEDALUS_PATH', "").split(":")
+        search_path.append(os.getcwd())
+        runtime.search_path = search_path
+        runtime.enable_diag=True
+        rv, _ = runtime.run_text(open(jspath).read())
         return 0 # todo return proper exit status
 
 def register_parsers(parser):

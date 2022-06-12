@@ -742,7 +742,11 @@ class Parser(ParserBase):
                     next.type = Token.T_RECORD
                 tokens.pop(index)
                 return 0
-
+            elif next.type == Token.T_TEXT:
+                # hash can be a prefix to an identifier when used in
+                # a class context to indicate a private variable
+                token.type = Token.T_TEXT
+                token.value += self.consume(tokens, token, index, 1).value
         return 1
 
     def visit_unary_postfix(self, parent, tokens, index, operators):
@@ -1642,7 +1646,6 @@ class Parser(ParserBase):
                         tmp = rhs1.children.pop(index)
                         tmp.children[0].type = Token.T_ATTR
                         tok.children.append(tmp)
-
             elif child.type == Token.T_FUNCTION:
                 child.type = Token.T_METHOD
 
@@ -1658,7 +1661,6 @@ class Parser(ParserBase):
                         child.value = ''
                 else:
                     child.value = ''
-
             elif child.type == Token.T_FUNCTIONCALL:
                 #TODO: this should no longer be reached
                 #      when the comma hack is in place
@@ -1698,7 +1700,16 @@ class Parser(ParserBase):
 
                 else:
                     raise ParseError(child, "expected function body")
+            elif child.type == Token.T_KEYWORD and child.value == 'static':
+                # static member variables
 
+                tok = self.consume(rhs1.children, child, index, 1)
+                if tok.type == Token.T_FUNCTION:
+                    tok.type = Token.T_METHOD
+                    tok.value = "static"
+                    rhs1.children[index] = tok
+                else:
+                    child.children.append(tok)
             index += offset
 
     def collect_keyword_switch_case(self, tokens, index):
@@ -1889,15 +1900,29 @@ class Parser(ParserBase):
         token = tokens[index]
 
         module = self.consume(tokens, token, index, 1)
+        import_level = 0
+        if module.type == Token.T_SPECIAL_IMPORT:
+            import_level = len(module.value) # just count the prefix dots
+            module = self.consume(tokens, token, index, 1)
 
         token.type = Token.T_PYIMPORT
         import_path = self._collect_keyword_import_get_name(module)
         import_name = import_path.split('.')[0]
-        import_level = prefix_count(import_path, '.')
+        #import_level = prefix_count(import_path, '.')
 
+        # the name is just the first component
+        # the full module path is stored in the pyimport token
         tok_name = Token(Token.T_TEXT, token.line, token.index, import_name)
         tok_level = Token(Token.T_NUMBER, token.line, token.index, str(import_level))
-        tok_fromlist = tok1 = Token(Token.T_ARGLIST, token.line, token.index, "()")
+
+        tok_fromlist = None
+        j = self.peek_token(tokens, token, index, 1)
+        if j is not None:
+            if tokens[j].type == Token.T_GROUPING:
+                tok_fromlist = self.consume(tokens, token, index, 1)
+                tok_fromlist.type = Token.T_OBJECT
+        if tok_fromlist is None:
+            tok_fromlist = Token(Token.T_OBJECT, token.line, token.index, "{}")
 
         token.value = import_path
         token.children = [tok_name, tok_level, tok_fromlist]
@@ -2460,6 +2485,8 @@ def main():  # pragma: no cover
     text1 = """obj = {["fun"](){}, b:c}"""
     text1 = """x = "\\U0001f441" """
     text1 = """from module x import {a=b, c}"""
+    text1 = """pyimport ...os.path {a=b, c}"""
+    text1 = """class A { #priv; } const instance = new A(); a.#priv"""
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

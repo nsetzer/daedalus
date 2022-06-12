@@ -60,6 +60,7 @@ import random
 import re
 import time
 import traceback
+import urllib.request
 
 from . import vm_opcodes as opcodes
 
@@ -67,867 +68,22 @@ from .token import Token, TokenError
 from .lexer import Lexer
 from .parser import Parser, ParseError
 from .transform import TransformBaseV2, TransformIdentityBlockScope
+from .builder import findModule
 
-from .vm_compiler import VmCompiler, VmTransform, VmInstruction, VmClassTransform, VmClassTransform2
+from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
+    VmClassTransform, VmClassTransform2
+from .vm_primitive import vmGetAst, JsObject, JsObjectPropIterator, \
+    VmFunction, jsc, JsUndefined, JsString, JsNumber, JsSet, JsArray, \
+    JsObjectCtor
 
-class JsFunction(object):
-    def __init__(self, module, fndef, args, kwargs, bind_target):
-        super(JsFunction, self).__init__()
-        self.module = module
-        self.fndef = fndef
-        self.args = args
-        self.kwargs = kwargs
-        self.bind_target = bind_target
-        self.cells = None
+from .vm_builtin import JsTimerFactory, populate_builtins
 
-        self.prototype = JsObject()
-
-    def __repr__(self):
-
-        return "<JsFunction(%s)>" % (",".join(self.fndef.arglabels))
-
-    def bind(self, target):
-
-        fn = JsFunction(self.module, self.fndef, self.args, self.kwargs, target)
-        fn.cells = self.cells # TODO this seems like a hack
-        return fn
-
-operands = [
-    '__lt__',
-    '__le__',
-    '__eq__',
-    '__ne__',
-    '__ge__',
-    '__gt__',
-    '__add__',
-    '__sub__',
-    '__mul__',
-    '__truediv__',
-    '__floordiv__',
-    '__mod__',
-    '__pow__',
-    '__lshift__',
-    '__rshift__',
-    '__and__',
-    '__xor__',
-    '__or__',
-]
-
-operandsr = [
-
-    ('__radd__'     , '__add__'),
-    ('__rsub__'     , '__sub__'),
-    ('__rmul__'     , '__mul__'),
-    ('__rtruediv__' , '__truediv__'),
-    ('__rfloordiv__', '__floordiv__'),
-    ('__rmod__'     , '__mod__'),
-    ('__rpow__'     , '__pow__'),
-    ('__rlshift__'  , '__lshift__'),
-    ('__rrshift__'  , '__rshift__'),
-    ('__rand__'     , '__and__'),
-    ('__rxor__'     , '__xor__'),
-    ('__ror__'      , '__or__')
-]
-
-def jsc(f):
-
-    text = f(None)
-
-    tokens = Lexer().lex(text)
-    parser = Parser()
-    parser.feat_xform_optional_chaining = True
-    parser.python = True
-    ast = parser.parse(tokens)
-
-    xform = TransformIdentityBlockScope()
-    xform.disable_warnings=True
-    xform.transform(ast)
-
-    xform = VmTransform()
-    xform.transform(ast)
-
-    compiler = VmCompiler()
-    module = compiler.compile(ast)
-
-    #if debug:
-    #    print(ast.toString(1))
-    #    module.dump()
-
-    fn = JsFunction(module, module.functions[1], None, None, None)
-
-    return fn
-
-class JsObjectPropIterator(object):
-    def __init__(self, obj):
-        super(JsObjectPropIterator, self).__init__()
-        self.obj = obj
-
-        if isinstance(obj, JsArray):
-            self.array = obj.array
-        elif isinstance(obj, JsObject):
-            self.array = JsObject.keys(obj).array
-
-        self.index = 0
-
-    def __call__(self):
-        return self
-
-    def next(self):
-
-        result = lambda: None
-        if self.index < len(self.array):
-            result.value = self.array[self.index]
-            result.done = False
-            self.index += 1
-        else:
-            result.value = JsUndefined.instance
-            result.done = True
-
-        return result
-
-class JsObject(object):
-
-    type_name = "object"
-
-    def __init__(self, args=None):
-        super(JsObject, self).__init__()
-
-        if args:
-            self.data = dict(args)
-        else:
-            self.data = {}
-
-    def __repr__(self):
-        # s = ",".join(["%r: %r" % (key, value) for key, value in self.data.items()])
-        s = ",".join([str(s) for s in self.data.keys()])
-        return "<%s(%s)>" % (self.__class__.__name__, s)
-
-    def _hasAttr(self, name):
-        if isinstance(name, JsString):
-            name = name.value
-        return name in self.data
-
-    def getAttr(self, name):
-        if isinstance(name, JsString):
-            name = name.value
-
-        if hasattr(self, name):
-            attr = getattr(self, name)
-            if isinstance(attr, JsFunction):
-                attr = attr.bind(self)
-            return attr
-
-        elif name in self.data:
-            return self.data[name]
-
-        print("get undefined attribute %s" % name)
-        return JsUndefined.instance
-
-    def setAttr(self, name, value):
-        if isinstance(name, JsString):
-            name = name.value
-        self.data[name] = value
-
-    def delAttr(self, name):
-        if isinstance(name, JsString):
-            name = name.value
-        del self.data[name]
-
-    def getIndex(self, index):
-        if JsString(index).value == "_x_daedalus_js_prop_iterator":
-            if "_x_daedalus_js_prop_iterator" in self.data:
-                rv =self.data["_x_daedalus_js_prop_iterator"]
-                return rv
-            return JsObjectPropIterator(self)
-
-        if index in self.data:
-            return self.data[index]
-        print("get undefined index %s" % index, type(index))
-        return JsUndefined.instance
-
-    def setIndex(self, index, value):
-        self.data[index] = value
-
-    def delIndex(self, index):
-        del self.data[index]
-
-    @staticmethod
-    def keys(inst):
-        x = JsArray([JsString(s) for s in inst.data.keys()])
-        return x
-
-    @staticmethod
-    def getOwnPropertyNames(object):
-        return JsArray()
-
-    def _update(self, other):
-        self.data.update(other.data)
-
-class JsObjectCtor(JsObject):
-
-    def __call__(self, *args, **kwargs):
-        return JsObject(*args, **kwargs)
-
-class PyProp(object):
-    def __init__(self, target, func):
-        super(PyProp, self).__init__()
-        self.target = target
-        self.func = func
-
-    def invoke(self, *args, **kwargs):
-        return self.func(self.target, *args, **kwargs)
-
-    def bind(self, target):
-        return PyProp(target, self.func)
-
-class PyCallable(object):
-    def __init__(self, target, func):
-        super(PyCallable, self).__init__()
-        self.target = target
-        self.func = func
-
-    def __call__(self, *args, **kwargs):
-        return self.func(self.target, *args, **kwargs)
-
-    def bind(self, target):
-        return PyCallable(target, self.func)
-
-class JsArray(JsObject):
-
-    type_name = "Array"
-
-    def __init__(self, args=None):
-        super(JsArray, self).__init__(None)
-        if args:
-            self.array = list(args)
-        else:
-            self.array = []
-
-    def __repr__(self):
-        s = ",".join([repr(s) for s in self.array])
-        return "<%s(%s)>" % (self.__class__.__name__, s)
-
-    def getIndex(self, index):
-        if JsString(index).value == "_x_daedalus_js_prop_iterator":
-            return JsObjectPropIterator(self)
-        if isinstance(index, int):
-            return self.array[index]
-        return self.getAttr(index)
-
-    def setIndex(self, index, value):
-        if isinstance(index, int):
-            self.array[index] = value
-        else:
-            self.setAttr(index, value)
-
-    def delIndex(self, index):
-        if isinstance(index, int):
-            del self.array[index]
-        else:
-            self.delAttr(index)
-
-    def push(self, item):
-        self.array.append(item)
-
-    def pop(self):
-        return self.array.pop()
-
-    def slice(self, start=None, end=None):
-
-        if start is None and end is None:
-            return JsArray(self.array[:])
-        elif end is None:
-            return JsArray(self.array[start:])
-        else:
-            return JsArray(self.array[start:end])
-
-    @property
-    def length(self):
-        return len(self.array)
-
-    @jsc
-    def map(self):
-        return """
-            function map(fn) {
-                out = []
-                for (let i=0; i < this.length; i++) {
-                    let v = fn(this[i])
-                    out.push(v)
-                }
-                return out
-            }
-        """
-
-    def concat(self, *sequences):
-
-        for seq in sequences:
-            self.array.extend(seq.array)
-
-        return self
-
-    def join(self, string):
-
-        seq = [str(s) for s in self.array]
-        return JsString(string.value.join(seq))
-
-    @staticmethod
-    def isArray(other):
-        return isinstance(other, JsArray)
-
-    @jsc
-    def filter(self):
-        return """
-            function filter(fn) {
-                out = []
-                for (let i=0; i < this.length; i++) {
-                    const v = this[i]
-                    if (fn(v)) {
-                        out.push(v)
-                    }
-                }
-                return out
-            }
-        """
-    @jsc
-    def forEach(self):
-        return """
-            function forEach(fn) {
-                for (let i=0; i < this.length; i++) {
-                    fn(this[i], i)
-                }
-            }
-        """
-
-class JsSet(JsObject):
-    type_name = "Set"
-
-    def __init__(self, args=None):
-        super(JsSet, self).__init__(None)
-
-        if args:
-            self.seq = set(args)
-        else:
-            self.seq = set()
-
-    @property
-    def size(self):
-        return len(self.seq)
-
-def _apply_value_operation(cls, op, a, b):
-    if not isinstance(b, JsObject):
-        b = cls(b)
-
-    if a is None:
-        a = JsString("null")
-
-    if b is None:
-        b = JsString("null")
-
-    if isinstance(a, JsUndefined):
-        a = JsString("undefined")
-
-    if isinstance(b, JsUndefined):
-        b = JsString("undefined")
-
-    if isinstance(a, JsString) or isinstance(b, JsString):
-        if isinstance(a, (int, float, str)):
-            a = JsString(a)
-        if isinstance(b, (int, float, str)):
-            b = JsString(b)
-        return JsString(op(a.value, b.value))
-    else:
-        return JsNumber(op(a.value, b.value))
-
-class JsNumberType(type):
-    def __new__(metacls, name, bases, namespace):
-        cls = super().__new__(metacls, name, bases, namespace)
-
-        for name in operands:
-            if not hasattr(cls, name):
-                op = getattr(operator, name)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
-
-        for name, key in operandsr:
-            if not hasattr(cls, name):
-                op = getattr(operator, key)
-                setattr(cls, name, lambda b, a, op=op: _apply_value_operation(cls, op, a, b))
-
-        return cls
-
-class JsNumber(JsObject, metaclass=JsNumberType):
-    def __init__(self, value=0):
-        super(JsNumber, self).__init__()
-
-        self.value = value
-
-    def __repr__(self):
-        return "<JsNumber(%s)>" % self.value
-
-    def serialize(self, stream):
-        pass
-
-    def deserialize(self, stream):
-        pass
-
-class JsStringType(type):
-    def __new__(metacls, name, bases, namespace):
-        cls = super().__new__(metacls, name, bases, namespace)
-
-        for name in operands:
-            if not hasattr(cls, name):
-                op = getattr(operator, name)
-                setattr(cls, name, lambda a, b, op=op: _apply_value_operation(cls, op, a, b))
-
-        for name, key in operandsr:
-            if not hasattr(cls, name):
-                op = getattr(operator, key)
-                setattr(cls, name, lambda b, a, op=op: _apply_value_operation(cls, op, a, b))
-
-        return cls
-
-class JsString(JsObject, metaclass=JsStringType):
-
-    def __init__(self, value=''):
-        super(JsString, self).__init__(None)
-        if isinstance(value, JsString):
-            value = value.value
-        self.value = str(value)
-
-    def __repr__(self):
-        return "<JsString(%r)>" % self.value
-
-    def __str__(self):
-        # "<JsString(%s)>" %
-        return self.value
-
-    def serialize(self, stream):
-        data = self.value.encode("utf-8")
-        stream.write(opcodes.LEB128u(len(data) + 1))
-        stream.write(data)
-        stream.write(b"\x00")
-
-    def deserialize(self, stream):
-        length = opcodes.read_LEB128u(stream)
-        data = stream.read(length - 1)
-        stream.read(1) # discard zero byte
-        return JsString(data.decode("utf-8"))
-
-    def getIndex(self, index):
-        if index < len(self.value):
-            return JsString(self.value[index])
-        print("get undefined index %s" % index)
-        return JsUndefined.instance
-
-    def __eq__(self, other):
-        if isinstance(other, JsString):
-            other = other.value
-        return self.value == other
-
-    def __bool__(self):
-        return bool(self.value)
-
-    def __hash__(self):
-        return self.value.__hash__()
-
-
-    @property
-    def length(self):
-        return len(self.value)
-
-
-    def indexOf(self, substr):
-        try:
-            return self.value.index(substr.value)
-        except ValueError as e:
-            return -1
-
-    def lastIndexOf(self, substr):
-        try:
-            return self.value.rindex(substr.value)
-        except ValueError as e:
-            return -1
-
-    def match(self, regex):
-        return bool(regex.reg.match(self.value))
-
-    def startsWith(self, substr):
-        return bool(self.value.startswith(substr.value))
-
-class JsUndefined(JsObject):
-    instance = None
-    def __init__(self):
-        super(JsUndefined, self).__init__()
-        if JsUndefined.instance is not None:
-            raise RunTimeError("cannot construct singleton")
-
-    def __repr__(self):
-        return "<JsUndefined()>"
-
-    def __str__(self):
-        return "undefined"
-
-    def __bool__(self):
-        return False
-
-    def serialize(self, stream):
-        pass
-
-    def deserialize(self, stream):
-        pass
-
-JsUndefined.instance = JsUndefined()
-
-class JsTimerFactory(object):
-    def __init__(self, runtime):
-        super(JsTimerFactory, self).__init__()
-        self.runtime = runtime
-
-        self.nextTimerId = 1
-        self.timers = {}
-        self.intervals = {}
-        self.queue = []
-
-    def _setInterval(self, fn, delay, *args):
-
-        timerId = self.nextTimerId
-        self.nextTimerId += 1
-
-        timeout = time.time() + delay/1000.0
-
-        posargs = JsObject()
-
-        frame = self.runtime._new_frame(fn, len(args), args, JsObject())
-        stack = [frame]
-
-        self.intervals[timerId] = (timeout, delay, stack)
-
-        self.queue.append((timeout, timerId))
-
-        return timerId
-
-    def _setTimeout(self, fn, delay, *args):
-
-        timerId = self.nextTimerId
-        self.nextTimerId += 1
-
-        timeout = time.time() + delay/1000.0
-
-        frame = self.runtime._new_frame(fn, len(args), args, JsObject())
-        stack = [frame]
-
-        self.timers[timerId] = (timeout, delay, stack)
-
-        self.queue.append((timeout, timerId))
-
-        return timerId
-
-    def _clearTimeout(self, fn, delay, *args):
-        pass
-
-    def _wait(self):
-        """
-         wait up to 5 seconds for any timer to expire
-        """
-
-        if len(self.timers) == 0:
-            return False
-
-        now = time.time()
-
-        expires_in = 5
-        for _, (timeout, delay, stack) in self.timers.items():
-            expires_in = min(timeout - now, expires_in)
-
-        if expires_in > 0:
-            time.sleep(expires_in)
-
-            # TODO: this pushes a value on the stack for every call
-            #frame = self.stack_frames[-1]
-            #frame.sp -= 3
-
-        return len(self.timers)
-
-    def check(self):
-
-        if self.queue:
-
-            now = time.time()
-            if now > self.queue[0][0]:
-                timeout, timerId = self.queue.pop(0)
-
-                if timerId in self.timers:
-                    stack = self.timers[timerId][2]
-                    del self.timers[timerId]
-                    return stack
-        return None
-
-class JsPromiseFactory(object):
-    def __init__(self, runtime):
-        super(JsPromiseFactory, self).__init__()
-        self.runtime = runtime
-
-    def __call__(self, callback=None):
-        return JsPromise(callback)
-
-class JsPromise(JsObject):
-
-    PENDING = 1
-    FULFILLED = 2
-    REJECTED = 3
-
-    def __init__(self, callback=None):
-        # callback: (resolve, reject) => {}
-        super(JsPromise, self).__init__()
-        self.callback = callback
-        self._state = JsPromise.PENDING
-        self._result = None
-        self._error = None
-
-        setattr(self, "then", self._then)
-        setattr(self, "catch", self._catch)
-        setattr(self, "finally", self._finally)
-
-        self._invoke()
-
-    def _invoke(self):
-
-        if isinstance(self.callback, JsFunction):
-            runtime = VmRuntime()
-            runtime.initfn(self.callback, [self._resolve, self._reject], JsObject())
-            rv, _ = runtime.run()
-        else:
-            try:
-                rv = self.callback()
-                self._resolve(rv)
-            except Exception as e:
-                self._reject(e)
-
-        if self._state == JsPromise.PENDING:
-            self._state = JsPromise.REJECTED
-
-        return
-
-    def _resolve(self, res):
-        #print("resolve promise", res)
-        self._state = JsPromise.FULFILLED
-        self._result = res
-
-    def _reject(self, err):
-        #print("reject promise", res)
-        self._state = JsPromise.REJECTED
-        self._error = err
-
-    @jsc
-    def _then(self):
-        return """
-            function _then(onFulfilled, onRejected) {
-                // onFulfilled : value => {}
-                // onRejected : reason => {}
-
-                // TODO: wait for state to be 2 or 3
-
-                if (this._state === 2) {
-                    if (onFulfilled) {
-                        onFulfilled(this._result)
-                    }
-                } else {
-                    if (onRejected) {
-                        onRejected(this._error)
-                    }
-                }
-
-                return this
-            }
-        """
-
-    @jsc
-    def _catch(self):
-         return """
-            function _catch(onRejected) {
-                return this._then(undefined, onRejected)
-            }
-        """
-
-    @jsc
-    def _finally(self):
-         return """
-            function _finally(onFinally) {
-                return this._then(onFinally, onFinally)
-            }
-        """
-
-def fetch(url, parameters):
-
-    return JsPromise(lambda: "<html/>")
-
-class JsDocument(JsObject):
-
-    def __init__(self):
-        super(JsDocument, self).__init__()
-
-        self.html = JsElement()
-        self.head = JsElement()
-        self.body = JsElement()
-
-        self.html.setAttr("type", JsString("html"))
-        self.head.setAttr("type", JsString("head"))
-        self.body.setAttr("type", JsString("body"))
-
-        self.html.children = JsArray([self.head, self.body])
-
-    @staticmethod
-    def createElement(name):
-
-        elem = JsElement()
-        elem.setAttr("type", name)
-
-        if name.value == "style":
-            elem.setAttr("sheet", JsElement())
-
-        print("+++createElement:", name)
-
-        return elem
-
-    @staticmethod
-    def createTextNode(text):
-
-        dom = JsElement()
-        dom.setAttr("type", JsString("TEXT_ELEMENT"))
-        dom.setAttr("nodeValue", text)
-        print("+++createElement: text", text)
-
-        return dom
-
-    def getElementsByTagName(self, tagname):
-
-        if tagname == "HEAD":
-            return [self.head]
-
-        if tagname == "BODY":
-            return [self.body]
-
-        return []
-
-    def getElementById(self, elemid):
-
-        if elemid == "root":
-            return self.body
-
-class JsElement(JsObject):
-
-    def __init__(self):
-        super(JsElement, self).__init__(None)
-
-        self.rules = JsArray()
-        self.children = JsArray()
-        self.style = JsObject()
-
-    #def __repr__(self):
-    #    x = super().__repr__()
-    #    return "<JsElement(" + str(self.rules) + "," + str(self.children) + ")>" + x
-
-    def toString(self, depth=0):
-
-        type_ = self.getAttr("type")
-
-        if type_:
-
-            if type_.value == "sheet":
-                return ">?sheet"
-            elif type_.value == "text/css":
-                elem = self.getAttr("sheet")
-                s = "  "*depth + "<style>\n"
-                for rule in elem.rules.array:
-                    s += "  "*depth
-                    s += rule
-                    s += "\n"
-                s += "  "*depth
-                s += "</style>"
-                return JsString(s)
-            elif type_.value == "TEXT_ELEMENT":
-                return "  "*depth + self.getAttr("nodeValue")
-            else:
-                s = "  "*depth + "<%s" % type_
-                for key in JsObject.keys(self).array:
-                    key=key.value
-                    if key == "type" or key.startswith("_$"):
-                        continue
-                    attr =  self.getAttr(key)
-                    if key == "className":
-                        key = "class"
-                    s += " %s=\"%s\"" % (key, attr)
-                s += ">\n"
-                for child in self.children.array:
-                    s += child.toString(depth + 1)
-                    s += "\n"
-                s += "  "*depth + "</%s>" % type_
-
-                return JsString(s)
-        else:
-            return "undefined type"
-
-
-    def appendChild(self, child):
-        self.children.push(child)
-        print("appendChild:",  id(self), child)
-
-    def insertBefore(self, child, other):
-        self.children.push(child)
-        print("insertBefore:",  id(self), child)
-
-    def insertRule(self, text, index=0):
-        print("insertRule:", id(self), text)
-        self.rules.push(text)
-
-    def addRule(self, selector, text):
-        self.insertRule(selector + " {" + text + "}", self.rules.length)
-
-    def hasChildNodes(self):
-        return self.children.length > 0
-
-    @property
-    def lastChild(self):
-        return self.children.array[-1]
-
-class JsWindow(JsObject):
-
-    def __init__(self):
-        super(JsWindow, self).__init__()
-
-    def addEventListener(self, event, callback):
-        pass
-
-    def requestIdleCallback(self, callback, options):
-        print("requestIdleCallback", callback, options)
-
-class JsNavigator(JsObject):
-
-    def __init__(self):
-        super(JsNavigator, self).__init__()
-
-        self.appVersion = JsString("0")
-        self.userAgent = JsString("daedalus")
-        self.appName = JsString("daedalus")
-
-class JsRegExp(object):
-    def __init__(self, expr, flags):
-        super(JsRegExp, self).__init__()
-
-        iflags = 0
-
-        cflags = {
-            "i": re.IGNORECASE,
-        }
-
-        for c in flags.value:
-            if c in cflags:
-                iflags |= cflags[c]
-
-        self.reg = re.compile(expr.value, iflags)
 
 # ---
 
 class VmReference(object):
+    """ A Reference is used to implement closures
+    """
 
     def __init__(self, name, value):
         super(VmReference, self).__init__()
@@ -941,22 +97,34 @@ class VmStackFrame(object):
 
     def __init__(self, module, fndef, locals, cells):
         super(VmStackFrame, self).__init__()
+        # a VmFunctionDef
         self.fndef = fndef
+        # a VmModule
         self.module = module
+        # a JsObject containing local variables for this frame
         self.locals = locals
+        # a JsObject containing cell variables for this frame
         self.cells = cells
-        self.local_names = fndef.local_names
+        # a JsObject containing global variables for this frame
         self.globals = fndef.globals
-        #self.cells = {} if cells is None else cells
+        # a table mapping an index to the name of a variable
+        # used to implement certain certain opcodes
+        self.local_names = fndef.local_names
+        # sequence of VmTryBlock
+        # used to implement the try/catch logic
         self.blocks = []
+        # the stack contains values pushed and popped by opcodes
         self.stack = []
+        # the current instruction pointer
         self.sp = 0
 
 class VmTryBlock(object):
 
     def __init__(self, catch_ip, finally_ip):
         super(VmTryBlock, self).__init__()
+        # jump target when an exception is thrown
         self.catch_ip = catch_ip
+        # jump target after an exception is handled
         self.finally_ip = finally_ip
         self.flag_catch = False
         self.flag_finally = False
@@ -1011,16 +179,13 @@ binary_op = {
 
     opcodes.math.AND: lambda a, b: (a and b),
     opcodes.math.OR: lambda a, b: (a or b),
-
 }
 
 unary_op = {
     opcodes.math.NEGATIVE: operator.__neg__,
     opcodes.math.POSITIVE: operator.__pos__,
     opcodes.math.BITWISE_NOT: operator.__invert__,
-
     opcodes.math.NOT: lambda a: (not a),
-
 }
 
 class VmRuntime(object):
@@ -1034,6 +199,11 @@ class VmRuntime(object):
         self.builtins = builtins
 
         self.warn_stack = True
+        self.compiler = VmCompiler()
+
+        # the module search path.
+        # similar to environment variables PATH or PYTHON_PATH
+        self.search_path = []
 
     def initfn(self, fn, args, kwargs):
 
@@ -1057,63 +227,16 @@ class VmRuntime(object):
 
     def _init_builtins(self):
 
-        console = lambda: None
-        console.log = print
-        _math = lambda: None
-        _math.floor = math.floor
-        _math.ceil = math.ceil
-        _math.random = random.random
-        _Symbol = lambda: None
-        _Symbol.iterator = JsString("_x_daedalus_js_prop_iterator")
-
-        history = lambda: None
-        history.pushState = lambda x: None
-
         if self.builtins is None:
             self.builtins = {}
-            self.builtins['console'] = console
-            self.builtins['Math'] = _math
-            self.builtins['document'] = JsDocument()
-            self.builtins['Promise'] = JsPromiseFactory(self)
-            self.builtins['fetch'] = fetch
-            self.builtins['Set'] = JsSet
-            self.builtins['Array'] = JsArray
-            self.builtins['Object'] = JsObjectCtor()
-            self.builtins['window'] = JsWindow()
-            self.builtins['navigator'] = JsNavigator()
-            self.builtins['parseFloat'] = lambda x: x
-            self.builtins['parseInt'] = lambda x, base=10: x
-            self.builtins['isNaN'] = lambda x: False
-            self.builtins['RegExp'] = JsRegExp
-            self.builtins['Symbol'] = _Symbol
-            self.builtins['history'] = history
 
+            populate_builtins(self, self.builtins)
         # these must be unqiue to the runtime
         self.timer = JsTimerFactory(self)
         self.builtins['setTimeout'] = self.timer._setTimeout
         self.builtins['setInterval'] = self.timer._setInterval
         self.builtins['clearTimeout'] = self.timer._clearTimeout
         self.builtins['wait'] = self.timer._wait
-
-    def _compile_fn(self, text, debug=False):
-        tokens = Lexer().lex(text)
-        parser = Parser()
-        parser.feat_xform_optional_chaining = True
-        parser.python = True
-        ast = parser.parse(tokens)
-
-        xform = TransformIdentityBlockScope()
-        xform.disable_warnings=True
-        xform.transform(ast)
-
-        compiler = VmCompiler()
-        module = compiler.compile(ast)
-        if debug:
-            print("ast", ast.toString(1))
-            module.dump()
-
-        fn = JsFunction(module, module.functions[1], None, None, None)
-        return fn
 
     def _unwind(self):
 
@@ -1197,7 +320,7 @@ class VmRuntime(object):
             if arglabel in func.fndef.cell_names and arglabel not in func.fndef.free_names:
                 ref = VmReference(arglabel, posargs.getAttr(arglabel))
                 func.cells.setAttr(arglabel, ref)
-                del posargs.data[arglabel]
+                del posargs._data[arglabel]
 
         # TODO: maybe remove the ref creation from the cellvar.LOAD instr
         for name in func.fndef.cell_names:
@@ -1215,6 +338,10 @@ class VmRuntime(object):
         instrs = frame.fndef.instrs
         return_value = None
 
+        # cache of module names and absolute paths
+        self._imports = []
+        self._modules = {}
+
         history = []
         self.steps = 0
         while frame.sp < len(instrs):
@@ -1230,9 +357,9 @@ class VmRuntime(object):
 
             instr = instrs[frame.sp]
 
-            if frame.stack and isinstance(frame.stack[-1], str):
-                print("str", repr(frame.stack[-1]), instr.line, instr.opcode)
-                raise VmRuntimeException(self._get_trace(), "found str on stack")
+            #if frame.stack and isinstance(frame.stack[-1], str):
+            #    print("str", repr(frame.stack[-1]), instr.line, instr.opcode)
+            #    raise VmRuntimeException(self._get_trace(), "found str on stack")
 
             if self.enable_diag:
                 #name = frame.local_names[instr.args[0]]
@@ -1274,7 +401,7 @@ class VmRuntime(object):
                     args.insert(0, frame.stack.pop())
                 func = frame.stack.pop()
 
-                if isinstance(func, JsFunction):
+                if isinstance(func, VmFunction):
 
                     new_frame = self._new_frame(func, argc, args, kwargs)
 
@@ -1284,7 +411,7 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     continue
                 elif callable(func):
-                    _rv = func(*args, **kwargs.data)
+                    _rv = func(*args, **kwargs._data)
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
@@ -1300,7 +427,7 @@ class VmRuntime(object):
                     args.insert(0, frame.stack.pop())
                 func = frame.stack.pop()
 
-                if isinstance(func, JsFunction):
+                if isinstance(func, VmFunction):
 
                     new_frame = self._new_frame(func, argc, args, kwargs)
 
@@ -1321,7 +448,7 @@ class VmRuntime(object):
                 posargs = frame.stack.pop()
                 func = frame.stack.pop()
 
-                if isinstance(func, JsFunction):
+                if isinstance(func, VmFunction):
 
                     new_frame = self._new_frame(func, len(posargs.array), posargs.array, kwargs)
 
@@ -1343,7 +470,8 @@ class VmRuntime(object):
                     print("warning: stack not empty", frame.stack)
                     #self._print_trace()
                     #traceback.print_stack()
-                self.stack_frames.pop()
+                frame = self.stack_frames.pop()
+
                 if len(self.stack_frames) == 0:
                     return_value = rv
                     break
@@ -1402,6 +530,69 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     frame.sp = block.target()
                     continue
+            elif instr.opcode == opcodes.ctrl.IMPORT:
+                module_name = str(frame.stack.pop())
+                if module_name.lower().endswith(".js"):
+                    if not frame.module.path:
+                        raise RunTimeError("relative import from module without a path")
+                    dirpath, _ = os.path.split(frame.module.path)
+                    path = os.path.normpath(os.path.join(dirpath, module_name))
+                else:
+                    path = findModule(str(module_name), self.search_path)
+
+                #root = os.path.split(os.path.abspath(mod.path))[0]
+                #os.path.normpath(os.path.join(root, mod.includes[i]))
+
+                # TODO: findModule should be part of the loader
+                #  + initialize with a search path
+                #  + expand relative paths relative to the current module path
+                # TODO: cache the execution result for the module
+                #  + save time on multiple imports of the same file
+
+                self._imports.append((str(module_name), path))
+                #print("import", module_name, path)
+                if path in self._modules:
+                    frame.stack.append(self._modules[path])
+                else:
+                    text = open(path).read()
+                    ast = vmGetAst(text)
+                    module = self.compiler.compile(ast)
+                    module.path = path
+                    # execute the module as a function call with no arguments
+                    fn = VmFunction(module, module.functions[0], None, None, None)
+                    new_frame = self._new_frame(fn, 0, [], JsObject())
+                    self.stack_frames.append(new_frame)
+                    frame.sp += 1
+                    frame = self.stack_frames[-1]
+                    instrs = frame.fndef.instrs
+                    continue
+            elif instr.opcode == opcodes.ctrl.IMPORT2:
+                module_name, module_path = self._imports.pop()
+                module_namespace = frame.stack[-1] # peek
+                self._modules[module_path] = module_namespace
+            elif instr.opcode == opcodes.ctrl.IMPORTPY:
+                module_name = frame.stack.pop()
+                frame.stack.append(__import__(str(module_name)))
+
+            elif instr.opcode == opcodes.ctrl.EXPORT:
+                # this is a modified return where the return value
+                # is all global values in the current frame
+                if frame.stack and self.warn_stack:
+                    print("warning: stack not empty", frame.stack)
+                frame = self.stack_frames.pop()
+                namespace = JsObject(frame.globals.values)
+
+                if len(self.stack_frames) == 0:
+                    return_value = namespace
+                    break
+                else:
+                    frame = self.stack_frames[-1]
+                    instrs = frame.fndef.instrs
+                    frame.stack.append(namespace)
+                    continue
+            elif instr.opcode == opcodes.ctrl.INCLUDE:
+                obj = frame.stack.pop()
+                frame.globals.values.update(obj.data)
             elif instr.opcode == opcodes.localvar.SET:
                 name = frame.local_names[instr.args[0]]
                 frame.locals.setAttr(name, frame.stack.pop())
@@ -1519,7 +710,7 @@ class VmRuntime(object):
                     val = JsString("string")
                 elif isinstance(obj, JsObject):
                     val = JsString(obj.type_name)
-                elif isinstance(obj, JsFunction):
+                elif isinstance(obj, VmFunction):
                     val = JsString("function")
                 elif isinstance(obj, (JsNumber, int, float)):
                     val = JsString("number")
@@ -1577,7 +768,7 @@ class VmRuntime(object):
                     args.insert(0, frame.stack.pop())
 
                 fndef = frame.module.functions[fnidx]
-                fn = JsFunction(frame.module, fndef, args, kwargs, bind_target)
+                fn = VmFunction(frame.module, fndef, args, kwargs, bind_target)
 
                 cells = []
                 for ref in cellvars.array:
@@ -1592,7 +783,7 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.obj.UPDATE_OBJECT:
                 tos1 = frame.stack.pop()
                 tos2 = frame.stack.pop()
-                tos2.data.update(tos1.data)
+                tos2._data.update(tos1._data)
                 frame.stack.append(tos2)
             elif instr.opcode == opcodes.obj.CREATE_OBJECT:
 
@@ -1692,136 +883,23 @@ class VmRuntime(object):
 
         return return_value, frame.globals
 
-def vmGetAst(text):
-
-    tokens = Lexer().lex(text)
-    parser = Parser()
-    parser.feat_xform_optional_chaining = True
-    parser.python = True
-    ast = parser.parse(tokens)
-
-    xform = VmClassTransform2()
-    xform.transform(ast)
-
-    xform = TransformIdentityBlockScope()
-    xform.disable_warnings=True
-    xform.transform(ast)
-
-    xform = VmTransform()
-    xform.transform(ast)
-
-    return ast
-
-class VmLoader(object):
-    def __init__(self,):
-        super(VmLoader, self).__init__()
-
-        self.runtime = VmRuntime()
-
-    def _load_path(self, path):
-        text = open(path).read()
-
-        ast = self._load_text(text)
-        compiler = VmCompiler()
-        module = compiler.compile(ast)
-        return module
-
-    def _load_text(self, text, debug=False):
-
-        ast = vmGetAst(text)
-
-        if debug:
-            print(ast.toString(1))
-
-        return ast
-
-    def _fix_mod(self, mod):
-
-        root = os.path.split(os.path.abspath(mod.path))[0]
-
-        for i in range(len(mod.includes)):
-            mod.includes[i] = os.path.normpath(os.path.join(root, mod.includes[i]))
-
-    def _load(self, root_mod, root_dir, root_name):
-
-        root_mod.depth = 0
-
-        self._fix_mod(root_mod)
-
-        visited = {root_name: root_mod}
-        includes = [(1, p) for p in root_mod.includes]
-
-        while includes:
-            depth, inc_path = includes.pop()
-
-            if inc_path in visited:
-                continue
-
-            dep_mod = self._load_path(inc_path)
-            dep_mod.depth = depth
-            dep_mod.path = inc_path
-            self._fix_mod(dep_mod)
-
-            visited[inc_path] = dep_mod
-
-            includes.extend([(depth+1, p) for p in dep_mod.includes])
-
-        mods = sorted(visited.items(), key=lambda x: x[1].depth, reverse=True)
-        for mod_path, mod in mods:
-            print("load", mod.depth, mod.path)
-
-            for inc_path in mod.includes:
-                mod2 = visited[inc_path]
-                for name, value in mod2.globals.values.items():
-                    mod.globals.values[name] = value
-                #for name in mod.globals.names:
-                #    if name in mod2.globals.values and name not in mod.globals.values:
-                #        print(mod_path, name)
-                #        mod.globals.values[name] = mod2.globals.values[name]
-
-            if mod is root_mod:
-                break
-            self.runtime.enable_diag = False
-            self.runtime.init(mod)
-            try:
-                rv, _globals = self.runtime.run()
-                #print(_globals.values)
-            except Exception as e:
-                print("error in ", mod.path)
-                raise e
-
-        print("=*" + "="*68)
-        #self.runtime.enable_diag = True
-        self.runtime.init(root_mod)
-        try:
-            rv, mod_globals = self.runtime.run()
-
-            print("return value", rv)
-            print("globals", mod_globals.values)
-        finally:
-            print("steps", self.runtime.steps)
-
-        return rv, mod_globals
-
-    def run_path(self, path):
-
-        path = os.path.abspath(path)
-        root_mod = self._load_path(path)
-        root_dir = os.path.split(path)[0]
-        root_mod.path = path
-
-        return self._load(root_mod, root_dir, path)
-
     def run_text(self, text):
 
-        ast = self._load_text(text)
-        compiler = VmCompiler()
-        root_mod = compiler.compile(ast)
-        root_dir = "./"
-        root_name = "__main__"
-        root_mod.path = root_name
+        ast = vmGetAst(text)
+        module = self.compiler.compile(ast)
+        module.path = "__main__"
+        self.init(module)
+        return self.run()
 
-        return self._load(root_mod, root_dir, root_name)
+    def run_script(self, path):
+
+        path = os.path.abspath(path)
+        text = open(path).read()
+        ast = vmGetAst(text)
+        module = self.compiler.compile(ast)
+        module.path = path
+        self.init(module)
+        return self.run()
 
 def main():
 
@@ -2388,7 +1466,7 @@ def main():
     """
 
     text1 = """
-        include "./res/daedalus/daedalus.js";
+        import module daedalus
 
         console.log(daedalus)
 
@@ -2436,8 +1514,22 @@ def main():
     """
 
     text1 = """
-        from module daedalus import {DomElement=x, TextElement, StyleSheet}
-        console.log(x)
+        //from module daedalus import {DomElement=x, TextElement, StyleSheet}]
+        //import module daedalus
+        //console.log("element", daedalus.DomElement)
+        fetch("http://www.example.com", {}).then(res => {
+            if (res.ok) {
+                console.log("ok")
+                res.text().then(text => {
+                    console.log(text)
+                }).catch(err => {
+                    console.log(err)
+                })
+            } else {
+                console.log("error")
+            }
+        })
+        wait()
     """
 
     # current bugs:
@@ -2446,24 +1538,13 @@ def main():
     #   -
 
     if True:
-        tokens = Lexer().lex(text1)
-        parser = Parser()
-        parser.feat_xform_optional_chaining = True
-        parser.python = True
-        ast = parser.parse(tokens)
+        ast = vmGetAst(text1)
+        print(ast.toString(3))
 
-        xform = VmClassTransform2()
-        xform.transform(ast)
-        print(ast.toString(1))
-
-        xform = TransformIdentityBlockScope()
-        xform.disable_warnings=True
-        xform.transform(ast)
-
-        xform = VmTransform()
-        xform.transform(ast)
-
-        print(ast.toString(1))
+        compiler = VmCompiler()
+        mod = compiler.compile(ast)
+        mod.dump()
+        #return
 
     #text1 = open("./res/daedalus/daedalus_util.js").read()
     """
@@ -2499,12 +1580,11 @@ def main():
 
     # T_ANONYMOUS_FUNCTION
     # T_FOR_IN
-    loader = VmLoader()
+    runtime = VmRuntime()
+    runtime.enable_diag=False
     #loader.load("./res/daedalus/daedalus.js")
-    rv, globals_ = loader.run_text(text1)
+    rv, globals_ = runtime.run_text(text1)
 
-    if 'obj' in globals_.values:
-        print(JsObject.keys(globals_.values['obj']))
     return
 
 def main2():

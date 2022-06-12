@@ -42,7 +42,7 @@ reserved_words = {
     'implements', 'import', 'in', 'instanceof', 'interface', 'let',
     'new', 'package',
     'return', 'static', 'super', 'switch',
-    'this', 'throw', 'throws', 'transient', 'try', 'typeof', 'var',
+    'this', 'throw', 'transient', 'try', 'typeof', 'var',
     'void', 'volatile', 'while', 'with', 'yield', 'do',
 }
 
@@ -50,8 +50,8 @@ reserved_words = {
 reserved_words_extra = {
     'private', 'protected', 'public', 'native',
     'abstract', 'arguments', 'synchronized', 'from',
-    'module', "pyimport", "catch",
-    "constexpr",
+    'module', "catch", 'throws',
+    "constexpr", "pyimport"
 }
 
 # symbols for operators that have length 1
@@ -344,25 +344,35 @@ class Lexer(LexerBase):
             elif c == '.':
                 self._maybe_push()
                 self._putch(c)
+
                 try:
                     nc = self._peekch()
                 except StopIteration:
                     nc = None
 
-                if nc and nc == '.':
-                    # collect .. and ...
+                _pyimport_flag = False
+                if self.tokens and \
+                    self.tokens[-1].type == Token.T_TEXT and \
+                    self.tokens[-1].value == "pyimport":
+                    _pyimport_flag = True
+
+                if (nc and nc == '.') or _pyimport_flag:
                     self._type = Token.T_SPECIAL
-                    self._putch(self._getch())
+                    while True:
+                        try:
+                            nc = self._peekch()
+                        except StopIteration:
+                            nc = None
 
-                    try:
-                        nc = self._peekch()
-                    except StopIteration:
-                        nc = None
+                        if nc != ".":
+                            break
 
-                    if nc and nc == '.':
                         self._putch(self._getch())
-                        self._push()
 
+                    if _pyimport_flag:
+                        self._type = Token.T_SPECIAL_IMPORT
+
+                    self._push()
                 elif nc and nc in chset_number_base:
                     self._lex_number()
                 else:
@@ -718,9 +728,7 @@ def main():  # pragma: no cover
     # r.match(2/3)
 
     text1 = """
-    //var f=/\\{ *([\\w_-]+) *\\}/g
-
-    /**/
+    pyimport .....modname
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":

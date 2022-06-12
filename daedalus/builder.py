@@ -29,6 +29,21 @@ def findFile(name, search_paths):
 
     raise FileNotFoundError(name)
 
+def findModule(name, search_paths):
+    if name.endswith('.js'):
+        path = findFile(name, search_paths)
+    else:
+        path_name = name.replace(".", "/")
+        try:
+            file_name = path_name.split("/")[-1]
+            path = findFile("%s/%s.js" % (path_name, file_name), search_paths)
+        except FileNotFoundError:
+            path = None
+
+        if path is None:
+            path = findFile(path_name + "/index.js", search_paths)
+    return path
+
 def merge_imports(dst, src):
     for key, val in src.items():
         if key in dst:
@@ -563,20 +578,8 @@ class Builder(object):
         return findFile(name, self.search_paths)
 
     def _name2path(self, name):
-        if name.endswith('.js'):
-            path = self.find(name)
-        else:
-            path_name = name.replace(".", "/")
-            try:
-                file_name = path_name.split("/")[-1]
-                path = self.find("%s/%s.js" % (path_name, file_name))
-            except FileNotFoundError:
-                path = None
+        return findModule(name, self.search_paths)
 
-            if path is None:
-                path = self.find(path_name + "/index.js")
-
-        return path
 
     def _discover(self, jsm):
 
@@ -719,8 +722,6 @@ class Builder(object):
             ast = jsm.getAST()
             styles = jsm.styles
             source_size = jsm.source_size
-
-
 
         css = "\n".join(styles)
         error = None

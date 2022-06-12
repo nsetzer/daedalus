@@ -15,9 +15,9 @@ import time
 from . import vm_opcodes as opcodes
 
 from .token import Token, TokenError
-from .lexer import Lexer
+from .lexer import Lexer, LexError
 from .parser import Parser, ParseError
-from .transform import TransformBaseV2, TransformIdentityScope
+from .transform import TransformBaseV2, TransformIdentityBlockScope
 
 class VmInstruction(object):
     __slots__ = ['opcode', 'args', 'target', 'line', 'index']
@@ -27,6 +27,11 @@ class VmInstruction(object):
         self.opcode = opcode
         self.args = args
         self.target = target
+
+
+        #if len(args) != opcode.argcount:
+        #    if opcode.value > 0x0F:
+        #        raise Exception("%d %d" % (opcode.argcount, len(args)))
 
         if token is not None:
             self.line = token.line
@@ -133,7 +138,6 @@ class VmModule(object):
         self.path = None
         self.globals = None
         self.functions = []
-        self.includes = []
 
     def dump(self):
 
@@ -341,7 +345,6 @@ class VmClassTransform2(TransformBaseV2):
                 Token(Token.T_ATTR, token.line, token.index, "_super"),
             ])
 
-
     def _visit_class(self, parent, token, index):
 
         class_name = token.children[0]
@@ -422,9 +425,6 @@ class VmTransform(TransformBaseV2):
 
         if token.type == Token.T_ASSIGN:
             self._visit_assign(parent, token, index)
-
-        if token.type == Token.T_IMPORT_MODULE:
-            self._visit_import_module(parent, token, index)
 
     def _visit_template_string(self, parent, token, index):
 
@@ -719,38 +719,6 @@ class VmTransform(TransformBaseV2):
             parent.children.insert(index+1, _assign)
         #_subscr = Token(Token.T_SUBSCR, token.line, token.index, "", [expr_seq, _getattr])
 
-    def _visit_import_module(self, parent, token, index):
-
-        print(len(token.children))
-        obj = token.children[0]
-
-        # TODO: if this is moved into the compiler the extra assignment
-        # can be replaced with a DUPTOP and a final POP
-        assignments = []
-        _module = Token(Token.T_GLOBAL_VAR, token.line, token.index, token.value)
-        for pair in obj.children:
-            src, tgt = pair.children
-            # TODO: this is a work around for a possible issue in how the
-            # post processing handles objects for python mode, keys are
-            # converted to strings. for module imports the primary type
-            # should be an attribute list, not a T_OBJECT
-            if src.type == Token.T_STRING:
-                try:
-                    src = Token(Token.T_ATTR, token.line, token.index, pyast.literal_eval(src.value))
-                except SyntaxError as e:
-                    raise VmCompileError(src, "unable to parse identifier")
-                except Exception as e:
-                    raise VmCompileError(src, "unable to parse identifier")
-            else:
-                src = Token(Token.T_ATTR, token.line, token.index, src.value)
-
-            _rhs = Token(Token.T_GET_ATTR, token.line, token.index, ".", [_module, src])
-            _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [tgt, _rhs])
-            assignments.append(_assign)
-        token.children = []
-
-        parent.children = parent.children[:index+1] + assignments + parent.children[index+1:]
-
     def _for_iter(self, token, expr_var, expr_seq, body):
 
 
@@ -857,13 +825,13 @@ class VmCompiler(object):
             Token.T_NEW: self._visit_new,
             Token.T_INCLUDE: self._visit_include,
             Token.T_IMPORT_MODULE: self._visit_import_module,
+            Token.T_PYIMPORT: self._visit_pyimport,
             Token.T_EXPORT: self._visit_export,
             Token.T_EXPORT_DEFAULT: self._visit_export_default,
             Token.T_EXPORT_ARGS: self._visit_export_args,
         }
 
         self.functions = []
-        self.includes = []
 
         self._repl = False
 
@@ -909,7 +877,7 @@ class VmCompiler(object):
 
             fnidx += 1
 
-        self.module.includes = self.includes
+        self._finalize_exports(self.module.functions[0])
 
         return self.module
 
@@ -929,6 +897,24 @@ class VmCompiler(object):
                     if instr1.opcode == opcodes.ctrl.ELSE:
                         delta += 1
                     instr2.args = [delta]
+
+    def _finalize_exports(self, fn):
+
+        # for the top level module gather exported names into a object
+        # the object will act as a namespace for the module
+        # no jumps: this is currently called after _finalize
+
+        # the issue with this is included files don't current re-export
+        #for varname in fn.exports:
+        #    instr = self._build_instr_string(VmCompiler.C_VISIT | VmCompiler.C_LOAD, varname, varname.value)
+        #    fn.instrs.append(instr)
+        #    opcode, index = self._token2index(varname, True)
+        #    fn.instrs.append(VmInstruction(opcode, index))
+        #fn.instrs.append(VmInstruction(opcodes.obj.CREATE_OBJECT, len(fn.exports)))
+        #fn.instrs.append(VmInstruction(opcodes.ctrl.RETURN, 1))
+
+        if not self._repl:
+            fn.instrs.append(VmInstruction(opcodes.ctrl.EXPORT))
 
     def _visit_branch(self, depth, state, token):
 
@@ -1460,6 +1446,7 @@ class VmCompiler(object):
 
     def _visit_module(self, depth, state, token):
 
+        # TODO: perhaps state should be load then the last expression should be loaded...
         # the last node in repl mode must be loaded
         first = self._repl
 
@@ -1468,6 +1455,9 @@ class VmCompiler(object):
             # loading will push something on the stack, which is
             # valid only in the repl and otherwise should be an exception
             # consider a new C flag, for a conditional load
+
+            # TODO: local/globals must be loaded then popped
+            # except for the final one, if the load flag is set
             if first or child.type in (Token.T_LOCAL_VAR, Token.T_GLOBAL_VAR):
                 flags = VmCompiler.C_VISIT|VmCompiler.C_LOAD
             else:
@@ -1600,6 +1590,10 @@ class VmCompiler(object):
     def _visit_number(self, depth, state, token):
 
         try:
+            # bigint
+            if token.value.endswith("n"):
+                token.value = token.value[:1]
+
             val = int(token.value)
             op = opcodes.const.INT
         except:
@@ -1779,8 +1773,9 @@ class VmCompiler(object):
         instr_f = VmInstruction(opcodes.ctrl.FINALLY, token=token)
         instr_c = VmInstruction(opcodes.ctrl.CATCH, token=token)
         instr_t = VmInstruction(opcodes.ctrl.TRY, token=token)
-        instr_if = VmInstruction(opcodes.const.INT, token=token)
-        instr_ic = VmInstruction(opcodes.const.INT, token=token)
+        # TODO: document why the jump targets are int and not NOP
+        instr_if = VmInstruction(opcodes.const.INT, 0, token=token)
+        instr_ic = VmInstruction(opcodes.const.INT, 0, token=token)
 
         self.fn_jumps[instr_f] = [instr_jf]  # target, list[source]
         self.fn_jumps[instr_c] = []  # target, list[source]
@@ -1813,7 +1808,6 @@ class VmCompiler(object):
         else:
             self.fn_jumps[instr_c].append(instr_ic)
             self.fn_jumps[instr_f].append(instr_if)
-
 
         self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
 
@@ -1864,14 +1858,71 @@ class VmCompiler(object):
 
     def _visit_include(self, depth, state, token):
         path = pyast.literal_eval(token.children[0].value)
-        self.includes.append(path)
+
+        self._push_instruction(self._build_instr_string(state, token.children[0], path))
+        self._push_instruction(VmInstruction(opcodes.ctrl.IMPORT, token=token))
+        self._push_instruction(VmInstruction(opcodes.ctrl.IMPORT2, token=token))
+        self._push_instruction(VmInstruction(opcodes.ctrl.INCLUDE, token=token))
 
     def _visit_import_module(self, depth, state, token):
-        print("*** module import not implemented")
-        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, 0, token=token))
+
+        # the name of the module to load is stored as a string at the TOS
+        #self._push_instruction(instr)
+
+        # pop the module reference when it is no longer needed
+
+
+        # for every named object to import into the current namespace:
+        #   duplicate the module reference
+        #   get the attribute
+        #   set as a local or global variable
+        arglist = token.children[0]
+        if len(arglist.children) == 0:
+            temp = Token(Token.T_GLOBAL_VAR, token.line, token.index, token.value)
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_STORE, temp)
+
+            if state&VmCompiler.C_LOAD:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.DUP, token=token))
+
+        else:
+            if not state&VmCompiler.C_LOAD:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
+
+            for child in reversed(arglist.children):
+
+                if child.type == Token.T_ASSIGN:
+                    src, tgt = child.children
+                else:
+                    src = child
+                    tgt = child
+
+                flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
+
+                flag1 = VmCompiler.C_VISIT
+                if token.value == "." and state & VmCompiler.C_STORE:
+                    flag1 |= VmCompiler.C_STORE
+                else:
+                    flag1 |= VmCompiler.C_LOAD
+
+                self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_STORE, tgt)
+                self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD , src)
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.DUP, token=token))
+
+
+        # import the module
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.IMPORT2, token=token))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.IMPORT, token=token))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, self._build_instr_string(state, token, token.value))
+
+    def _visit_pyimport(self, depth, state, token):
+        opcode, index = self._token2index(token.children[0], False)
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=token))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.IMPORTPY, token=token))
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, self._build_instr_string(state, token.children[0], token.children[0].value))
 
     def _visit_export(self, depth, state, token):
         node = token.children[1]
+        #self.fn.exports.extend(token.children[0].children)
         self._push_token(depth, state, node)
 
     def _visit_export_default(self, depth, state, token):
@@ -1880,7 +1931,7 @@ class VmCompiler(object):
 
     def _visit_export_args(self, depth, state, token):
 
-        flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
+        flag0 = VmCompiler.C_VISIT # | VmCompiler.C_LOAD
         for child in reversed(token.children):
             self._push_token(depth, flag0, child)
 
@@ -2090,3 +2141,6 @@ class VmCompiler(object):
 
     def _push_instruction(self, instr):
         self.fn.instrs.append(instr)
+
+
+
