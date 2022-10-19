@@ -65,7 +65,7 @@ class TransformGrouping(TransformBase):
         """
 
 
-        for child in token.children:
+        for i, child in enumerate(token.children):
 
             if child.type == Token.T_GROUPING and child.value == "{}":
                 if (token.type == Token.T_MODULE) or \
@@ -122,6 +122,14 @@ class TransformGrouping(TransformBase):
                         print("parent", parent.toString(3))
                         raise ref
                     child.type = Token.T_OBJECT
+
+            elif child.type == Token.T_CASE or child.type == Token.T_DEFAULT:
+                j = i + 1
+                while j < len(token.children):
+                    tmp = token.children[j]
+                    if tmp.type == Token.T_CASE or tmp.type == Token.T_DEFAULT:
+                        break
+                    child.children.append(token.children.pop(j))
 
     def _isObject(self, token):
         # test if a token is an object, this is only valid
@@ -882,6 +890,9 @@ class VariableScope(object):
         elif any([label in bl for bl in self.blscope]):
             ref = self._getRef(label)
 
+        elif token.value == 'arguments':
+            ref = self.define(SC_FUNCTION, token)
+
         else:
             scopes = [self.parent]
             found = False
@@ -895,6 +906,7 @@ class VariableScope(object):
 
             if not found:
                 # not found in an existing scope
+
                 if load:
                     # attempting to load an undefined reference
                     if label in self.all_labels:
@@ -1411,6 +1423,7 @@ class TransformAssignScope(object):
             Token.T_FOR_OF: self.visit_for_of,
             Token.T_DOWHILE: self.visit_dowhile,
             Token.T_WHILE: self.visit_while,
+            Token.T_SWITCH: self.visit_switch,
             Token.T_GET_ATTR: self.visit_get_attr,
             Token.T_CATCH: self.visit_catch,
 
@@ -2137,9 +2150,23 @@ class TransformAssignScope(object):
 
         if body.type != Token.T_BLOCK:
             # the parser should be run in python mode
-            raise TransformError(body, "expected block in for loop body")
+            raise TransformError(body, "expected block in loop body")
 
         scope.pushBlockScope("loop")
+        self._push_finalize(scope, token, parent)
+
+        self._push_children(scope, body, flags)
+        self._push_tokens(ST_VISIT, scope, [expr], token)
+
+    def visit_switch(self, flags, scope, token, parent):
+
+        expr, body = token.children
+
+        if body.type != Token.T_BLOCK:
+            # the parser should be run in python mode
+            raise TransformError(body, "expected block in switch loop body")
+
+        scope.pushBlockScope("switch")
         self._push_finalize(scope, token, parent)
 
         self._push_children(scope, body, flags)
@@ -2153,7 +2180,13 @@ class TransformAssignScope(object):
         for i, refs in reversed(list(enumerate(scope.blscope))):
             scope.blscope_jump_tokens[i].append(token)
             tag = scope.blscope_tags[i]
+
             if tag == "loop":
+                idx = i
+                break
+
+            if tag == "switch":
+                token.type = Token.T_SWITCH_BREAK;
                 idx = i
                 break
 

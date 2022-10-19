@@ -608,15 +608,29 @@ class Formatter(object):
                 seq.append((depth, None, token.children[0]))
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_CASE:
+                _case, *_rest = token.children
+                #first = True
+                for child in reversed(_rest):
+                    #if not first:
+                    seq.append((depth, Token.T_SPECIAL, ";"))
+                    #first  = False
+                    seq.append((depth, None, child))
                 seq.append((depth, Token.T_SPECIAL, ":"))
-                seq.append((depth, None, token.children[0]))
+                seq.append((depth, None, _case))
                 if self.pretty_print:
                     seq.append((depth, Token.T_SPECIAL, " "))
                 seq.append((depth, token.type, token.value))
+
             elif token.type == Token.T_DEFAULT:
+                #first = True
+                for child in reversed(token.children):
+                    #if not first:
+                    seq.append((depth, Token.T_SPECIAL, ";"))
+                    #first  = False
+                    seq.append((depth, None, child))
                 seq.append((depth, Token.T_SPECIAL, ":"))
                 seq.append((depth, token.type, token.value))
-            elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE:
+            elif token.type == Token.T_BREAK or token.type == Token.T_CONTINUE or token.type == Token.T_SWITCH_BREAK:
 
                 # a break statement may be followed by an identifer
                 # other constructs and continue are support by accident

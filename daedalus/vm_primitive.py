@@ -1,4 +1,5 @@
 import os
+import sys
 import io
 import struct
 import ctypes
@@ -81,20 +82,24 @@ def vmGetAst(text):
     return ast
 
 class VmFunction(object):
-    def __init__(self, module, fndef, args, kwargs, bind_target):
+    def __init__(self, module, fndef, args, kwargs, bind_target, cells=None, prototype=None):
         super(VmFunction, self).__init__()
+        # the module this function belongs to
+        # TODO: should this be part of the fndef?
         self.module = module
+        # the VmFunctionDef
         self.fndef = fndef
+        # a sequence of positional arguments
         self.args = args
+        # an instance of JsObject
+        # a mapping of keyword arguments
         self.kwargs = kwargs
+        # the object pointed to by 'this'
         self.bind_target = bind_target
-        self.cells = None
-
-        # TODO: is it possible to implement a VmFunction without
-        # needing to construct a JsObject here?
-        # if so, VmFunction can be moved into the vm implementation
-        # and not part of the primitives
-        self.prototype = JsObject()
+        # an instance of JsObject
+        self.cells = cells
+        # an instance of JsObject
+        self.prototype = prototype
 
     def __repr__(self):
 
@@ -102,13 +107,37 @@ class VmFunction(object):
 
     def bind(self, target):
 
-        fn = VmFunction(self.module, self.fndef, self.args, self.kwargs, target)
-        fn.cells = self.cells # TODO this seems like a hack
+        fn = VmFunction(self.module, self.fndef, self.args, self.kwargs, target, self.cells, self.prototype)
         return fn
 
-def jsc(f):
+class jsc_factory(object):
+    # failed experiment trying to make jsc not execute on import
+    def __init__(self, fn):
+        super(jsc_factory, self).__init__()
 
-    text = f(None)
+        self.fn = fn
+
+    def __call__(self, *args, **kwargs):
+        attrs = self.fn.__qualname__.split(".")[:-1]
+        module = sys.modules[self.fn.__module__]
+        for attr in attrs:
+            module = getattr(module, attr)
+        text = self.fn(None)
+        ast = vmGetAst(text)
+        compiler = VmCompiler()
+        module = compiler.compile(ast)
+        fn = VmFunction(module, module.functions[1], None, None, None, None, None)
+        setattr(module, self.fn.__name__, fn)
+        return fn
+
+def jsc(fn):
+    """
+    A Decorator function which compiles a class method as a javascript function
+    the class method should be a instance method returning a string. That
+    string will be parsed as javascript and compiled.
+    """
+
+    text = fn(None)
 
     ast = vmGetAst(text)
 
@@ -119,7 +148,7 @@ def jsc(f):
     #    print(ast.toString(1))
     #    module.dump()
 
-    fn = VmFunction(module, module.functions[1], None, None, None)
+    fn = VmFunction(module, module.functions[1], None, None, None, None, None)
 
     return fn
 
@@ -437,6 +466,79 @@ class JsNumber(JsObject, metaclass=JsNumberType):
     def deserialize(self, stream):
         pass
 
+class JsNumberObject(JsObject):
+
+    @property
+    def MAX_VALUE(self):
+        return 1.7976931348623157e+308
+
+    @property
+    def MIN_VALUE(self):
+        return 5e-324
+
+    @property
+    def NaN(self):
+        return math.nan
+
+    @property
+    def NEGATIVE_INFINITY(self):
+        # TODO: bubbling of python exceptions isnt working correctly
+        #       a real unrelated python attribute error is treated
+        #       as if this property is undefined. the attribute error
+        #       is being squashed
+        #raise ValueError()
+        #raise AttributeError()
+        return -math.inf
+
+    @property
+    def POSITIVE_INFINITY(self):
+        return math.inf
+
+    @property
+    def EPSILON(self):
+        return 2.220446049250313e-16
+
+    @property
+    def MIN_SAFE_INTEGER(self):
+        return -9007199254740991
+
+    @property
+    def MAX_SAFE_INTEGER(self):
+        return 9007199254740991
+
+    def parseFloat(self, string):
+        pass
+
+    def parseInt(self, string):
+        pass
+
+    def isFinite(self, value):
+        return math.isFinite(value)
+
+    def isInteger(self, value):
+        return int(value)==value
+
+    def isNaN(self, value):
+        return math.isnan(value)
+
+    def isSafeInteger(self, value):
+        pass
+
+    def toExpenential(self, value) -> str:
+        pass
+
+    def toFixed(self, value) -> str:
+        pass
+
+    def toPrecision(self, value) -> str:
+        pass
+
+class JsMath(JsObject):
+
+    @property
+    def PI(self):
+        return math.pi
+
 class JsStringType(type):
     def __new__(metacls, name, bases, namespace):
         cls = super().__new__(metacls, name, bases, namespace)
@@ -516,8 +618,57 @@ class JsString(JsObject, metaclass=JsStringType):
     def match(self, regex):
         return bool(regex.reg.match(self.value))
 
+    def matchAll(self, regexp):
+        pass
+
     def startsWith(self, substr):
         return bool(self.value.startswith(substr.value))
+
+    def charAt(self, index):
+        return self.value[index]
+
+    def toUpperCase(self):
+        return JsString(self.value.upper())
+
+    def toLowerCase(self):
+        return JsString(self.value.lower())
+
+    def concat(self, *strings):
+        arr = [self.value,] + [st.value for st in strings]
+        return JsString("".join(arr))
+
+    def includes(self, searchString):
+        pass
+
+    def endswith(self, searchString):
+        pass
+
+    def padEnd(self, targetLength, string):
+        pass
+
+    def padStart(self, targetLength, string):
+        pass
+
+    def repeat(self, count):
+        pass
+
+    @jsc
+    def replace(self):
+        """
+        https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/replace
+
+        :param pattern: string or object with Symbol.replace method, a regex.
+                        or coerced to a string
+        :param replacement: a string or a function that is invoked for every match
+                            returning a string to replace with
+        """
+
+        return """
+            function replace(pattern, replacement) {
+                console.log(pattern, replacement)
+            }
+        """
+
 
 class JsUndefined(JsObject):
     instance = None

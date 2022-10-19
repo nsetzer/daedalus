@@ -1,4 +1,5 @@
 #! cd .. && python3 -m tests.vm_test
+#! cd .. && python3 -m tests.vm_test VmLogicTestCase.test_switch_1
 
 """
 warn when stack is not empty after function clal
@@ -6,12 +7,15 @@ warn when stack is not empty after function clal
 
 import time
 import unittest
+import math
 from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityBlockScope, TransformReplaceIdentity, TransformClassToFunction
 from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
+from daedalus.vm_compiler import VmCompileError
+from daedalus.vm_primitive import JsUndefined
 from daedalus import vm_opcodes as opcodes
 
 
@@ -553,6 +557,108 @@ class VmBasicTypesTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['s'], "2")
 
+
+    def test_number_bin(self):
+        text = """
+            let x1 = 0b0001_0001
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], 17)
+
+    def test_number_oct(self):
+        text = """
+            let x1 = 0777
+            let x2 = 0888
+            let x3 = 0o123
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], 511)
+        self.assertEqual(globals_.values['x2'], 888)
+        self.assertEqual(globals_.values['x3'], 83)
+
+    def test_number_hex(self):
+        text = """
+            let x1 = 0x777
+            let x2 = 0x888
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], 1911)
+        self.assertEqual(globals_.values['x2'], 2184)
+
+    def test_number_float(self):
+        text = """
+            let x1 = 3.14
+            let x2a = 1e-3
+            let x2b = 1E-3
+            let x2c = 1E+3
+            let x3 = 2e6
+            let x4 = 0.1e2
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], 3.14)
+        self.assertEqual(globals_.values['x2a'], 0.001)
+        self.assertEqual(globals_.values['x2b'], 0.001)
+        self.assertEqual(globals_.values['x2c'], 1000.0)
+        self.assertEqual(globals_.values['x3'], 2000000.0)
+        self.assertEqual(globals_.values['x4'], 10.0)
+
+    def test_number_float_error(self):
+        text = """
+            let x1 = 0x123.456
+        """
+        with self.assertRaises(VmCompileError) as e:
+            result, globals_ = evaljs(text, diag=False)
+
+    def test_number_object(self):
+        text = """
+            //let x1 = Number.MAX_VALUE
+            //let x2 = Number.MIN_VALUE
+            let x3 = Number.POSITIVE_INFINITY
+            let x4 = Number.NEGATIVE_INFINITY
+            let x5 = Number.NaN
+
+            let t = [
+                Number.isInteger(3.0),
+                Number.isNaN(Number.NaN),
+            ]
+
+            let f = [
+                Number.isInteger(Math.PI),
+                Number.isNaN(Math.PI),
+            ]
+
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertTrue(math.isnan(globals_.values['x5']))
+        self.assertEqual(globals_.values['t'].array, [True]*2)
+        self.assertEqual(globals_.values['f'].array, [False]*2)
+
+    def test_math_object(self):
+        text = """
+            let x1 = Math.PI
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], math.pi)
+
+
+    def test_string_access(self):
+        text = """
+            let x1 = "abc"[1]
+            let x2 = "abc".charAt(1)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], "b")
+        self.assertEqual(globals_.values['x2'], "b")
+
+    def test_string_case(self):
+        text = """
+            let x1 = "Aa".toUpperCase()
+            let x2 = "Aa".toLowerCase()
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], "AA")
+        self.assertEqual(globals_.values['x2'], "aa")
+
 class VmLogicTestCase(unittest.TestCase):
 
     @classmethod
@@ -711,6 +817,63 @@ class VmLogicTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['o3'].getIndex(1), 1)
         self.assertEqual(globals_.values['n'], 6)
 
+    def test_optional_chaining_attr(self):
+        text = """
+            o1 = {a: 1};
+            v1 = o1?.a;
+            v2 = o1?.b;
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['v1'], 1)
+        self.assertEqual(globals_.values['v2'], JsUndefined.instance)
+
+    def test_optional_chaining_func(self):
+        text = """
+            o1 = {a: ()=>{}};
+            v1 = o1.a?.();
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['v1'].__class__.__name__, "JsObject")
+
+    @unittest.expectedFailure
+    def test_optional_chaining_list(self):
+        text = """
+            o1 = {a: [1,2,3]};
+            v1 = o1.a?.[2];
+            v2 = o1.a?.[4];
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['v1'], 2)
+        self.assertEqual(globals_.values['v2'], JsUndefined.instance)
+
+    def test_switch_1(self):
+
+        text = """
+            function test(item) {
+                let value = 0;
+                switch (item) {
+                    case 0:
+                        value = 1;
+                        break;
+                    case 1:
+                        value = 2;
+                        break;
+                    default:
+                        value = 3;
+                        break;
+                }
+                return value;
+            }
+            let x1 = test(0);
+            let x2 = test(1);
+            let x3 = test(2);
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], 1)
+        self.assertEqual(globals_.values['x2'], 2)
+        self.assertEqual(globals_.values['x3'], 3)
+
+
 class VmFunctionTestCase(unittest.TestCase):
 
     @classmethod
@@ -779,6 +942,20 @@ class VmFunctionTestCase(unittest.TestCase):
         b = globals_.values['x'].array[1]
         self.assertEqual(a, 1)
         self.assertEqual(b.array, [2, 3])
+
+    def test_extra_args(self):
+
+        text = """
+
+            function extra(a) {return arguments.length}
+            x1 = extra(1)
+            x2 = extra(1,2)
+            x3 = extra(kwarg=0)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x1'], 1)
+        self.assertEqual(globals_.values['x2'], 2)
+        self.assertEqual(globals_.values['x3'], 1)
 
     def test_cell_lambda_recursion(self):
 

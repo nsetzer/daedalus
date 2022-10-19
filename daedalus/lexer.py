@@ -454,7 +454,7 @@ class Lexer(LexerBase):
                 # expect exactly one character after an escape
                 # pass through unmodified, let the downstream
                 # parser/compiler handle string processing.
-                self._putch(c)
+
                 try:
                     c = self._getch()
                 except StopIteration:
@@ -463,7 +463,10 @@ class Lexer(LexerBase):
                 if c is None:
                     raise self._error("expected character")
 
-                if c == 'U':
+                if c == '\n':
+                    pass
+                elif c == 'U':
+                    self._putch('\\')
                     # rewrite utf32 escape sequences as utf-16 surrogate pairs
                     utf32 = ""
                     try:
@@ -479,6 +482,7 @@ class Lexer(LexerBase):
                     for c in utf32:
                         self._putch(c)
                 else:
+                    self._putch('\\')
                     self._putch(c)
 
             elif c == "\n" and string_terminal != '`':
@@ -516,7 +520,7 @@ class Lexer(LexerBase):
                 break
 
 
-            if c == 'e':
+            if c == 'e' or c == 'E':
                 # numbers with exponents allow for unary signs
                 # as part of the number
                 # allow for 1e-5, 1e+5, 1e5
@@ -729,6 +733,11 @@ def main():  # pragma: no cover
 
     text1 = """
     pyimport .....modname
+    """
+
+    # TODO: JS multiline string with escaped newline
+    text1 = """
+    s = "abc\\\ndef"
     """
 
     if len(sys.argv) == 2 and sys.argv[1] == "-":

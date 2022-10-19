@@ -1724,6 +1724,18 @@ class Parser(ParserBase):
         token.children = [rhs1]
         token.type = Token.T_CASE
 
+        # TODO: parse elseware
+        #j = index + 1
+        #while j < len(tokens):
+        #    print("+", j, len(tokens))
+        #    rhs = tokens[j]
+        #    if rhs.type == Token.T_KEYWORD and rhs.value == "case" or rhs.value == "default":
+        #        break;
+        #    child = tokens.pop(j)
+        #    print("!child", child)
+        #    token.children.append(child)
+
+
     def collect_keyword_switch_default(self, tokens, index):
         token = tokens[index]
 

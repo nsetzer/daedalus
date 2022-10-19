@@ -24,7 +24,7 @@ from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
     VmClassTransform, VmClassTransform2
 from .vm_primitive import vmGetAst, JsObject, JsObjectPropIterator, \
     VmFunction, jsc, JsUndefined, JsString, JsNumber, JsSet, JsArray, \
-    JsObjectCtor
+    JsObjectCtor, JsMath, JsNumberObject
 
 class JsAssert(JsObject):
     def __init__(self):
@@ -468,3 +468,5 @@ def populate_builtins(runtime, obj):
     obj['history'] = history
     obj['pystr'] = str
     obj['assert'] = JsAssert()
+    obj['Number'] = JsNumberObject()
+    obj['Math'] = JsMath()

@@ -67,7 +67,6 @@ from . import vm_opcodes as opcodes
 from .token import Token, TokenError
 from .lexer import Lexer
 from .parser import Parser, ParseError
-from .transform import TransformBaseV2, TransformIdentityBlockScope
 from .builder import findModule
 
 from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
@@ -286,7 +285,11 @@ class VmRuntime(object):
             print("***")
 
     def _new_frame(self, func, argc, args, kwargs):
-        posargs = kwargs #JsObject()
+        posargs = kwargs
+
+        arguments = JsArray(args)
+        for name, value in kwargs._data.items():
+            arguments.push(value)
 
         if func.bind_target:
             posargs.setAttr("this", func.bind_target)
@@ -327,6 +330,10 @@ class VmRuntime(object):
             if not func.cells._hasAttr(name):
                 ref = VmReference(name, JsUndefined.instance)
                 func.cells.setAttr(name, ref)
+
+        # TODO: don't add arguments to lambdas,
+        # TODO: don't override function kwargs with the same name
+        posargs.setAttr("arguments", arguments)
 
         new_frame = VmStackFrame(func.module, func.fndef, posargs, func.cells)
 
@@ -411,7 +418,10 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     continue
                 elif callable(func):
-                    _rv = func(*args, **kwargs._data)
+                    try:
+                        _rv = func(*args, **kwargs._data)
+                    except Exception as e:
+                        print("TODO: caught python exception", e)
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
@@ -437,7 +447,10 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     continue
                 elif callable(func):
-                    _rv = func(*args, **kwargs.data)
+                    try:
+                        _rv = func(*args, **kwargs.data)
+                    except Exception as e:
+                        print("TODO: caught python exception", e)
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
@@ -458,7 +471,10 @@ class VmRuntime(object):
                     instrs = frame.fndef.instrs
                     continue
                 elif callable(func):
-                    _rv = func(*posargs.array, **kwargs.data)
+                    try:
+                        _rv = func(*posargs.array, **kwargs.data)
+                    except Exception as e:
+                        print("TODO: caught python exception", e)
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d" % (instr.line, instr.index))
@@ -559,7 +575,8 @@ class VmRuntime(object):
                     module = self.compiler.compile(ast)
                     module.path = path
                     # execute the module as a function call with no arguments
-                    fn = VmFunction(module, module.functions[0], None, None, None)
+                    prototype = JsObject()
+                    fn = VmFunction(module, module.functions[0], None, None, None, None, prototype)
                     new_frame = self._new_frame(fn, 0, [], JsObject())
                     self.stack_frames.append(new_frame)
                     frame.sp += 1
@@ -747,34 +764,42 @@ class VmRuntime(object):
 
                 fnidx = instr.args[0]
 
+                # stack may contain a Tuple/Array of values for the closure
+                # stack will always contain a Bool indicating autobind
                 tos = frame.stack.pop()
                 if isinstance(tos, JsArray):
                     cellvars = tos
-                    bind = frame.stack.pop()
-                else:
+                    autobind = frame.stack.pop()
+                else: # else tos is the autobind bool value
                     cellvars = JsArray()
-                    bind = tos
+                    autobind = tos
+
+                # stack contains a dictionary of kwargs and the
+                # count of positional args
                 kwargs = frame.stack.pop()
                 argc = frame.stack.pop()
 
-                if bind:
+                if autobind:
                     bind_target = frame.locals
                 else:
                     bind_target = None
                 # print("Create function (this)", frame.locals)
 
+                # pop all positional args off the stack
                 args = []
                 for i in range(argc):
                     args.insert(0, frame.stack.pop())
 
                 fndef = frame.module.functions[fnidx]
-                fn = VmFunction(frame.module, fndef, args, kwargs, bind_target)
+                prototype = JsObject()
 
                 cells = []
                 for ref in cellvars.array:
                     cells.append((ref.name, ref))
-                fn.cells = JsObject(cells)
+
+                fn = VmFunction(frame.module, fndef, args, kwargs, bind_target, JsObject(cells), prototype)
                 frame.stack.append(fn)
+
             elif instr.opcode == opcodes.obj.UPDATE_ARRAY:
                 tos1 = frame.stack.pop()
                 tos2 = frame.stack.pop()
@@ -1514,6 +1539,10 @@ def main():
     """
 
     text1 = """
+        /^(LGBT[^s]+)$/i
+    """
+
+    text1 = """
         //from module daedalus import {DomElement=x, TextElement, StyleSheet}]
         //import module daedalus
         //console.log("element", daedalus.DomElement)
@@ -1531,6 +1560,44 @@ def main():
         })
         wait()
     """
+
+    text1 = """
+
+    function addOffset(match, ...args) {
+      const hasNamedGroups = typeof args.at(-1) === "object";
+      const offset = hasNamedGroups ? args.at(-3) : args.at(-2);
+      return `${match} (${offset}) `;
+    }
+
+    console.log("abcd".replace(/(bc)/, addOffset)); // "abc (1) d"
+
+    """
+
+
+    text1 = """
+
+    function test(item) {
+        let value = 0;
+        switch (item) {
+            case 1:
+                value = 10;
+                break;
+            case 2:
+                value = 20;
+                break;
+            default:
+                value = 30;
+                break;
+        }
+        return value;
+    }
+    let x1 = test(1);
+    let x2 = test(2);
+    let x3 = test(3);
+    console.log(x1, x2, x3)
+
+    """
+
 
     # current bugs:
     #   - do not bind of already bound functions om the prototype
@@ -1581,7 +1648,7 @@ def main():
     # T_ANONYMOUS_FUNCTION
     # T_FOR_IN
     runtime = VmRuntime()
-    runtime.enable_diag=False
+    runtime.enable_diag=True
     #loader.load("./res/daedalus/daedalus.js")
     rv, globals_ = runtime.run_text(text1)
 

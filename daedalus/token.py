@@ -106,6 +106,7 @@ class Token(object):
     # tokens created by the parser (processed keywords)
     T_GET_ATTR = "T_GET_ATTR"
     T_BREAK = "T_BREAK"
+    T_SWITCH_BREAK = "T_SWITCH_BREAK"
     T_BRANCH = "T_BRANCH"
     T_CASE = "T_CASE"
     T_CATCH = "T_CATCH"

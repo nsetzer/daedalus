@@ -628,7 +628,7 @@ class FormatterTestCase(unittest.TestCase):
                     break;
             }
         """
-        expected = "switch(item){case 0:break;case 1:break;default:break}"
+        expected = "switch(item){case 0:break;case 1:break;default:break;}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
@@ -640,7 +640,7 @@ class FormatterTestCase(unittest.TestCase):
         text = """
             switch(item){case 0:console.log(0);break;case 1:console.log(0);break;default:break}
         """
-        expected = "switch(item){case 0:console.log(0);break;case 1:console.log(0);break;default:break}"
+        expected = "switch(item){case 0:console.log(0);break;case 1:console.log(0);break;default:break;}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)

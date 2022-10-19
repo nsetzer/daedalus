@@ -17,7 +17,7 @@ from . import vm_opcodes as opcodes
 from .token import Token, TokenError
 from .lexer import Lexer, LexError
 from .parser import Parser, ParseError
-from .transform import TransformBaseV2, TransformIdentityBlockScope
+from .transform import TransformBaseV2
 
 class VmInstruction(object):
     __slots__ = ['opcode', 'args', 'target', 'line', 'index']
@@ -426,6 +426,9 @@ class VmTransform(TransformBaseV2):
         if token.type == Token.T_ASSIGN:
             self._visit_assign(parent, token, index)
 
+        if token.type == Token.T_LAMBDA:
+            return self._visit_lambda(parent, token, index)
+
     def _visit_template_string(self, parent, token, index):
 
         node = None
@@ -719,6 +722,13 @@ class VmTransform(TransformBaseV2):
             parent.children.insert(index+1, _assign)
         #_subscr = Token(Token.T_SUBSCR, token.line, token.index, "", [expr_seq, _getattr])
 
+
+    def _visit_lambda(self, parent, token, index):
+        block = token.children[2]
+
+        if block.type != token.T_BLOCK:
+            token.children[2] = Token(Token.T_RETURN, block.line, block.index, "return", [block])
+
     def _for_iter(self, token, expr_var, expr_seq, body):
 
 
@@ -797,9 +807,11 @@ class VmCompiler(object):
             Token.T_FOR: self._visit_for,
             Token.T_CONTINUE: self._visit_continue,
             Token.T_BREAK: self._visit_break,
+            Token.T_SWITCH_BREAK: self._visit_break,
             Token.T_ARGLIST: self._visit_arglist,
             Token.T_BLOCK: self._visit_block,
             Token.T_GROUPING: self._visit_grouping,
+            Token.T_SWITCH: self._visit_switch,
             Token.T_STRING: self._visit_string,
             Token.T_OBJECT: self._visit_object,
             Token.T_LIST: self._visit_list,
@@ -1444,6 +1456,58 @@ class VmCompiler(object):
         for child in reversed(token.children):
             self._push_token(depth, state, child)
 
+    def _visit_switch(self, depth, state, token):
+
+        instr_e = VmInstruction(opcodes.ctrl.NOP, token=token)
+        instr_dup = VmInstruction(opcodes.stack.DUP, token=token)
+
+        self.fn_jumps[instr_e] = []  # target, list[source]
+        self.target_break.append(instr_e)
+
+        self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_e)
+
+        # body of each case
+        targets = []
+        for child in reversed(token.children[1].children):
+            if child.type == Token.T_DEFAULT:
+                instr_pop = VmInstruction(opcodes.stack.POP, token=token)
+                targets.append(instr_pop)
+                for gchild in reversed(child.children):
+                    self._push_token(depth, VmCompiler.C_VISIT, gchild)
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_pop)
+            elif child.type == Token.T_CASE:
+                instr_pop = VmInstruction(opcodes.stack.POP, token=token)
+                targets.append(instr_pop)
+                for gchild in reversed(child.children[1:]):
+                    self._push_token(depth, VmCompiler.C_VISIT, gchild)
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_pop)
+
+        # evaluate test case : build jump table
+        for child, target in zip(reversed(token.children[1].children), targets):
+            if child.type == Token.T_DEFAULT:
+                instr = VmInstruction(opcodes.ctrl.JUMP, token=token)
+                self.fn_jumps[target] = [instr]  # target, list[source]
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
+            elif child.type == Token.T_CASE:
+
+                # jump if values are equal
+                instr = VmInstruction(opcodes.ctrl.IF, token=token)
+                self.fn_jumps[target] = [instr]  # target, list[source]
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
+
+                # compare
+                instr = VmInstruction(opcodes.comp.NE, token=token)
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, instr)
+
+                # load the value to compare to
+                self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, child.children[0])
+
+                # duplicate the value
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, instr_dup)
+
+        # load the value to switch over
+        self._push_token(depth, VmCompiler.C_VISIT|VmCompiler.C_LOAD, token.children[0])
+
     def _visit_module(self, depth, state, token):
 
         # TODO: perhaps state should be load then the last expression should be loaded...
@@ -1590,15 +1654,31 @@ class VmCompiler(object):
     def _visit_number(self, depth, state, token):
 
         try:
-            # bigint
-            if token.value.endswith("n"):
-                token.value = token.value[:1]
+            value = token.value.replace("_", "")
 
-            val = int(token.value)
+            # bigint
+            if value.endswith("n"):
+                value = value[:1]
+
             op = opcodes.const.INT
-        except:
-            val = float(token.value)
-            op = opcodes.const.FLOAT32
+            if value.startswith("0b"):
+                val = int(value[2:], 2)
+            elif value.startswith("0x"):
+                val = int(value[2:], 16)
+            elif value.startswith("0o"):
+                val = int(value[2:], 8)
+            elif "." in value or 'e' in value or 'E' in value:
+                val = float(value)
+                op = opcodes.const.FLOAT32
+            elif len(value) > 1 and value.startswith("0"):
+                try:
+                    val = int(value[1:], 8)
+                except ValueError:
+                    val = int(value[1:], 10)
+            else:
+                val = int(value)
+        except ValueError:
+            raise VmCompileError(token, "invalid numeric literal")
 
         self._push_instruction(VmInstruction(op, val, token=token))
         if not (state & VmCompiler.C_LOAD):
@@ -1723,23 +1803,27 @@ class VmCompiler(object):
 
             flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
 
-            allow_positional = True
+            allow_kwargs = True
             pos_count = 0
             kwarg_count = 0
 
             seq = []
-            for child in reversed(expr_args.children):
+            for idx, child in enumerate(reversed(expr_args.children)):
                 if child.type == Token.T_ASSIGN:
+
+                    if not allow_kwargs:
+                        raise VmCompileError(child, "syntax error: pos after kwarg")
+
                     allow_positional = False
 
                     seq.append((depth, flag0, child.children[1]))
                     seq.append((depth, VmCompiler.C_INSTRUCTION, self._build_instr_string(flag0, token, child.children[0].value)))
                     kwarg_count += 1
-                elif allow_positional:
+                else:
+                    allow_kwargs = False
                     pos_count += 1
                     seq.append((depth, flag0, child))
-                else:
-                    raise VmCompileError(child, "syntax error: pos after kwarg")
+
 
             if kwarg_count > 0:
                 self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.ctrl.CALL_KW, pos_count, token=token))
@@ -1936,10 +2020,16 @@ class VmCompiler(object):
             self._push_token(depth, flag0, child)
 
     def _build_function(self, state, token, name, arglist, block, closure, autobind=True):
-
-        if token.type == Token.T_LAMBDA and block.type != token.T_BLOCK:
-            # TODO: move to transform step?
-            block = Token(Token.T_RETURN, block.line, block.index, "return", [block])
+        """
+            :param state: meta flags for procsing this node
+            :param token: the token which represents the root of this function
+            :param name: a token containing the name of the function
+            :param arglist: a token containing the argument list for the function
+            :param block: a token containing the body of the function
+            :param closure:a token containing the Free and Cell names of non local vars
+            :param autobind: True if this function should automatically bind to the current object scope
+                                  lambdas always bind to the current scope
+        """
 
         if not block.children:
             # block must have at least one instruction otherwise the interpreter exits early
@@ -2000,16 +2090,8 @@ class VmCompiler(object):
             self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_TUPLE, len(seq), token=token))
             self.seq.extend(seq)
 
-        if autobind:
-            #this = Token(Token.T_KEYWORD, token.line, token.index, "this")
-            #opcode, index = self._token2index(this, True)
-            #self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcode, index, token=this))
-            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.BOOL, 1, token=token))
-        else:
-            self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.BOOL, 0, token=token))
-
+        self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.BOOL, bool(autobind), token=token))
         self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_OBJECT, 0, token=token))
-
         self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.INT, len(arglabels), token=token))
 
         for arglabel, argdefault in reversed(list(zip(arglabels, argdefaults))):
@@ -2068,7 +2150,7 @@ class VmCompiler(object):
             try:
                 index = self.fn.local_names.index(name)
             except ValueError:
-                if not load:
+                if not load or name == 'arguments':
                     index = len(self.fn.local_names)
                     self.fn.local_names.append(name)
 
