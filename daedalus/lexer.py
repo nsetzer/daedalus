@@ -476,9 +476,14 @@ class Lexer(LexerBase):
                         utf32 = None
                     if len(utf32) != 8:
                         raise self._error("expected utf32 sequence")
-                    a,b,c,d = chr(int(utf32, 16)).encode("utf-16")[2:]
-                    # already put the first slash
-                    utf32 = "u%04X\\u%04X" % (b<<8|a, d<<8|c)
+                    tmp = chr(int(utf32, 16)).encode("utf-16")[2:]
+                    if len(tmp) == 2:
+                        a,b = tmp
+                        utf32 = "u%04X" % (b<<8|a)
+                    else:
+                        a,b,c,d = tmp
+                        # already put the first slash
+                        utf32 = "u%04X\\u%04X" % (b<<8|a, d<<8|c)
                     for c in utf32:
                         self._putch(c)
                 else:

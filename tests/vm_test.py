@@ -8,11 +8,12 @@ warn when stack is not empty after function clal
 import time
 import unittest
 import math
+import io
 from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
-from daedalus.transform import VariableScope, TransformIdentityBlockScope, TransformReplaceIdentity, TransformClassToFunction
+from daedalus.transform import VariableScope, TransformIdentityBlockScope
 from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
 from daedalus.vm_compiler import VmCompileError
 from daedalus.vm_primitive import JsUndefined
@@ -85,6 +86,47 @@ def evaljs(text, diag=False):
     result = runtime.run()
 
     return result
+
+class VmUtilsTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_lebu(self):
+        expected=0xAA<<8|0xBB
+        out = opcodes.LEB128u(expected)
+        self.assertEqual(out, b'\xbb\xd5\x02')
+        value = opcodes.read_LEB128u(io.BytesIO(out))
+        self.assertEqual(value, expected)
+
+    def test_lebs_pos(self):
+        expected=0xAA<<8|0xBB
+        out = opcodes.LEB128s(expected)
+        self.assertEqual(out, b'\xbb\xd5\x02')
+        value = opcodes.read_LEB128s(io.BytesIO(out))
+        self.assertEqual(value, expected)
+
+
+    def test_lebs_neg(self):
+        expected = -(0xAA<<8|0xBB)
+        out = opcodes.LEB128s(expected)
+        self.assertEqual(out, b'\xc5\xaa}')
+        value = opcodes.read_LEB128s(io.BytesIO(out))
+        self.assertEqual(value, expected)
 
 class VmTestCase(unittest.TestCase):
 
@@ -522,6 +564,50 @@ class VmTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], 1)
 
+class VmCodeFormatTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+        cls.parser.disable_all_warnings = True
+
+    def test_multiline_comment(self):
+        text = """
+            /**
+            comment
+            **/
+            x='\\p\\U0001f441'
+            y='\\p\\U00000000'
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], '\\p\ud83d\udc41')
+        self.assertEqual(globals_.values['y'], '\\p\x00')
+
+    def test_multistring(self):
+        text = """
+            x='a' 'b' 'c'
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 'abc')
+
+
+    def test_multiline_expr(self):
+        text = """
+            let x = 1 + \\
+            2
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 3)
+
+    def test_numbers(self):
+        text = """
+            let x = 1 + .5 + 1.0
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 2.5)
+
 class VmBasicTypesTestCase(unittest.TestCase):
 
     @classmethod
@@ -835,7 +921,7 @@ class VmLogicTestCase(unittest.TestCase):
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['v1'].__class__.__name__, "JsObject")
 
-    @unittest.expectedFailure
+    @unittest.skip("broken")
     def test_optional_chaining_list(self):
         text = """
             o1 = {a: [1,2,3]};
@@ -873,6 +959,15 @@ class VmLogicTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['x2'], 2)
         self.assertEqual(globals_.values['x3'], 3)
 
+    def test_division_1(self):
+
+        text = """
+            let n = 10;
+            let d = 5
+            n /= d;
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['n'], 2)
 
 class VmFunctionTestCase(unittest.TestCase):
 
@@ -1002,6 +1097,18 @@ class VmFunctionTestCase(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['result'], 1)
+
+    @unittest.skip("not implemented")
+    def test_function_typed(self):
+
+        text = """
+            function add(x: number, y: number): number {
+                return x + y;
+            }
+            let result = add(2, 3)
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['result'], 5)
 
 class VmObjectTestCase(unittest.TestCase):
 
@@ -1148,7 +1255,7 @@ class VmTimerTestCase(unittest.TestCase):
         t1= time.time()
         self.assertTrue((t1 - t0) > 0.066)
 
-class VmImportTest(unittest.TestCase):
+class VmImportTestCase(unittest.TestCase):
     # test for setTimeout, setInterval, and Promises
 
     @classmethod
@@ -1180,6 +1287,35 @@ class VmImportTest(unittest.TestCase):
         ]
         self.assertEqual(expected, instrs)
 
+    def test_dis_import_name(self):
+
+        text = """
+        import module a.b.c
+        """
+        instrs = disjs(text)
+        expected = [
+            (opcodes.const.STRING, (0,)),
+            (opcodes.ctrl.IMPORT, ()),
+            (opcodes.ctrl.IMPORT2, ()),
+            (opcodes.globalvar.SET, (0,)),
+            (opcodes.ctrl.EXPORT, ())
+        ]
+        self.assertEqual(expected, instrs)
+
+    def test_dis_import_path(self):
+
+        text = """
+        import module "./foo.js"
+        """
+        instrs = disjs(text)
+        expected = [
+            (opcodes.const.STRING, (0,)),
+            (opcodes.ctrl.IMPORT, ()),
+            (opcodes.ctrl.IMPORT2, ()),
+            (opcodes.globalvar.SET, (0,)),
+            (opcodes.ctrl.EXPORT, ())
+        ]
+        self.assertEqual(expected, instrs)
 
     def test_pyimport(self):
 
@@ -1189,6 +1325,67 @@ class VmImportTest(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 4)
+
+class VmExportTestCase(unittest.TestCase):
+    # test for setTimeout, setInterval, and Promises
+
+    @classmethod
+    def setUpClass(cls):
+        pass
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    @unittest.skip("not implemented")
+    def test_dis_export(self):
+
+        text = """
+        let value1 = 1
+        export value1, value2=2;
+        """
+        instrs = disjs(text)
+        expected = [
+            (opcodes.const.INT, (1,)),
+            (opcodes.globalvar.SET, (0,)),
+            (opcodes.ctrl.EXPORT, ())
+        ]
+        print(expected)
+        print(instrs)
+        self.assertEqual(expected, instrs)
+
+class VmWebDocumentTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        pass
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        super().setUp()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_array_construct(self):
+
+        text = """
+            //let style = document.createElement("style")
+            let div = document.createElement("div")
+
+            let str = div.toString()
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['str'].value, '<div>\n</div>')
 
 def main():
     unittest.main()

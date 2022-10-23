@@ -9,14 +9,6 @@ blocks can be labeled
 https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import
 imports are complicated
 
-
-TODO: warning when two lines are arranged such that:
-    a = b
-    [c] = d
-
-The parser interprets it as:
-    a = b[c] = d
-
 """
 import sys
 import ast
@@ -1909,6 +1901,12 @@ class Parser(ParserBase):
 
     def collect_keyword_pyimport(self, tokens, index):
 
+        """
+         pyimport module
+         pyimport .module {a,b,c}
+         pyimport .module {a=b,c} # import a as name b
+        """
+
         token = tokens[index]
 
         module = self.consume(tokens, token, index, 1)
@@ -2499,6 +2497,12 @@ def main():  # pragma: no cover
     text1 = """from module x import {a=b, c}"""
     text1 = """pyimport ...os.path {a=b, c}"""
     text1 = """class A { #priv; } const instance = new A(); a.#priv"""
+    text1 = """
+    function add(x: number, y: number): number {
+                return x + y;
+            }
+
+    """
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

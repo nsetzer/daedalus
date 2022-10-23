@@ -2005,19 +2005,30 @@ class VmCompiler(object):
         self._push_token(depth, VmCompiler.C_INSTRUCTION, self._build_instr_string(state, token.children[0], token.children[0].value))
 
     def _visit_export(self, depth, state, token):
+        """
+            Export:
+                - list of names to export
+                - list of expressions for each name
+
+            _finalize_exports pushes the export opcode
+            by default all global names are exported
+
+            TODO: visit second list with a load flag
+                  build a dictionary of all pairs
+
+        """
+
         node = token.children[1]
         #self.fn.exports.extend(token.children[0].children)
-        self._push_token(depth, state, node)
+        self._push_token(depth, VmCompiler.C_VISIT  | VmCompiler.C_LOAD, node)
 
     def _visit_export_default(self, depth, state, token):
         node = token.children[1]
         self._push_token(depth, state, node)
 
     def _visit_export_args(self, depth, state, token):
-
-        flag0 = VmCompiler.C_VISIT # | VmCompiler.C_LOAD
         for child in reversed(token.children):
-            self._push_token(depth, flag0, child)
+            self._push_token(depth, state, child)
 
     def _build_function(self, state, token, name, arglist, block, closure, autobind=True):
         """

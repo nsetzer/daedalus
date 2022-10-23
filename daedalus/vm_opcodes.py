@@ -1,5 +1,7 @@
 
 def LEB128u(value):
+    """ encode a variable length unsigned number as bytes in LEB128 format
+    """
     out = value & 0b0111_1111
     value >>= 7;
     n = 1
@@ -13,6 +15,8 @@ def LEB128u(value):
     return out.to_bytes(n, 'big')
 
 def read_LEB128u(stream):
+    """ decode a variable length unsigned number as bytes in LEB128 format
+    """
     out = 0
     idx = 0
     val = ord(stream.read(1))
@@ -24,17 +28,21 @@ def read_LEB128u(stream):
     return out
 
 def LEB128s(val):
+    """ encode a variable length signed number as bytes in LEB128 format
+    """
     out = []
     while True:
         byte = val & 0x7f
-        idx = idx >> 7
-        if (idx == 0 and byte & 0x40 == 0) or (idx == -1 and byte & 0x40 != 0):
+        val = val >> 7
+        if (val == 0 and byte & 0x40 == 0) or (val == -1 and byte & 0x40 != 0):
             out.append(byte)
             break
         out.append(0x80 | byte)
-    return bytearray(out)
+    return bytes(out)
 
 def read_LEB128s(stream):
+    """ decode a variable length signed number as bytes in LEB128 format
+    """
     out = 0
     idx = 0
     val = ord(stream.read(1))
@@ -283,7 +291,7 @@ def getEnum(val):
     return value2enum[val]
 
 
-def main():
+def main(): # pragma: no cover
 
 
 
@@ -296,5 +304,5 @@ def main():
     print("total", len(value2enum))
     print("remaining", 0x7F - len(value2enum))
 
-if __name__ == '__main__':
+if __name__ == '__main__': # pragma: no cover
     main()

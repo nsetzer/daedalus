@@ -7,7 +7,8 @@ from tests.util import edit_distance, parsecmp, TOKEN
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser as ParserBase, ParseError
 from daedalus.transform import TransformIdentityScope, \
-    TransformMinifyScope, getModuleImportExport, TransformIdentityBlockScope
+    TransformMinifyScope, getModuleImportExport, TransformIdentityBlockScope, \
+    TransformExtractStyleSheet
 
 class Parser(ParserBase):
     def __init__(self):
@@ -121,6 +122,120 @@ class TransformTestCase(unittest.TestCase):
                 TOKEN('T_BLOCK', '{}')))
 
         self.assertFalse(parsecmp(expected, ast, False))
+
+class TransformExtractStyleSheetTestCase(unittest.TestCase):
+
+    def test_001_style1(self):
+
+        text = """
+        const styles = {
+            body: StyleSheet({background: '#000000'}),
+        }
+
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        uid = TransformExtractStyleSheet.generateUid("__test__")
+        xform = TransformExtractStyleSheet(uid)
+        xform.transform(ast)
+        styles = xform.getStyles()
+
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'styles'),
+                    TOKEN('T_OBJECT', '{}',
+                        TOKEN('T_BINARY', ':',
+                            TOKEN('T_TEXT', 'body'),
+                            TOKEN('T_STRING', "'dcs-573d2c00-0'"))))))
+
+        expected_styles = ['.dcs-573d2c00-0 {background:#000000}']
+
+        self.assertFalse(parsecmp(expected, ast, False))
+        self.assertEqual(styles, expected_styles)
+
+    def test_001_style2(self):
+
+        text = """
+        const styles = {
+            fraction: StyleSheet({}),
+        }
+        StyleSheet(`.${style.fraction} sup`, {font-size: '.8em'})
+        StyleSheet(`.${style.fraction} sub`, {font-size: '.8em'})
+
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        uid = TransformExtractStyleSheet.generateUid("__test__")
+        xform = TransformExtractStyleSheet(uid)
+        xform.transform(ast)
+        styles = xform.getStyles()
+
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'styles'),
+                    TOKEN('T_OBJECT', '{}',
+                        TOKEN('T_BINARY', ':',
+                            TOKEN('T_TEXT', 'fraction'),
+                            TOKEN('T_STRING', "'dcs-573d2c00-0'"))))),
+            TOKEN('T_EMPTY_TOKEN', "'.dcs-573d2c00-0 sup'"),
+            TOKEN('T_EMPTY_TOKEN', "'.dcs-573d2c00-0 sub'"))
+
+        expected_styles = ['.dcs-573d2c00-0 {}',
+                           '.dcs-573d2c00-0 sup {font-size:.8em}',
+                           '.dcs-573d2c00-0 sub {font-size:.8em}']
+
+        self.assertFalse(parsecmp(expected, ast, False))
+        self.assertEqual(styles, expected_styles)
+
+    def test_001_style3(self):
+
+        text = """
+        const styles = {
+            header: StyleSheet({flex-direction: 'row'}),
+        }
+        StyleSheet(1, `@media only screen and (max-width: 768px)`, {
+            'body': {
+                background: '#000000',
+            },
+            `.${style.header}`: {
+                "flex-direction": "column",
+            },
+        })
+
+
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        uid = TransformExtractStyleSheet.generateUid("__test__")
+        xform = TransformExtractStyleSheet(uid)
+        xform.transform(ast)
+        styles = xform.getStyles()
+
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'styles'),
+                    TOKEN('T_OBJECT', '{}',
+                        TOKEN('T_BINARY', ':',
+                            TOKEN('T_TEXT', 'header'),
+                            TOKEN('T_STRING', "'dcs-573d2c00-0'"))))),
+            TOKEN('T_EMPTY_TOKEN', ''))
+
+        expected_styles = [
+            '.dcs-573d2c00-0 {flex-direction:row}',
+            '@media only screen and (max-width: 768px) ' +
+                '{\nbody {background:#000000}\n' +
+                '.dcs-573d2c00-0 {flex-direction:column}\n' +
+                '}'
+        ]
+
+        self.assertFalse(parsecmp(expected, ast, False))
+        self.assertEqual(styles, expected_styles)
 
 class TransformIdentityTestCase(unittest.TestCase):
 
@@ -247,6 +362,104 @@ class TransformIdentityTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_import(self):
+
+        text = """
+        import { name } from "module"
+        import { name as alias } from "module"
+        import name from "module"
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        xform = TransformIdentityBlockScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
+
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_JS_MODULE', '"module"',
+                TOKEN('T_GLOBAL_VAR', 'name')),
+            TOKEN('T_IMPORT_JS_MODULE', '"module"',
+                TOKEN('T_KEYWORD', 'as',
+                    TOKEN('T_GLOBAL_VAR', 'name'),
+                    TOKEN('T_GLOBAL_VAR', 'alias'))),
+            TOKEN('T_IMPORT', 'name',
+                TOKEN('T_OBJECT', '{}')),
+            TOKEN('T_GLOBAL_VAR', 'from'),
+            TOKEN('T_STRING', '"module"'))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_import_module(self):
+
+        text = """
+        from module modname import {name as alias, name2}
+        from modname import {name as alias, name2}
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        xform = TransformIdentityBlockScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
+
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_IMPORT_MODULE', 'modname',
+                TOKEN('T_ARGLIST', '{}',
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_ATTR', 'name'),
+                        TOKEN('T_GLOBAL_VAR', 'name')),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_ATTR', 'as'),
+                        TOKEN('T_GLOBAL_VAR', 'as')),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_ATTR', 'alias'),
+                        TOKEN('T_GLOBAL_VAR', 'alias')),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_ATTR', 'name2'),
+                        TOKEN('T_GLOBAL_VAR', 'name2')))),
+            TOKEN('T_IMPORT', 'modname',
+                TOKEN('T_OBJECT', '{}',
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_STRING', "'name'"),
+                        TOKEN('T_GLOBAL_VAR', 'name')),
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_STRING', "'as'"),
+                        TOKEN('T_GLOBAL_VAR', 'as')),
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_STRING', "'alias'"),
+                        TOKEN('T_GLOBAL_VAR', 'alias')),
+                    TOKEN('T_BINARY', ':',
+                        TOKEN('T_STRING', "'name2'"),
+                        TOKEN('T_GLOBAL_VAR', 'name2')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_pyimport(self):
+
+        text = """pyimport math {a=b,c}"""
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        xform = TransformIdentityBlockScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
+
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_PYIMPORT', 'math',
+                TOKEN('T_GLOBAL_VAR', 'math'),
+                TOKEN('T_NUMBER', '0'),
+                TOKEN('T_ARGLIST', '{}',
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_ATTR', 'a'),
+                        TOKEN('T_GLOBAL_VAR', 'b')),
+                    TOKEN('T_ASSIGN', '=',
+                        TOKEN('T_ATTR', 'c'),
+                        TOKEN('T_GLOBAL_VAR', 'c')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
     @unittest.expectedFailure
     def test_001_identity_restorevar_block_2(self):
 
@@ -276,6 +489,7 @@ class TransformIdentityTestCase(unittest.TestCase):
         self.assertFail("not implemented")
         expected = TOKEN('T_MODULE', '')
         self.assertFalse(parsecmp(expected, ast, False))
+
 
 def main():
     unittest.main()

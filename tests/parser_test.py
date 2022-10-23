@@ -61,6 +61,24 @@ class ParserTestCase(unittest.TestCase):
                     TOKEN('T_BLOCK', '{}'))))
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_002_ambiguous_bracket(self):
+
+        text = """
+            a = b
+            [c] = d
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_ASSIGN', '=',
+                TOKEN('T_TEXT', 'a'),
+                TOKEN('T_TEXT', 'b')),
+            TOKEN('T_ASSIGN', '=',
+                TOKEN('T_UNPACK_SEQUENCE', '[]',
+                    TOKEN('T_TEXT', 'c')),
+                TOKEN('T_TEXT', 'd')))
+        self.assertFalse(parsecmp(expected, ast, False))
+
 class ParserTypesTestCase(unittest.TestCase):
 
     def _test(self, text, expected):

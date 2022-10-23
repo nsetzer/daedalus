@@ -187,7 +187,7 @@ class JsObject(object):
         elif name in self._data:
             return self._data[name]
 
-        print("get undefined attribute %s" % name)
+        #print("get undefined attribute %s" % name)
         return JsUndefined.instance
 
     def setAttr(self, name, value):
@@ -209,7 +209,7 @@ class JsObject(object):
 
         if index in self._data:
             return self._data[index]
-        print("get undefined index %s" % index, type(index))
+        #print("get undefined index %s" % index, type(index))
         return JsUndefined.instance
 
     def setIndex(self, index, value):

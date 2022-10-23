@@ -5,7 +5,7 @@ from .lexer import Lexer, LexError
 from .parser import Parser, ParseError
 
 from .transform import TransformIdentityScope, TransformBaseV3, \
-    TransformClassToFunction, TransformReplaceIdentity
+    TransformReplaceIdentity
 
 from .compiler import Compiler
 from .formatter import Formatter
@@ -141,7 +141,7 @@ class TransformConstExpr(TransformBaseV3):
         rhs = rhs.clone()
 
         # transform any classes or lambdA calls into a python ast
-        TransformClassToFunction().transform(rhs)
+        #TransformClassToFunction().transform(rhs)
         # transform variables to use a globally unique (long name) identifier
         TransformReplaceIdentity(False).transform(rhs)
 
