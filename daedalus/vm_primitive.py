@@ -22,7 +22,7 @@ from .transform import TransformBaseV2, TransformIdentityBlockScope
 from .builder import findModule
 
 from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
-    VmClassTransform, VmClassTransform2
+    VmClassTransform2
 
 operands = [
     '__lt__',
@@ -227,7 +227,7 @@ class JsObject(object):
     def getOwnPropertyNames(object):
         return JsArray()
 
-    def _update(self, other):
+    def _x_update(self, other):
         self._data.update(other._data)
 
 class JsObjectPropIterator(object):
@@ -536,8 +536,119 @@ class JsNumberObject(JsObject):
 class JsMath(JsObject):
 
     @property
+    def E(self):
+        return math.e
+
+    @property
     def PI(self):
         return math.pi
+
+    def abs(self, value):
+        # https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/abs
+        return abs(value)
+
+    def acos(self, value):
+        pass
+
+    def acosh(self, value):
+        pass
+
+    def asin(self, value):
+        pass
+
+    def asinh(self, value):
+        pass
+
+    def atan(self, value):
+        pass
+
+    def atan2(self, value):
+        pass
+
+    def atanh(self, value):
+        pass
+
+    def cbrt(self, value):
+        pass
+
+    def ceil(self, value):
+        return math.ceil(value)
+
+    def clz32(self, value):
+        pass
+
+    def cos(self, value):
+        pass
+
+    def cosh(self, value):
+        pass
+
+    def exp(self, value):
+        pass
+
+    def expm1(self, value):
+        pass
+
+    def floor(self, value):
+        return math.floor(value)
+
+    def fround(self, value):
+        pass
+
+    def hypot(self, value):
+        pass
+
+    def imul(self, value):
+        pass
+
+    def log(self, value):
+        pass
+
+    def log10(self, value):
+        pass
+
+    def log1p(self, value):
+        pass
+
+    def log2(self, value):
+        pass
+
+    def max(self, *args):
+        return max(args)
+
+    def min(self, *args):
+        return min(args)
+
+    def pow(self, x, y):
+        return x**y
+
+    def random(self):
+        return random.random()
+
+    def round(self, value):
+        return math.round(value)
+
+    def sign(self, value):
+        if value < 0:
+            return -1
+        elif value > 0:
+            return 1
+        return 0
+
+    def sinh(self, value):
+        pass
+
+    def sqrt(self, value):
+        return math.sqrt(value)
+
+    def tan(self, value):
+        pass
+
+    def tanh(self, value):
+        pass
+
+    def trunc(self, value):
+        return int(value)
 
 class JsStringType(type):
     def __new__(metacls, name, bases, namespace):
@@ -651,6 +762,9 @@ class JsString(JsObject, metaclass=JsStringType):
 
     def repeat(self, count):
         pass
+
+    def substring(self, index):
+        return JsString(self.value[index:])
 
     @jsc
     def replace(self):

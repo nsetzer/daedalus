@@ -70,7 +70,7 @@ from .parser import Parser, ParseError
 from .builder import findModule
 
 from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
-    VmClassTransform, VmClassTransform2
+    VmClassTransform2
 from .vm_primitive import vmGetAst, JsObject, JsObjectPropIterator, \
     VmFunction, jsc, JsUndefined, JsString, JsNumber, JsSet, JsArray, \
     JsObjectCtor
@@ -421,7 +421,9 @@ class VmRuntime(object):
                     try:
                         _rv = func(*args, **kwargs._data)
                     except Exception as e:
+                        print(func)
                         print("TODO: caught python exception", e)
+                        _rv = e
                     frame.stack.append(_rv)
                 else:
                     print("Error at line %d column %d (%s)" % (instr.line, instr.index, type(func)))
@@ -535,12 +537,16 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.ctrl.THROW:
 
                 # TODO: if throw is in side of a catch block... jump to finally instead
-                self.exception = VmExceptionContext(frame.sp, frame.fndef, frame.stack.pop(), self.exception)
+                tos = frame.stack.pop()
+                self.exception = VmExceptionContext(frame.sp, frame.fndef, tos, self.exception)
 
                 trace = self._get_trace()
                 frame_, block = self._unwind()
-                if frame is None:
-                    raise VmRuntimeException(trace, "unhandled exception")
+                if frame_ is None:
+                    # TODO: when in a promise, this is ok
+                    # no mechanism to detect that yet
+                    print("unhandled exception", tos)
+                    #raise VmRuntimeException(trace, "unhandled exception")
                 else:
                     frame = frame_
                     instrs = frame.fndef.instrs
@@ -587,6 +593,7 @@ class VmRuntime(object):
                 module_name, module_path = self._imports.pop()
                 module_namespace = frame.stack[-1] # peek
                 self._modules[module_path] = module_namespace
+                print(module_namespace)
             elif instr.opcode == opcodes.ctrl.IMPORTPY:
                 module_name = frame.stack.pop()
                 frame.stack.append(__import__(str(module_name)))
@@ -609,7 +616,7 @@ class VmRuntime(object):
                     continue
             elif instr.opcode == opcodes.ctrl.INCLUDE:
                 obj = frame.stack.pop()
-                frame.globals.values.update(obj.data)
+                frame.globals.values.update(obj._data)
             elif instr.opcode == opcodes.localvar.SET:
                 name = frame.local_names[instr.args[0]]
                 frame.locals.setAttr(name, frame.stack.pop())
@@ -879,13 +886,20 @@ class VmRuntime(object):
 
             if frame.sp >= len(frame.fndef.instrs):
 
-                self.stack_frames.pop()
+                if self.stack_frames:
+                    self.stack_frames.pop()
+                else:
+                    # TODO: when in a primise this is ok
+                    # but im not sure why this is reached
+                    # it is reached when the promise throws an exception
+                    # but it should not be running additional instructions.
+                    print("warning: no stack frame")
 
                 if history:
                     self.stack_frames, frame, instrs, return_value = history.pop()
                 else:
 
-                    if self.timer._wait():
+                    if self.timer._wait_zero():
 
                         if len(self.stack_frames) == 0:
                             stack = self.timer.check()
@@ -926,7 +940,7 @@ class VmRuntime(object):
         self.init(module)
         return self.run()
 
-def main():
+def main():  # pragma: no cover
 
     text_fclass1 = """
 
@@ -965,11 +979,6 @@ def main():
     for (let i=0; i<10; i++) {
         sum += i;
     }
-    """
-
-    render1 = """
-
-        console.log("<HTML><BODY>Hello World</BODY></HTML>")
     """
 
     class0 = """
@@ -1369,38 +1378,7 @@ def main():
         console.log(a+b+c)
     """
 
-    # this test is the reason for the per-identity transform
-    text1 = """
 
-        mymodule = (function() {
-            class a {
-
-            }
-
-            class b extends a {
-
-            }
-
-            return {a, b}
-        })()
-    """
-
-    # should not leave anything on the stack
-    text1 = """
-        "a";
-        8;
-    """
-
-    text1 = """
-        //include "../morpgsite/frontend/build/static/index.js";
-
-        //const document_root = document.getElementById("root")
-        //while (document_root.hasChildNodes()) {
-        //    document_root.removeChild(document_root.lastChild);
-        //}
-        //daedalus.render(document_root, new app.App())
-
-    """
 
 
     text1 = """
@@ -1434,10 +1412,10 @@ def main():
     """
 
     text1 = """
-        # this should not trigger save/restore
+        // this should not trigger save/restore
         seq = [1,2,3]
-        function f() {
-            if (false) {
+        function f(arg) {
+            if (arg) {
                 while (seq.length>0) {
                     let unit = seq.pop()
                 }
@@ -1447,10 +1425,11 @@ def main():
                 }
             }
         }
-        result = f()
+        result0 = f(0)
+        console.log(seq)
     """
 
-    text1 = """
+    text2 = """
         include "../morpgsite/frontend/build/static/index.js";
 
         const document_root = document.getElementById("root")
@@ -1490,7 +1469,7 @@ def main():
 
     """
 
-    text1 = """
+    text2 = """
         import module daedalus
 
         console.log(daedalus)
@@ -1524,25 +1503,11 @@ def main():
 
     """
 
-    text1 = """
-
-        let x =0 ;
-        do {
-
-            x += 2;
-            {
-                break
-                let x = 3
-            }
-
-        }    while (x < 5);
-    """
-
-    text1 = """
+    text2 = """
         /^(LGBT[^s]+)$/i
     """
 
-    text1 = """
+    text2 = """
         //from module daedalus import {DomElement=x, TextElement, StyleSheet}]
         //import module daedalus
         //console.log("element", daedalus.DomElement)
@@ -1561,7 +1526,7 @@ def main():
         wait()
     """
 
-    text1 = """
+    text2 = """
 
     function addOffset(match, ...args) {
       const hasNamedGroups = typeof args.at(-1) === "object";
@@ -1572,33 +1537,6 @@ def main():
     console.log("abcd".replace(/(bc)/, addOffset)); // "abc (1) d"
 
     """
-
-
-    text1 = """
-
-    function test(item) {
-        let value = 0;
-        switch (item) {
-            case 1:
-                value = 10;
-                break;
-            case 2:
-                value = 20;
-                break;
-            default:
-                value = 30;
-                break;
-        }
-        return value;
-    }
-    let x1 = test(1);
-    let x2 = test(2);
-    let x3 = test(3);
-    console.log(x1, x2, x3)
-
-    """
-
-
     # current bugs:
     #   - do not bind of already bound functions om the prototype
     #   - popping a block scope must delete vars not saved/restored
@@ -1654,7 +1592,7 @@ def main():
 
     return
 
-def main2():
+def main2(): # pragma: no cover
     # test for cli
 
     #ast = vmGetAst("x = x + 1 function f() { return 0 } ")
@@ -1670,5 +1608,5 @@ def main2():
 
     # repl test
 
-if __name__ == '__main__':
+if __name__ == '__main__': # pragma: no cover
     main()

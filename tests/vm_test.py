@@ -15,7 +15,7 @@ from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityBlockScope
 from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
-from daedalus.vm_compiler import VmCompileError
+from daedalus.vm_compiler import VmCompileError, VmGlobals, VmInstruction
 from daedalus.vm_primitive import JsUndefined
 from daedalus import vm_opcodes as opcodes
 
@@ -49,6 +49,40 @@ def disjs(text, index=0):
     instrs = [(b.opcode, b.args) for b in instrs]
 
     return instrs
+
+def make_runtime(text, diag=False):
+
+    lexer = Lexer()
+    parser = Parser()
+    parser.disable_all_warnings = True
+
+    tokens = lexer.lex(text)
+    ast = parser.parse(tokens)
+
+    xform = VmClassTransform2()
+    xform.transform(ast)
+
+    xform = TransformIdentityBlockScope()
+    xform.disable_warnings=True
+    globals = xform.transform(ast)
+
+    xform = VmTransform()
+    xform.transform(ast)
+
+    if diag:
+        print("evaljs diag", ast.toString(1))
+
+    compiler = VmCompiler()
+    module = compiler.compile(ast)
+
+    if diag:
+        module.dump()
+
+    runtime = VmRuntime()
+    runtime.enable_diag = diag
+    runtime.init(module)
+
+    return runtime
 
 def evaljs(text, diag=False):
 
@@ -128,6 +162,39 @@ class VmUtilsTestCase(unittest.TestCase):
         value = opcodes.read_LEB128s(io.BytesIO(out))
         self.assertEqual(value, expected)
 
+
+    def test_isntr_fmt(self):
+        """ demonstrate how instructions are formatted
+        """
+
+        globals_ = VmGlobals()
+        globals_.names.append('global0')
+        globals_.constdata.append('str0')
+        locals_ = ['local0', 'attr1']
+        cells_ = ['cell0']
+
+        instr0 = VmInstruction(opcodes.globalvar.GET, 0)
+        self.assertEqual(instr0.getArgString(globals_, locals_, cells_), "0:global0")
+
+        instr0 = VmInstruction(opcodes.localvar.GET, 0)
+        self.assertEqual(instr0.getArgString(globals_, locals_, cells_), "0:local0")
+
+        instr0 = VmInstruction(opcodes.cellvar.GET, 0)
+        self.assertEqual(instr0.getArgString(globals_, locals_, cells_), "0:cell0")
+
+        instr0 = VmInstruction(opcodes.obj.GET_ATTR, 1)
+        self.assertEqual(instr0.getArgString(globals_, locals_, cells_), "1:attr1")
+
+        instr0 = VmInstruction(opcodes.const.STRING, 0)
+        self.assertEqual(instr0.getArgString(globals_, locals_, cells_), "0:str0")
+
+        instr0 = VmInstruction(opcodes.const.FLOAT32, 3.14)
+        self.assertEqual(instr0.getArgString(globals_, locals_, cells_), "3.14")
+
+        self.assertEqual(repr(VmInstruction(opcodes.const.STRING, 0)), "(const.STRING 0)")
+
+        self.assertEqual(repr(VmInstruction(opcodes.comp.LT)), "(comp.LT)")
+
 class VmTestCase(unittest.TestCase):
 
     @classmethod
@@ -146,6 +213,17 @@ class VmTestCase(unittest.TestCase):
 
     def tearDown(self):
         super().tearDown()
+
+    def test_empty_stack(self):
+        # the stack frame should be empty when the function exits
+        text = """
+            "abc";
+            123;
+        """
+        runtime = make_runtime(text, diag=False)
+        result = runtime.run()
+        self.assertEqual(runtime.stack_frames, [])
+
 
     def test_assign(self):
 
@@ -210,6 +288,21 @@ class VmTestCase(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['i'], 0)
+
+    def test_function_dowhile_break(self):
+        text = """
+            let x =0;
+            do {
+                x += 2;
+                {
+                    break
+                    let x = 3
+                }
+            }    while (x < 5);
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 2)
+
 
     def test_function_simple(self):
 
@@ -745,6 +838,25 @@ class VmBasicTypesTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['x1'], "AA")
         self.assertEqual(globals_.values['x2'], "aa")
 
+    def test_unpack(self):
+        text = """
+            let [a,b,c] = [1,2,3]
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['a'], 1)
+        self.assertEqual(globals_.values['b'], 2)
+        self.assertEqual(globals_.values['c'], 3)
+
+    def test_list_spread(self):
+        text = """
+            let a = [1,2,3]
+            let b = [5,6,7]
+
+            let c = [0, ...a, 4, ...b]
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['c'].array, list(range(8)))
+
 class VmLogicTestCase(unittest.TestCase):
 
     @classmethod
@@ -1175,6 +1287,46 @@ class VmObjectTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['t1'], False)
         self.assertEqual(globals_.values['t2'], False)
 
+
+    def test_class_ctor(self):
+
+        text = """
+            class A {
+                constructor(v) {
+                    this.a = v
+                }
+            }
+            class B extends A {
+                constructor() {
+                    super(2)
+                }
+            }
+            let b = B().a
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['b'], 2)
+
+
+    def test_nested_module(self):
+        # this test is the reason for the per-identity transform
+        text = """
+            mymodule = (function() {
+                class a {
+
+                }
+
+                class b extends a {
+
+                }
+
+                return {a, b}
+            })()
+        """
+        runtime = make_runtime(text, diag=False)
+        result, globals_ = runtime.run()
+        self.assertEqual(globals_.values['mymodule'].getAttr('a').name, "a")
+        self.assertEqual(globals_.values['mymodule'].getAttr('b').name, "b")
+
 class VmArrayTestCase(unittest.TestCase):
 
     @classmethod
@@ -1224,7 +1376,7 @@ class VmTimerTestCase(unittest.TestCase):
     def tearDown(self):
         super().tearDown()
 
-    def test_promise_simple(self):
+    def test_promise_resolve(self):
 
         text = """
 
@@ -1237,6 +1389,39 @@ class VmTimerTestCase(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['x'], 2)
+
+    def test_promise_reject(self):
+
+        text = """
+
+        let x = 0;
+        let y = 0;
+        const p = new Promise((resolve, reject) => {
+            reject(2);
+        })
+
+        p.then(res=>{x=res}, err=>{y=err})
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['y'], 2)
+
+    def test_promise_throw(self):
+
+        text = """
+
+        let x = 0;
+        let y = 0;
+        let z = 0;
+        const p = new Promise((resolve, reject) => {
+            throw 123
+        })
+
+        p.then(res=>{x=1}, err=>{y=err}).catch(err=>{z=err})
+        """
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 0)
+        self.assertEqual(globals_.values['y'], 123)
+        self.assertEqual(globals_.values['z'], 123)
 
     def test_promise_timeout(self):
 
@@ -1254,6 +1439,36 @@ class VmTimerTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['x'], 4)
         t1= time.time()
         self.assertTrue((t1 - t0) > 0.066)
+        self.assertTrue((t1 - t0) < 0.1)
+
+    def test_timeout(self):
+
+        text = """
+        x=0;
+        setTimeout(()=>{x+=1;}, 33);
+        wait(500)
+        """
+        t0= time.time()
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 1)
+        t1= time.time()
+        self.assertTrue((t1 - t0) > 0.033)
+        self.assertTrue((t1 - t0) < 0.1)
+
+    def test_interval(self):
+
+        text = """
+        x=0;
+        setInterval(()=>{x+=1;}, 33);
+        wait(500)
+        wait(500)
+        """
+        t0= time.time()
+        result, globals_ = evaljs(text, diag=False)
+        self.assertEqual(globals_.values['x'], 2)
+        t1= time.time()
+        self.assertTrue((t1 - t0) > 0.066)
+        self.assertTrue((t1 - t0) < 0.1)
 
 class VmImportTestCase(unittest.TestCase):
     # test for setTimeout, setInterval, and Promises

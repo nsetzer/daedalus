@@ -364,9 +364,22 @@ class TransformExtractStyleSheet(TransformBase):
         self.uid = uid
 
         self.named_styles = {}
+        self.style_root = None
 
     def visit(self, token, parent):
 
+        if token.type == Token.T_ASSIGN:
+            # when walking down the tree, look at the most recent assignment
+            # operator to try and guess what the name of the style sheet is.
+            # this only works in the simple form
+            #   varname = {stylename: StyleSheet()}
+            # if lhs is not text or rhs is not a 1 level dictionary
+            # the extracted name will be incorrect
+            lhs = token.children[0]
+            if lhs.type == Token.T_TEXT:
+                self.style_root = lhs.value + "."
+            else:
+                self.style_root = None
         if token.type == Token.T_FUNCTIONCALL:
             child = token.children[0]
             if child.type == Token.T_TEXT and child.value == 'StyleSheet':
@@ -380,12 +393,13 @@ class TransformExtractStyleSheet(TransformBase):
         arglist = token.children[1]
 
         style_name = None
+        style_root = self.style_root or 'style.'
         if parent and parent.type == Token.T_BINARY and parent.value == ':':
             key = parent.children[0]
             if key.type == Token.T_STRING:
-                style_name = 'style.' + literal_eval(key)
+                style_name = style_root + literal_eval(key)
             elif key.type == Token.T_TEXT:
-                style_name = 'style.' + key.value
+                style_name = style_root + key.value
 
         # zero arguments is an empty style sheet
         # a unique name will be generated
@@ -2997,7 +3011,6 @@ def main_css(): # pragma: no cover
     print(mod.toString())
     print("\n".join(tr.getStyles()))
 
-
 def main_var2(): # pragma: no cover
     from .parser import Parser
     text = """
@@ -3090,7 +3103,6 @@ def main_unpack(): # pragma: no cover
     print(ast.toString(3))
     print(Formatter().format(ast))
     print("--")
-
 
 def main_unused(): # pragma: no cover
 

@@ -11,6 +11,7 @@ import re
 import time
 import traceback
 import urllib.request
+import logging
 
 from . import vm_opcodes as opcodes
 
@@ -21,7 +22,7 @@ from .transform import TransformBaseV2, TransformIdentityBlockScope
 from .builder import findModule
 
 from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
-    VmClassTransform, VmClassTransform2
+    VmClassTransform2
 from .vm_primitive import vmGetAst, JsObject, JsObjectPropIterator, \
     VmFunction, jsc, JsUndefined, JsString, JsNumber, JsSet, JsArray, \
     JsObjectCtor, JsMath, JsNumberObject
@@ -67,11 +68,11 @@ class JsTimerFactory(object):
 
         posargs = JsObject()
 
-        frame = self.runtime._new_frame(fn, len(args), args, JsObject())
-        stack = [frame]
+        stackgenerator = lambda: [self.runtime._new_frame(fn, len(args), args, JsObject())]
 
-        self.intervals[timerId] = (timeout, delay, stack)
+        self.intervals[timerId] = (timeout, delay, stackgenerator)
 
+        # TODO: priority queue
         self.queue.append((timeout, timerId))
 
         return timerId
@@ -88,6 +89,7 @@ class JsTimerFactory(object):
 
         self.timers[timerId] = (timeout, delay, stack)
 
+        # TODO: priority queue
         self.queue.append((timeout, timerId))
 
         return timerId
@@ -95,28 +97,44 @@ class JsTimerFactory(object):
     def _clearTimeout(self, fn, delay, *args):
         pass
 
-    def _wait(self):
+    def _wait(self, timeout=1000):
         """
-         wait up to 5 seconds for any timer to expire
+         wait up to timeout milliseconds for any timer to expire
+         returns the number of milliseconds slept for
         """
 
-        if len(self.timers) == 0:
-            return False
+        # TODO: just look at the queue and decide how long to sleep
 
         now = time.time()
 
-        expires_in = 5
-        for _, (timeout, delay, stack) in self.timers.items():
-            expires_in = min(timeout - now, expires_in)
+        expires_in = timeout/1000.0
+
+        if self.queue:
+            t = self.queue[0][0]
+            expires_in = min(expires_in, t - now)
+
+        expires_in = max(expires_in, 0)
 
         if expires_in > 0:
             time.sleep(expires_in)
 
-            # TODO: this pushes a value on the stack for every call
-            #frame = self.stack_frames[-1]
-            #frame.sp -= 3
+        # TODO: this pushes a value on the stack for every call
+        #frame = self.stack_frames[-1]
+        #frame.sp -= 3
 
-        return len(self.timers)
+        return int(expires_in * 1000.0)
+
+    def _wait_zero(self, timeout=1000):
+        """
+         wait up to timeout milliseconds for any timer to expire
+         returns early if any timer expires (ignore intervals for now)
+         returns the number of milliseconds slept for
+        """
+
+        if len(self.timers) == 0:
+            return 0
+
+        return self._wait(timeout)
 
     def check(self):
 
@@ -130,6 +148,13 @@ class JsTimerFactory(object):
                     stack = self.timers[timerId][2]
                     del self.timers[timerId]
                     return stack
+                elif timerId in self.intervals:
+                    _, delay, stackgenerator = self.intervals[timerId]
+                    timeout = now + delay/1000.0
+                    # TODO: priority queue
+                    self.queue.append((timeout, timerId))
+                    return stackgenerator()
+
         return None
 
 class JsPromiseFactory(object):
@@ -161,13 +186,19 @@ class JsPromise(JsObject):
         self._invoke()
 
     def _invoke(self):
-
         if isinstance(self.callback, VmFunction):
             # TODO: implement threads in the single runtime
             from .vm import VmRuntime
             runtime = VmRuntime()
             runtime.initfn(self.callback, [self._resolve, self._reject], JsObject())
-            rv, _ = runtime.run()
+            try:
+                rv, _ = runtime.run()
+                if runtime.exception:
+                    self._reject(runtime.exception.value)
+                #else:
+                #    self._resolve(rv)
+            except Exception as e:
+                self._reject(e)
         else:
             try:
                 rv = self.callback()
@@ -312,6 +343,10 @@ class JsDocument(JsObject):
 
         return dom
 
+    def querySelector(self, query):
+        if query == "body":
+            return self.body
+
     def getElementsByTagName(self, tagname):
 
         if tagname == "HEAD":
@@ -326,6 +361,10 @@ class JsDocument(JsObject):
 
         if elemid == "root":
             return self.body
+
+    def toString(self):
+
+        return self.html.toString()
 
 class JsElement(JsObject):
 
@@ -400,6 +439,9 @@ class JsElement(JsObject):
     def lastChild(self):
         return self.children.array[-1]
 
+    def addEventListener(self, event, fn):
+        print("dom register event", event)
+
 class JsWindow(JsObject):
 
     def __init__(self):
@@ -410,6 +452,19 @@ class JsWindow(JsObject):
 
     def requestIdleCallback(self, callback, options):
         print("requestIdleCallback", callback, options)
+
+    def getComputedStyle(self, dom):
+        obj = JsObject()
+        obj.setAttr("font-size", 16)
+        return obj
+
+    @property
+    def innerWidth(self):
+        return 1920
+
+    @property
+    def innerHeight(self):
+        return 1080
 
 class JsNavigator(JsObject):
 
@@ -436,14 +491,21 @@ class JsRegExp(object):
 
         self.reg = re.compile(expr.value, iflags)
 
+class JsSystem(JsObject):
+
+    def writeTextFileSync(self, path, content, options=None):
+        """
+        options: dictionary containing:
+            append: boolean: default false
+            create: boolean: default true
+        """
+        with open(path.value, "w") as wf:
+            wf.write(content.value)
+
 def populate_builtins(runtime, obj):
 
     console = lambda: None
     console.log = print
-    _math = lambda: None
-    _math.floor = math.floor
-    _math.ceil = math.ceil
-    _math.random = random.random
     _Symbol = lambda: None
     _Symbol.iterator = JsString("_x_daedalus_js_prop_iterator")
 
@@ -451,7 +513,6 @@ def populate_builtins(runtime, obj):
     history.pushState = lambda x: None
 
     obj['console'] = console
-    obj['Math'] = _math
     obj['document'] = JsDocument()
     obj['Promise'] = JsPromiseFactory(runtime)
     obj['fetch'] = fetch
@@ -460,7 +521,7 @@ def populate_builtins(runtime, obj):
     obj['Object'] = JsObjectCtor()
     obj['window'] = JsWindow()
     obj['navigator'] = JsNavigator()
-    obj['parseFloat'] = lambda x: x
+    obj['parseFloat'] = lambda x: float(x.value if hasattr(x, 'value') else x)
     obj['parseInt'] = lambda x, base=10: x
     obj['isNaN'] = lambda x: False
     obj['RegExp'] = JsRegExp
@@ -470,3 +531,4 @@ def populate_builtins(runtime, obj):
     obj['assert'] = JsAssert()
     obj['Number'] = JsNumberObject()
     obj['Math'] = JsMath()
+    obj['System'] = JsSystem()

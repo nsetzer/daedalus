@@ -295,7 +295,7 @@ class RunCLI(CLI):
         search_path = os.environ.get('DAEDALUS_PATH', "").split(":")
         search_path.append(os.getcwd())
         runtime.search_path = search_path
-        runtime.enable_diag=True
+        runtime.enable_diag=False
         rv, _ = runtime.run_text(open(jspath).read())
         return 0 # todo return proper exit status
 

@@ -161,8 +161,8 @@ class TransformExtractStyleSheetTestCase(unittest.TestCase):
         const styles = {
             fraction: StyleSheet({}),
         }
-        StyleSheet(`.${style.fraction} sup`, {font-size: '.8em'})
-        StyleSheet(`.${style.fraction} sub`, {font-size: '.8em'})
+        StyleSheet(`.${styles.fraction} sup`, {font-size: '.8em'})
+        StyleSheet(`.${styles.fraction} sub`, {font-size: '.8em'})
 
         """
 
@@ -201,7 +201,7 @@ class TransformExtractStyleSheetTestCase(unittest.TestCase):
             'body': {
                 background: '#000000',
             },
-            `.${style.header}`: {
+            `.${styles.header}`: {
                 "flex-direction": "column",
             },
         })
@@ -236,6 +236,22 @@ class TransformExtractStyleSheetTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
         self.assertEqual(styles, expected_styles)
+
+    def test_001_style_name(self):
+
+        text = """
+        const styles = {
+            header: StyleSheet({flex-direction: 'row'}),
+            more: {x:StyleSheet({flex-direction: 'row'})}
+        }
+        """
+
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        uid = TransformExtractStyleSheet.generateUid("__test__")
+        xform = TransformExtractStyleSheet(uid)
+        xform.transform(ast)
+        self.assertTrue('styles.header' in xform.named_styles)
 
 class TransformIdentityTestCase(unittest.TestCase):
 
