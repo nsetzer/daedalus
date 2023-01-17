@@ -30,7 +30,8 @@ class Button extends DomElement {
     }
 
     onClick() {
-        window.channel.objects.core1.jsCallMe(1)
+        let x = window.channel.objects.core1.jsCallMe(1)
+        console.log(x)
 
 
 

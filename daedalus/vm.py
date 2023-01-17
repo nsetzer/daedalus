@@ -68,6 +68,7 @@ from .token import Token, TokenError
 from .lexer import Lexer
 from .parser import Parser, ParseError
 from .builder import findModule
+from .formatter import Formatter
 
 from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
     VmClassTransform2
@@ -334,9 +335,7 @@ class VmRuntime(object):
         # TODO: don't add arguments to lambdas,
         # TODO: don't override function kwargs with the same name
         posargs.setAttr("arguments", arguments)
-
         new_frame = VmStackFrame(func.module, func.fndef, posargs, func.cells)
-
         return new_frame
 
     def _run(self):
@@ -1537,6 +1536,21 @@ def main():  # pragma: no cover
     console.log("abcd".replace(/(bc)/, addOffset)); // "abc (1) d"
 
     """
+
+    text1 = """
+        class A {
+            constructor(v) {
+                this.a = v
+            }
+        }
+        class B extends A {
+            constructor() {
+                super(2)
+            }
+        }
+        let b = B().a
+
+    """
     # current bugs:
     #   - do not bind of already bound functions om the prototype
     #   - popping a block scope must delete vars not saved/restored
@@ -1545,6 +1559,7 @@ def main():  # pragma: no cover
     if True:
         ast = vmGetAst(text1)
         print(ast.toString(3))
+        print(Formatter({"minify": False}).format(ast))
 
         compiler = VmCompiler()
         mod = compiler.compile(ast)

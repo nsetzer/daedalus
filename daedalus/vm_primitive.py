@@ -103,7 +103,10 @@ class VmFunction(object):
 
     def __repr__(self):
 
-        return "<VmFunction(%s)>" % (",".join(self.fndef.arglabels))
+        name = ""
+        if self.fndef:
+            name = self.fndef._name
+        return "<VmFunction:%s(%s)>" % (name, ",".join(self.fndef.arglabels))
 
     def bind(self, target):
 

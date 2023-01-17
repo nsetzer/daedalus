@@ -217,6 +217,9 @@ export class DomElement {
     }
 
     getDomNode() {
+        if (this._$fiber == null) {
+            console.error(this)
+        }
         return this._$fiber && this._$fiber.dom
     }
 

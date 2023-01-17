@@ -1,3 +1,4 @@
+#! cd .. && python -m daedalus.vm
 import os
 import io
 import struct
@@ -213,7 +214,8 @@ class JsPromise(JsObject):
 
     def _resolve(self, res):
         #print("resolve promise", res)
-        self._state = JsPromise.FULFILLED
+        if self._state == JsPromise.PENDING:
+            self._state = JsPromise.FULFILLED
         self._result = res
 
     def _reject(self, err):
@@ -502,6 +504,12 @@ class JsSystem(JsObject):
         with open(path.value, "w") as wf:
             wf.write(content.value)
 
+def JsInstanceOf(inst, cls):
+    proto1 = inst.getAttr('__proto__')
+    proto2 = cls.prototype
+    breakpoint()
+    return proto1 is proto2
+
 def populate_builtins(runtime, obj):
 
     console = lambda: None
@@ -532,3 +540,4 @@ def populate_builtins(runtime, obj):
     obj['Number'] = JsNumberObject()
     obj['Math'] = JsMath()
     obj['System'] = JsSystem()
+    obj['_x_daedalus_js_instance_of'] = JsInstanceOf

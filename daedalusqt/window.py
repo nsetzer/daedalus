@@ -8,24 +8,24 @@ import json
 
 sys.path.insert(0, "..")
 
-from daedalus.__main__ import BuildCLI
+from daedalus.cli import BuildCLI
 from daedalus.webview import DaedalusWebView
 
 # https://doc.qt.io/qt-5/qwebengineview.html
 # https://myprogrammingnotes.com/communication-c-javascript-qt-webengine.html
 # C:\Qt\Examples\Qt-5.12.0\webchannel\standalone
 
-from PyQt5.QtCore import *
+from PyQt6.QtCore import *
 # this is required so that the frozen executable
 # can find `platforms/qwindows.dll`
 if hasattr(sys, "_MEIPASS"):
     QCoreApplication.addLibraryPath(sys._MEIPASS)
     QCoreApplication.addLibraryPath(os.path.join(sys._MEIPASS, "qt5_plugins"))
-from PyQt5.QtWebEngineWidgets import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtWebChannel import *
-from PyQt5.QtGui import *
-from sip import SIP_VERSION_STR, delete as sip_delete
+from PyQt6.QtWebEngineWidgets import *
+from PyQt6.QtWidgets import *
+from PyQt6.QtWebChannel import *
+from PyQt6.QtGui import *
+#from sip import SIP_VERSION_STR, delete as sip_delete
 
 
 class Core(QObject):
@@ -40,9 +40,10 @@ class Core(QObject):
         super(Core, self).__init__(parent)
 
     # receive data from the webpage
-    @pyqtSlot(QVariant)
+    @pyqtSlot(QVariant, result=str)
     def jsCallMe(self, arg):
         print("called from js", arg)
+        return "{}"
 
 def build():
 
@@ -107,7 +108,7 @@ def main():
     window = DemoMainWindow()
     window.show()
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == '__main__':

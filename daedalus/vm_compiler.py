@@ -170,9 +170,14 @@ class VmClassTransform2(TransformBaseV2):
 
         const CLASS_NAME = (function() {
             PROTOTYPE_X_Y = {}
-            SUPER_X_Y = (CLASS_PARENT ?? (()=>{})) // TODO: use a singleton for the default value
+            // TODO: super should be a magic variable or instance
+            // either replace `super` with `JsSuper(this)`, or
+            // have super reach in to the current stack frame.
+            // when the instance is called or an attribute is retrieved
+            // it must look up the correct constructor or attribute using
+            // the __proto__ chain
+            SUPER_X_Y = (CLASS_PARENT ?? (()=>{}))
             for (let name in SUPER_X_Y.prototype) {
-
                 PROTOTYPE_X_Y[name] = SUPER_X_Y.prototype[name]
             }
             CLASS_METHODS
@@ -180,18 +185,27 @@ class VmClassTransform2(TransformBaseV2):
                 this.__proto__ ??= PROTOTYPE_X_Y
                 this.constructor ??= CLASS_NAME
                 this._super ??= SUPER_X_Y.bind(this)
+                let _x_daedalus_prop;
                 for (let name in this.__proto__) {
-                    v = this.__proto__[name]
-                    if (typeof(v) === "function") {
-                        v = v.bind(this)
+                    // TODO: continue in here does not work
+                    _x_daedalus_prop = this.__proto__[name]
+                    if (typeof(_x_daedalus_prop) === "function") {
+                        _x_daedalus_prop = _x_daedalus_prop.bind(this)
                     }
-                    this[name] = v
+                    if (name != '__proto__') {
+                        this[name] = _x_daedalus_prop
+                    }
                 }
+                delete _x_daedalus_prop;
                 CLASS_CONSTRUCTOR
                 return this
             }
+            // these lines fix one test and break super()
+            PROTOTYPE_X_Y['__proto__'] = SUPER_X_Y.prototype
+            PROTOTYPE_X_Y['constructor'] = CLASS_NAME
             CLASS_NAME.name = CLASS_NAME_STRING
             CLASS_NAME.prototype = PROTOTYPE_X_Y
+            //CLASS_NAME.parent = CLASS_PARENT
             return CLASS_NAME
         })()
 
@@ -242,8 +256,10 @@ class VmClassTransform2(TransformBaseV2):
 
         if parent_class.children:
             parent_token = parent_class.children[0]
+            #class_parent_string = Token(Token.T_STRING, 0, 0, repr(parent_token.value))
         else:
             parent_token = Token(Token.T_KEYWORD, 0, 0, "undefined")
+            #class_parent_string = Token(Token.T_STRING, 0, 0, repr(""))
 
         prototype = Token(Token.T_TEXT, 0, 0, "prototype_%d_%d" % (token.line, token.index))
         super_token = Token(Token.T_TEXT, 0, 0, "super_%d_%d" % (token.line, token.index))
@@ -270,6 +286,7 @@ class VmClassTransform2(TransformBaseV2):
             "CLASS_NAME": class_name,
             "CLASS_NAME_STRING": class_name_string,
             "CLASS_PARENT": parent_token,
+            #"CLASS_PARENT_STRING": class_parent_string,
             "PROTOTYPE_X_Y": prototype,
             "SUPER_X_Y": super_token,
             "CLASS_CONSTRUCTOR": constructor,
@@ -494,6 +511,8 @@ class VmTransform(TransformBaseV2):
         _assign = Token(Token.T_ASSIGN, token.line, token.index, "=", [_iterobj, _rhs])
         _var = Token(Token.T_VAR, token.line, token.index, "const", [_assign])
 
+        _delete_var1 = Token(Token.T_PREFIX, token.line, token.index, "delete", [Token(Token.T_LOCAL_VAR, token.line, token.index, varname1)])
+
         # _iterator_result_$line_$index = _iterator_$line_$index.next()
         varname2 = "_iterator_result_%d_%d" % (token.line, token.index)
         _iterresult = Token(Token.T_LOCAL_VAR, token.line, token.index, varname2)
@@ -503,6 +522,8 @@ class VmTransform(TransformBaseV2):
         _arglist =Token(Token.T_ARGLIST, token.line, token.index, "()")
         _rhs = Token(Token.T_FUNCTIONCALL, token.line, token.index, "", [_getattr, _arglist])
         _pre = Token(Token.T_ASSIGN, token.line, token.index, "=", [_iterresult, _rhs])
+
+        _delete_var2 = Token(Token.T_PREFIX, token.line, token.index, "delete", [Token(Token.T_LOCAL_VAR, token.line, token.index, varname2)])
 
         # while (!_iterator_result_$line_$index.done) {
         # _iterator_result_$line_$index = _iterator_$line_$index.next()
@@ -519,7 +540,7 @@ class VmTransform(TransformBaseV2):
         _whilebody = Token(Token.T_BLOCK, token.line, token.index, "{}", [_assign, body, _pre.clone()])
         _while = Token(Token.T_WHILE, token.line, token.index, "", [_arglist, _whilebody])
 
-        _block = Token(Token.T_BLOCK, token.line, token.index, "{}", [_var, _pre, _while])
+        _block = Token(Token.T_BLOCK, token.line, token.index, "{}", [_var, _pre, _while, _delete_var1, _delete_var2])
 
         return _block
 
@@ -975,6 +996,16 @@ class VmCompiler(object):
                 inst = VmInstruction(opcode, index, token=token)
                 self._push_token(depth, VmCompiler.C_INSTRUCTION, inst)
                 self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, lhs)
+            elif child.type == Token.T_LOCAL_VAR:
+                name = child.value
+                opcode = opcodes.localvar.DELETE
+                try:
+                    index = self.fn.local_names.index(name)
+                except ValueError:
+                    index = len(self.fn.local_names)
+                    self.fn.local_names.append(name)
+                inst = VmInstruction(opcode, index, token=token)
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, inst)
             else:
                 raise VmCompileError(child, "invalid child for prefix delete")
         elif token.value == "++":
@@ -1002,6 +1033,15 @@ class VmCompiler(object):
             self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.math.SUB, token=token))
             self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.INT, 1, token=token))
             self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
+        elif token.value == "void":
+            # execute a load operation but return undefined
+
+            if state & VmCompiler.C_LOAD:
+                self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.const.UNDEFINED, token=token))
+
+            self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
+            self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
+
         else:
             raise NotImplementedError(str(token))
 

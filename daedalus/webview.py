@@ -71,12 +71,18 @@ try:
 
             # https://doc-snapshots.qt.io/qt6-dev/qwebengineview.html
             self.engine = QWebEngineView(self)
+            self.layout = QVBoxLayout(self)
+            self.layout.setContentsMargins(0,0,0,0)
+            self.layout.addWidget(self.engine)
+
             # "storage" here is the name of the profile
             # only one application can be running using the same profile at a time
             self.profile =  QWebEngineProfile("daedalus", self.engine)
             self.page = Page(self.profile, self.engine)
             self.page.consoleLogMessage.connect(self.consoleLogMessage)
             self.engine.setPage(self.page)
+
+            print(self.page.settings())
 
             self.intercept = _Intercept(self)
             #self.handler = _Handler()
@@ -85,22 +91,22 @@ try:
             self.profile.setUrlRequestInterceptor(self.intercept)
             #self.page = QWebEnginePage(self.profile, self.engine)
 
+
             # disable cors
             # https://doc-snapshots.qt.io/qt6-dev/qwebenginesettings.html
             settings = self.engine.settings()
             settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
             settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
-
+            print(settings)
             #self.page.setUrl(self.url)
 
             self.engine.load(self.url)
+            print(settings)
 
             self.channel = QWebChannel(self.engine.page());
             self.engine.page().setWebChannel(self.channel)
 
-            self.layout = QVBoxLayout(self)
-            self.layout.setContentsMargins(0,0,0,0)
-            self.layout.addWidget(self.engine)
+
 
             #self.engine.page().setDevToolsPage(self.engine.page())
 
@@ -140,6 +146,7 @@ try:
             self.channel.registerObject(name, obj)
 
 except ImportError:
+    print("daedalus webview import error")
 
     def export_webchannel_js(path):
         raise RuntimeError("qt6 unavailable")

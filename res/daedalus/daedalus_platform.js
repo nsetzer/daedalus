@@ -122,4 +122,4 @@ export const platform = {
     isMobile: (!!isMobile.any())
 }
 
-console.log(platform)
+//console.log(platform)

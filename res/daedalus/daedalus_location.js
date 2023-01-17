@@ -2,7 +2,9 @@
 /*
 patch the history object to fire an event every time the location changes
 */
-window.daedalus_location = location.pathname + location.search + location.hash
+if (location) {
+    window.daedalus_location = location.pathname + location.search + location.hash
+}
 
 function _sendEvent(path) {
     const myEvent = new CustomEvent('locationChangedEvent', {

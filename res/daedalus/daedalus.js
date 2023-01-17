@@ -388,7 +388,11 @@ function commitWork(fiber) {
                 parentDom.children[position]);
         }
 
+        //if (fiber.element.type =="input") {
+        //    console.log("mount", fiber.element._$fiber)
+        //}
         if (fiber.element.elementMounted) {
+
             requestIdleCallback(fiber.element.elementMounted.bind(fiber.element))
         }
 
@@ -397,6 +401,9 @@ function commitWork(fiber) {
         updateDomNode(fiber)
     } else if (fiber.effect === 'DELETE') {
         fiber.alternate.alternate = null // prevent memory leak
+        //if (fiber.element.type =="input") {
+        //    console.log("delete", fiber)
+        //}
         removeDomNode(fiber)
     } else if (fiber.effect === 'SORT_CHILDREN') {
         // after updating all of the children, verify that they
@@ -541,6 +548,9 @@ function _removeDomNode_elementFixUp(element) {
     }
 
     element.children.forEach(child => {
+        //if (child.type == "input")
+        //    console.log("set null1", child)
+
         child._$fiber = null;
         _removeDomNode_elementFixUp(child);
 
@@ -576,6 +586,8 @@ function removeDomNode(fiber) {
     }
 
     fiber.dom = null
+    //if (fiber.element.type == "input")
+    //    console.log("set null2", fiber.element)
     fiber.element._$fiber = null
     fiber.alternate = null
     _removeDomNode_elementFixUp(fiber.element)

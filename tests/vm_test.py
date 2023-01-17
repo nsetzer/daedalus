@@ -1287,9 +1287,7 @@ class VmObjectTestCase(unittest.TestCase):
         self.assertEqual(globals_.values['t1'], False)
         self.assertEqual(globals_.values['t2'], False)
 
-
     def test_class_ctor(self):
-
         text = """
             class A {
                 constructor(v) {
@@ -1305,7 +1303,6 @@ class VmObjectTestCase(unittest.TestCase):
         """
         result, globals_ = evaljs(text, diag=False)
         self.assertEqual(globals_.values['b'], 2)
-
 
     def test_nested_module(self):
         # this test is the reason for the per-identity transform
@@ -1326,6 +1323,32 @@ class VmObjectTestCase(unittest.TestCase):
         result, globals_ = runtime.run()
         self.assertEqual(globals_.values['mymodule'].getAttr('a').name, "a")
         self.assertEqual(globals_.values['mymodule'].getAttr('b').name, "b")
+
+    def test_class_prototype(self):
+        # this test is the reason for the per-identity transform
+        text = """
+            class A {
+            constructor() {this.a=1}
+            }
+            A.prototype.va='a'
+            class B extends A {
+                constructor() {super(); this.b=2}
+            }
+            B.prototype.vb='b'
+
+            let b = new B()
+            let n1 = b.__proto__.constructor.name;
+            let n2 = b.__proto__.__proto__.constructor.name;
+            let v1 = b.va
+            let v2 = b.vb
+
+        """
+        runtime = make_runtime(text, diag=False)
+        result, globals_ = runtime.run()
+        self.assertEqual(globals_.values['n1'], "B")
+        self.assertEqual(globals_.values['n2'], "A")
+        self.assertEqual(globals_.values['v1'], "a")
+        self.assertEqual(globals_.values['v2'], "b")
 
 class VmArrayTestCase(unittest.TestCase):
 

@@ -2503,6 +2503,8 @@ def main():  # pragma: no cover
             }
 
     """
+    # defining an object with numerical functions works in firefox
+    text1 = """ let _ = {0x2 () {return 2}} """
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)
