@@ -40,7 +40,7 @@ class TransformTemplateString(TransformBase):
             segments = self.parse_string(token)
 
             tokens = []
-            for isExpr, text in segments:
+            for isExpr, offset, text in segments:
                 if not text:
                     continue
                 # TODO: technically, these are STRING_LITERALS, not STRINGS
@@ -50,7 +50,10 @@ class TransformTemplateString(TransformBase):
                 type_ = Token.T_TEMPLATE_EXPRESSION if isExpr else Token.T_STRING
                 tok = Token(type_, 1, 0, text)
                 if isExpr:
-                    ast = Parser().parse(Lexer().lex(text))
+                    lexer = Lexer()
+                    # TODO: column offset may not be perfect
+                    lexer._first_token = (token.line,token.index + offset + 1)
+                    ast = Parser().parse(lexer.lex(text))
                     tok.children = ast.children
 
                 tokens.append(tok)
@@ -76,7 +79,7 @@ class TransformTemplateString(TransformBase):
                 elif c == '}':
                     if stack == 0:
                         state = 0
-                        segments.append((1, text[start:index]))
+                        segments.append((1, start, text[start:index]))
                         start = index + 1
                     else:
                         stack -= 1
@@ -93,12 +96,12 @@ class TransformTemplateString(TransformBase):
 
                     if c == '{':
                         state = 2
-                        segments.append((0, text[start:index-1]))
+                        segments.append((0, start, text[start:index-1]))
                         start = index + 1
 
             index += 1
 
-        segments.append((0, text[start:index]))
+        segments.append((0, start, text[start:index]))
 
         return segments
 

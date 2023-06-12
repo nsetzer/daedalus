@@ -1653,6 +1653,39 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    @unittest.expectedFailure
+    def test_001_expect_comma(self):
+        # python -m  tests.formatter_test -v FormatterTestCase.test_001_expect_comma
+
+        #  TODO: expect an error for a missing comma inside the arglist
+        text = """
+            f(1
+              2)
+        """
+        expected = "f(1,2)"
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        print(ast.toString(1))
+        output = self.formatter.format(ast)
+
+        self.assertNotEqual(expected, output)
+
+    @unittest.expectedFailure
+    def test_001_expect_brace(self):
+
+        # python -m tests.formatter_test FormatterTestCase.test_001_expect_brace
+        text = """
+            function f() {
+                if (window)
+                    let x = 1
+                } // TODO: require a better error for missing brace
+            }
+        """
+        tokens = Lexer().lex(text)
+
+        ast = Parser().parse(tokens)
+        output = self.formatter.format(ast)
+
 class FormatterStressTestCase(unittest.TestCase):
 
     @classmethod

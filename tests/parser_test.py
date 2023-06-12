@@ -191,6 +191,25 @@ class ParserUnaryOpTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_template_parser_error(self):
+
+        # python -m tests.parser_test ParserUnaryOpTestCase.test_001_template_parser_error
+        text = """
+            let x = 0;
+            let y = 0;
+            let z = `${x+(1}`
+        """
+        tokens = Lexer().lex(text)
+
+        with self.assertRaises(ParseError) as cm:
+            ast = Parser().parse(tokens)
+
+        e = cm.exception
+
+        self.assertEqual(e.token.line, 4)
+        # TODO: should it be 27?
+        self.assertEqual(e.token.index, 26)
+
 class ParserBinOpTestCase(unittest.TestCase):
 
     def test_001_assign(self):

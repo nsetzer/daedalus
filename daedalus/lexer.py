@@ -101,12 +101,14 @@ class LexerBase(object):
     def __init__(self):
         super(LexerBase, self).__init__()
 
+        self._first_token = (1, -1)
+
     def _init(self, seq, default_type):
 
         # the line of the most recently consumed character
-        self._line = 1
+        self._line = self._first_token[0]
         # the column of the line of the most recently consumed character
-        self._index = -1
+        self._index = self._first_token[1]
 
         self._default_type = default_type
         # the type of the current token
