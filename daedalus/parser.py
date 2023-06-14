@@ -247,6 +247,7 @@ class Parser(ParserBase):
             (L2R, self.visit_colon, [':']),
             (L2R, self.visit_comma_before, []),
             (L2R, self.visit_comma, [',']),
+            (L2R, self.visit_comma_after, []),
             (L2R, self.visit_keyword_arg, []),
             (L2R, self.visit_keyword, []),
             (L2R, self.visit_keyword_import_export, []),
@@ -336,6 +337,8 @@ class Parser(ParserBase):
             elif tok1.type == Token.T_NEWLINE:
                 j += direction
             elif tok1.type == Token.T_KEYWORD and tok1.value not in ("true", "false", "null", "undefined", "this", "new", "function", "function*", "class"):
+                break
+            elif tok1.type == Token.T_TEXT and tok1.value == "of":
                 break
             else:
                 return j
@@ -1289,6 +1292,8 @@ class Parser(ParserBase):
                     tok.type = Token.T_FUNCTION
                     tok.children.append(rhs)
 
+
+
         return 1
 
     def visit_comma(self, parent, tokens, index, operators):
@@ -1340,6 +1345,44 @@ class Parser(ParserBase):
         token.type = Token.T_COMMA
 
         return rv
+
+    def visit_comma_after(self, parent, tokens, index, operators):
+        """
+        validate that the grouping created by a comma sequence is valid
+
+        for now only tests groups within a parenthetical region
+            - does not test lists or objects
+        """
+        token = tokens[index]
+
+        if parent.type != Token.T_GROUPING or parent.value != "()":
+            return 1
+
+        if index < len(tokens) - 1:
+            return 1
+
+        # split on semicolons to support c style for loops
+        splits = [[]]
+        for tok in tokens:
+            if tok.type == Token.T_SPECIAL and tok.value == ";":
+                splits.append([])
+            else:
+                splits[-1].append(tok)
+
+        # in any sequence, all tokens must be wrapped in a comma
+        # or a comma is missing
+        for split in splits:
+            any_comma = any([tok.type == Token.T_COMMA for tok in split])
+            # T_KEYWORD is a hack for var, let, const
+            all_comma = all([tok.type in (Token.T_COMMA, Token.T_NEWLINE, Token.T_KEYWORD) for tok in split])
+
+            if any_comma and not all_comma:
+                for tok in tokens:
+                    if tok.type != Token.T_NEWLINE:
+                        raise ParseError(tok, "expected comma")
+
+        return 1
+
 
     def visit_ternary(self, parent, tokens, index, operators):
         """
@@ -2508,6 +2551,7 @@ def main():  # pragma: no cover
     """
     # defining an object with numerical functions works in firefox
     text1 = """ let _ = {0x2 () {return 2}} """
+    text1 = """ Set[Symbol.species]"""
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)

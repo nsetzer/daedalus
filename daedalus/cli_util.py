@@ -53,7 +53,7 @@ def copy_favicon(builder, outdir, verbose=False):
         with open(out_favicon, "wb") as wb:
             wb.write(rb.read())
 
-def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platform=None, minify=False, onefile=False):
+def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platform=None, minify=False, onefile=False, htmlname="index.html"):
     # TODO: add verbose mode: show files copied and js files loaded
     verbose=True
 
@@ -63,7 +63,7 @@ def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platfor
     if staticdata is None:
         staticdata = {}
 
-    html_path_output = os.path.join(outdir, "index.html")
+    html_path_output = os.path.join(outdir, htmlname)
     js_path_output = os.path.join(outdir, "static", "index.js")
     css_path_output = os.path.join(outdir, "static", "index.css")
 

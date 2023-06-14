@@ -62,6 +62,7 @@ class BuildCLI(CLI):
         subparser.add_argument('--env', type=str, action='append', default=[])
         subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('--static', type=str, default="./static")
+        subparser.add_argument('--htmlname', type=str, default="index.html")
         subparser.add_argument('index_js')
         subparser.add_argument('out')
 
@@ -89,7 +90,8 @@ class BuildCLI(CLI):
             paths=paths,
             platform=platform,
             minify=minify,
-            onefile=onefile)
+            onefile=onefile,
+            htmlname=args.htmlname)
 
 class BuildProfileCLI(CLI):
     """

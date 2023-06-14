@@ -6,7 +6,7 @@ import unittest
 from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
-from daedalus.parser import Parser
+from daedalus.parser import Parser, ParseError
 from daedalus.formatter import Formatter, isalphanum
 from daedalus.transform import TransformMinifyScope, TransformIdentityScope
 
@@ -1653,22 +1653,30 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    @unittest.expectedFailure
-    def test_001_expect_comma(self):
+    def test_001_expect_comma_a(self):
+        # python -m  tests.formatter_test -v FormatterTestCase.test_001_expect_comma
+
+        #  TODO: expect an error for a missing comma inside the arglist
+        text = """
+            f(1,
+              2 3)
+        """
+        tokens = self.lexer.lex(text)
+        with self.assertRaises(ParseError) as cm:
+            ast = self.parser.parse(tokens)
+
+    def test_001_expect_comma_b(self):
         # python -m  tests.formatter_test -v FormatterTestCase.test_001_expect_comma
 
         #  TODO: expect an error for a missing comma inside the arglist
         text = """
             f(1
-              2)
+              2,
+              3)
         """
-        expected = "f(1,2)"
         tokens = self.lexer.lex(text)
-        ast = self.parser.parse(tokens)
-        print(ast.toString(1))
-        output = self.formatter.format(ast)
-
-        self.assertNotEqual(expected, output)
+        with self.assertRaises(ParseError) as cm:
+            ast = self.parser.parse(tokens)
 
     @unittest.expectedFailure
     def test_001_expect_brace(self):

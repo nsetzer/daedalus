@@ -11,7 +11,35 @@ from urllib.parse import urlparse, unquote
 import mimetypes
 from collections import defaultdict
 
+from time import gmtime, strftime
+
 from .builder import Builder
+
+def path_join_safe(root_directory: str, filename: str) -> str:
+    """
+    join the two path components ensuring that the returned value
+    exists with root_directory as prefix.
+
+    Using this function can prevent files not intended to be exposed by
+    a webserver from being served, by making sure the returned path exists
+    in a directory under the root directory.
+
+    :param root_directory: the root directory. This must allways be provided by a trusted source.
+    :param filename: a relative path to a file. This may be provided from untrusted input
+    """
+
+    root_directory = root_directory.replace("\\", "/")
+    filename = filename.replace("\\", "/")
+
+    # check for illegal path components
+    parts = set(filename.split("/"))
+    if ".." in parts or "." in parts:
+        raise ValueError("invalid path")
+
+    path = os.path.join(root_directory, filename)
+    path = os.path.abspath(path)
+
+    return path
 
 class Response(object):
     def __init__(self, status_code=200, payload=None, compress=False):
@@ -402,9 +430,12 @@ class SampleResource(Resource):
     def get_static(self, request, location, matches):
         """
         serve files found inside the provided static directory
+
+        # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control#browser_compatibility
+        # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Last-Modified#browser_compatibility
+        # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag#browser_compatibility
         """
-        # Note: Not For Production Use. This is a security risk
-        path = os.path.join(self.static_path, matches['path'])
+        path = path_join_safe(self.static_path, matches['path'])
 
         if not os.path.exists(path):
             return JsonResponse({"error": "not found"}, status_code=404)
@@ -412,6 +443,11 @@ class SampleResource(Resource):
         response = Response(payload=open(path, "rb"))
         type, _ = mimetypes.guess_type(path)
         response.headers['Content-Type'] = type
+
+        gmt = gmtime(os.stat(path).st_mtime)
+        response.headers['Last-Modified'] = strftime("%a, %d %b %Y %H:%M:%S %Z", gmt)
+        response.headers['Cache-Control'] = " max-age=60, must-revalidate"
+
         return response
 
     @get("/favicon.ico")

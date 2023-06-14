@@ -895,6 +895,24 @@ class ParserKeywordTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    def test_001_for_of_seq(self):
+        text = "for (const x of [1,2,3]) {}"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FOR_OF', 'for',
+                TOKEN('T_VAR', 'const',
+                    TOKEN('T_TEXT', 'x')),
+                TOKEN('T_LIST', '[]',
+                    TOKEN('T_NUMBER', '1'),
+                    TOKEN('T_NUMBER', '2'),
+                    TOKEN('T_NUMBER', '3')),
+                TOKEN('T_BLOCK', '{}'))
+        )
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+
     def test_001_import_js(self):
 
         text = "import './file.js'"
