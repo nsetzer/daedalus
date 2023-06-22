@@ -5,6 +5,7 @@ import argparse
 import logging
 import time
 import cProfile
+import json
 
 from .builder import Builder
 from .server import SampleServer
@@ -19,6 +20,27 @@ from .cli_util import build
 from .vm import vmGetAst, VmRuntime
 from .vm_compiler import VmCompiler
 from .vm_repl import Repl
+
+def parse_env(envparams):
+    env = {}
+    for s in envparams:
+        ks, v = s.split('=', 1)
+        try:
+            v = json.loads(v)
+        except Exception as e:
+            print(e)
+            pass
+        parts = ks.split('.')
+        obj = env
+        k = parts.pop()
+        for part in parts:
+            if part not in obj:
+                obj[part] = {}
+            obj = obj[part]
+            if not isinstance(obj, dict):
+                raise KeyError(k)
+        obj[k] = v
+    return {"daedalus": {"env": env}}
 
 class Clock(object):
     def __init__(self, text):
@@ -59,7 +81,8 @@ class BuildCLI(CLI):
         subparser.add_argument('--minify', action='store_true')
         subparser.add_argument('--onefile', action='store_true')
         subparser.add_argument('--paths', default=None)
-        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--env', type=str, action='append', default=[],
+            help="key=value settings, can be provided multiple times")
         subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('--static', type=str, default="./static")
         subparser.add_argument('--htmlname', type=str, default="index.html")
@@ -81,8 +104,7 @@ class BuildCLI(CLI):
 
         paths.insert(0, os.path.split(index_js)[0])
 
-        envparams = args.env
-        staticdata = {"daedalus": {"env": dict([s.split('=', 1) for s in envparams])}}
+        staticdata = parse_env(args.env)
 
         build(outdir, index_js,
             staticdir=staticdir,
@@ -138,7 +160,8 @@ class ServeCLI(CLI):
         subparser.add_argument('--paths', default=None)
         subparser.add_argument('--host', default='0.0.0.0', type=str)
         subparser.add_argument('--port', default=4100, type=int)
-        subparser.add_argument('--env', type=str, action='append', default=[])
+        subparser.add_argument('--env', type=str, action='append', default=[],
+            help="key=value settings, can be provided multiple times")
         subparser.add_argument('--platform', type=str, default=None)
         subparser.add_argument('--static', type=str, default="./static")
         subparser.add_argument('--cert', type=str, default=None)
@@ -154,11 +177,14 @@ class ServeCLI(CLI):
         jspath = os.path.abspath(args.index_js)
         paths.insert(0, os.path.split(jspath)[0])
 
-        static_data = {"daedalus": {"env": dict([s.split('=', 1) for s in args.env])}}
+        staticdata = parse_env(args.env)
 
         server = SampleServer(args.host, args.port,
             args.index_js, paths,
-            static_data, args.static, platform=args.platform, onefile=args.onefile, minify=args.minify)
+            staticdata, args.static,
+            platform=args.platform,
+            onefile=args.onefile,
+            minify=args.minify)
         server.setCert(args.cert, args.keyfile)
         server.run()
 
