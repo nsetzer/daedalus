@@ -1525,6 +1525,42 @@ class Parser(ParserBase):
 
         token = tokens[index]
 
+        if token.type == Token.T_FUNCTIONCALL:
+            if token.children[0].type == Token.T_TEXT:
+
+                # treat the following pairs as equal
+                #
+                #    from module name import {...}
+                #    $import("name", {...})
+                #
+                #    import module name
+                #    $import("name")
+                #
+                #    include 'path.js'
+                #    $include('path.js')
+
+                if token.children[0].value == "$import":
+                    args = token.children[1].children
+                    if args[0].type == Token.T_COMMA:
+                        args = args[0].children
+                    token.type = Token.T_IMPORT_MODULE
+                    token.value = ast.literal_eval(args[0].value)
+                    if len(args) > 1:
+                        args[1].type = Token.T_OBJECT
+                        token.children = [args[1]]
+                    else:
+                        token.children = []
+                    return 1
+
+                if token.children[0].value == "$include":
+                    text = token.children[0]
+                    args = token.children[1].children
+                    token.type = Token.T_INCLUDE
+                    token.value = "include"
+                    token.children = [args[0]]
+                    return 1
+
+
         if token.type != Token.T_KEYWORD and \
            not (token.type == Token.T_TEXT and token.value in ('from', 'include', 'pyimport')):
             return 1
@@ -2551,7 +2587,13 @@ def main():  # pragma: no cover
     """
     # defining an object with numerical functions works in firefox
     text1 = """ let _ = {0x2 () {return 2}} """
-    text1 = """ Set[Symbol.species]"""
+    text1 = """
+        //from module engine import {Application as App}
+        //$import("engine")
+        //$import("engine", {Application as App})
+        include './foo.js'
+        $include('./foo.js')
+        """
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)
