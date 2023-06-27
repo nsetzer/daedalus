@@ -36,12 +36,16 @@ def findModule(name, search_paths):
         path_name = name.replace(".", "/")
         try:
             file_name = path_name.split("/")[-1]
-            path = findFile("%s/%s.js" % (path_name, file_name), search_paths)
+            file_path = "%s/%s.js" % (path_name, file_name)
+            # print(file_path, search_paths)
+            path = findFile(file_path, search_paths)
         except FileNotFoundError:
             path = None
 
         if path is None:
-            path = findFile(path_name + "/index.js", search_paths)
+            file_path = path_name + "/index.js"
+            # print(file_path, search_paths)
+            path = findFile(file_path, search_paths)
     return path
 
 def merge_imports(dst, src):

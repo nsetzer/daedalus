@@ -107,19 +107,27 @@ class Formatter(object):
         line_len = 0
         prev_type = Token.T_NEWLINE
         prev_text = ""
-        for depth, type, text in self.tokens:
+        pad = True
+        for depth, type_, text in self.tokens:
 
-            if type == Token.T_NEWLINE:
+            if type_ == Token.T_NEWLINE:
                 continue
 
-            if isalphanum(prev_text, text):
+            if pad and isalphanum(prev_text, text):
                 line_len += self.stream.write(" ")
+
+            # hack to prevent line breaks and white space from being inserted into template strings
+            if type_ == Token.T_SPECIAL and text == '`':
+                #TODO: support nesting by changing the token type to
+                #      FORMAT_START / FORMAT_END
+                pad = not pad
+
             line_len += self.stream.write(text)
 
-            if line_len > width and text in {'(', '{', '[', ';', ','}:
+            if pad and line_len > width and text in {'(', '{', '[', ';', ','}:
                 self.stream.write("\n")
                 line_len = 0
-            prev_type = type
+            prev_type = type_
             prev_text = text
         return self.stream.getvalue()
 
@@ -130,25 +138,32 @@ class Formatter(object):
         prev_type = Token.T_NEWLINE
         prev_text = ""
         padding = " " * self.indent_width
-        for depth, type, text in self.tokens:
+        pad = True
+        for depth, type_, text in self.tokens:
 
-            if line_len == 0 and type != Token.T_NEWLINE:
+            if line_len == 0 and type_ != Token.T_NEWLINE:
                 line_len += self.stream.write(padding * (depth-1))
 
-            elif isalphanum(prev_text, text):
+            elif pad and isalphanum(prev_text, text):
                 line_len += self.stream.write(" ")
+
+            # hack to prevent line breaks and white space from being inserted into template strings
+            if type_ == Token.T_SPECIAL and text == '`':
+                #TODO: support nesting by changing the token type to
+                #      FORMAT_START / FORMAT_END
+                pad = not pad
 
             line_len += self.stream.write(text)
 
-            if type == Token.T_NEWLINE:
+            if type_ == Token.T_NEWLINE:
                 line_len = 0
 
-            elif line_len > width and text in {'(', '{', '[', ';', ','}:
+            elif pad and line_len > width and text in {'(', '{', '[', ';', ','}:
                 self.stream.write("\n")
                 line_len += self.stream.write(padding * (depth-1))
                 line_len = 0
 
-            prev_type = type
+            prev_type = type_
             prev_text = text
         return self.stream.getvalue()
 
@@ -707,13 +722,17 @@ def main():  # pragma: no cover
     text1 = """
     class C {static #g static #f() {}  f2(){}}
     """
+    text1 = """
+    x = `${a}_${b}_${c}`
+    """
 
     tokens = Lexer().lex(text1)
     mod = Parser().parse(tokens)
 
     print(mod.toString())
 
-    text2 = Formatter({'minify': False}).format(mod)
+    text2 = Formatter({'minify': True}).format(mod)
+    # text2 = Formatter().format(mod)
 
     print("-" * 79)
 

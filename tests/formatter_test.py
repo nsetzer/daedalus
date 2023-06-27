@@ -37,7 +37,7 @@ class FormatterTestCase(unittest.TestCase):
     def tearDown(self):
         super().tearDown()
 
-    def _chkeq(self, text, expected, lexer_attrs=None, parser_attrs=None):
+    def _chkeq(self, text, expected, lexer_attrs=None, parser_attrs=None, minify=True):
         lexer = Lexer()
         tokens = lexer.lex(text)
         parser = Parser()
@@ -45,7 +45,8 @@ class FormatterTestCase(unittest.TestCase):
             for k, v in parser_attrs.items():
                 setattr(parser, k, v)
         ast = parser.parse(tokens)
-        output = self.formatter.format(ast)
+
+        output = Formatter({"minify": minify}).format(ast)
 
         self.assertEqual(expected, output)
 
@@ -210,7 +211,7 @@ class FormatterTestCase(unittest.TestCase):
             // b[0] = [ "x", "y" ]
             // b[1] = 0
         """,
-        """let f=function(){return arguments},a={'b':{'c':f}},x=0;let b=a.b.c`x ${x}y`""")
+        """let f=function(){return arguments},a={'b':{'c':f}},x=0;let b=a.b.c`x${x}y`""")
 
     def test_001_object_compute_key(self):
         text = "{[1 + 2]: 0}"
@@ -943,6 +944,11 @@ class FormatterTestCase(unittest.TestCase):
             var o = {a: 1, b:2, c:3, d:4};
             {a: a, b:b, c:c, d:d} = o
         """, 'var a,b,c,d;var o={a:1,b:2,c:3,d:4};{a:a,b:b,c:c,d:d}=o')
+
+    def test_001_template_string(self):
+        # should not insert white space
+        self._chkeq("`${a}_${b}_${c}`", '`${a}_${b}_${c}`')
+        self._chkeq("`${a}_${b}_${c}`", '`${a}_${b}_${c}`', minify=True)
 
     def test_001_tagged_template(self):
         self._chkeq("""
