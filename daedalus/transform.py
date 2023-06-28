@@ -2938,7 +2938,7 @@ def getModuleImportExport(ast, warn_include=False):
             name = literal_eval(token.children[0])
             imports[name] = []
 
-            ast.children.pop(0)
+            ast.children.pop(i)
 
         elif token.type == Token.T_IMPORT_MODULE:
 
@@ -2951,7 +2951,7 @@ def getModuleImportExport(ast, warn_include=False):
                     # import name from module and rename
                     fromlist.append((child.children[0].value, child.children[1].value))
 
-            ast.children.pop(0)
+            ast.children.pop(i)
 
             if token.value in module_imports:
                 module_imports[token.value].update(dict(fromlist))

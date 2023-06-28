@@ -1,4 +1,15 @@
 
+"""
+TODO: if a new include file is added to the project
+      a refresh will not pick up the new file
+      the server will need to be restarted.
+      fix loading new project files
+
+TODO: a syntax error inside a template string produces an incorrect
+      line number report in the the html error view
+
+TODO: option for clean build (ignore ast cache)
+"""
 import os
 import sys
 import time
@@ -152,7 +163,6 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     tok_ast = merge_ast(tok_imports, mod)
     tok_ast = merge_ast(tok_ast, tok_exports)
     tok_ast.children.insert(0, TOKEN('T_STRING', '"use strict"'))
-
     tok_fundef = TOKEN('T_ANONYMOUS_FUNCTION', 'function',
         TOKEN('T_TEXT', 'Anonymous'),
         TOKEN('T_ARGLIST', '()', *tok_import_names),
@@ -276,6 +286,8 @@ class JsFile(object):
         self.size = 0
         self.quiet = quiet
 
+        self.lexer_opts = {}
+
         if not name:
             self.name = os.path.splitext(os.path.split(name)[1])[0]
         else:
@@ -366,10 +378,11 @@ class JsFile(object):
             source = self.getSource()
             error = None
             try:
-                tokens = Lexer().lex(source)
+                tokens = Lexer(self.lexer_opts).lex(source)
                 for token in tokens:
                     token.file = self.source_path
                 parser = Parser()
+                parser.module_name = self.path
                 ast = parser.parse(tokens)
                 TransformConstEval().transform(ast)
                 uid = TransformExtractStyleSheet.generateUid(self.source_path)
@@ -428,6 +441,7 @@ class JsModule(object):
         self.uid = 0
         self.platform = platform
         self.quiet = quiet
+        self.lexer_opts = {}
 
     def _getFiles(self):
         # sort include files
@@ -481,7 +495,9 @@ class JsModule(object):
                     pass
                 elif path not in self.files:
                     tmp_name = os.path.splitext(os.path.split(path)[1])[0]
-                    queue.append(JsFile(path, tmp_name, 2, platform=self.platform, quiet=self.quiet))
+                    jf = JsFile(path, tmp_name, 2, platform=self.platform, quiet=self.quiet)
+                    jf.lexer_opts = self.lexer_opts
+                    queue.append(jf)
                     self.dirty = True
                 else:
                     queue.append(self.files[path])
@@ -541,7 +557,7 @@ class JsModule(object):
                 self.static_exports.add(key)
         if lines:
             source = "\n".join(lines)
-            tokens = Lexer().lex(source)
+            tokens = Lexer(self.lexer_opts).lex(source)
             ast = Parser().parse(tokens)
             self.static_data = ast
         else:
@@ -557,6 +573,7 @@ class Builder(object):
         self.source_types = {}
         self.quiet = True
         self.disable_warnings = False
+        self.lexer_opts = {}
 
         if static_data is None:
             static_data = {}
@@ -584,7 +601,6 @@ class Builder(object):
     def _name2path(self, name):
         return findModule(name, self.search_paths)
 
-
     def _discover(self, jsm):
 
         queue = [jsm]
@@ -600,10 +616,14 @@ class Builder(object):
                 if modpath not in self.files:
                     if modname.endswith(".js"):
                         modname = os.path.splitext(os.path.split(modpath)[1])[0]
-                    self.files[modpath] = JsFile(modpath, modname, 2, platform=self.platform, quiet=self.quiet)
+                    jf = JsFile(modpath, modname, 2, platform=self.platform, quiet=self.quiet)
+                    jf.lexer_opts = self.lexer_opts
+                    self.files[modpath] = jf
 
                 if modpath not in self.modules:
-                    self.modules[modpath] = JsModule(self.files[modpath], platform=self.platform, quiet=self.quiet)
+                    jm = JsModule(self.files[modpath], platform=self.platform, quiet=self.quiet)
+                    jm.lexer_opts = self.lexer_opts
+                    self.modules[modpath] = jm
                     self.modules[modpath].setStaticData(self.static_data.get(modname, None))
 
                 if modpath not in visited:
@@ -634,13 +654,17 @@ class Builder(object):
 
         if path not in self.files:
             name = os.path.splitext(os.path.split(path)[1])[0]
-            self.files[path] = JsFile(path, name, source_type, platform=self.platform, quiet=self.quiet)
+            jf = JsFile(path, name, source_type, platform=self.platform, quiet=self.quiet)
+            jf.lexer_opts = self.lexer_opts
+            self.files[path] = jf
 
         if self.files[path].source_type != source_type:
             raise Exception("incompatible types")
 
         if path not in self.modules:
-            self.modules[path] = JsModule(self.files[path], platform=self.platform, quiet=self.quiet)
+            jm = JsModule(self.files[path], platform=self.platform, quiet=self.quiet)
+            jm.lexer_opts = self.lexer_opts
+            self.modules[path] = jm
             self.modules[path].setStaticData(self.static_data.get(modname, None))
 
         self._discover(self.modules[path])
@@ -713,7 +737,7 @@ class Builder(object):
             for key, struct in mod_structure.items():
                 if struct:
                     source = '%s = %s' % (key, json.dumps(struct))
-                    tokens = Lexer().lex(source)
+                    tokens = Lexer(self.lexer_opts).lex(source)
                     ast = merge_ast(ast, Parser().parse(tokens))
 
             for mod in order:
@@ -774,10 +798,11 @@ class Builder(object):
     def build(self, path, minify=False, onefile=False):
         # make this have API functions which
         # can be overridden
-
         try:
             css, js, root = self._build_impl(path, minify=minify)
         except BuildError as e:
+            return self.build_error(e)
+        except FileNotFoundError as e:
             return self.build_error(e)
 
         script = '<script src="/static/index.js"></script>'
@@ -788,6 +813,7 @@ class Builder(object):
 
         if index_html is None:
             index_html = self.find("index.html")
+
         with open(index_html, "r") as hfile:
             html = hfile.read()
 

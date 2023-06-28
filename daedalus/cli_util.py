@@ -68,6 +68,7 @@ def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platfor
     css_path_output = os.path.join(outdir, "static", "index.css")
 
     builder = Builder(paths, staticdata, platform=platform)
+    builder.lexer_opts = {"preserve_documentation": not minify}
     builder.quiet = not verbose
     css, js, html = builder.build(index_js, minify=minify, onefile=onefile)
 

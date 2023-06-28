@@ -50,7 +50,8 @@ class TransformTemplateString(TransformBase):
                 type_ = Token.T_TEMPLATE_EXPRESSION if isExpr else Token.T_STRING
                 tok = Token(type_, 1, 0, text)
                 if isExpr:
-                    lexer = Lexer()
+                    # the option template_string is purely for debug purposes
+                    lexer = Lexer({"template_string": 1})
                     # TODO: column offset may not be perfect
                     lexer._first_token = (token.line,token.index + offset + 1)
                     ast = Parser().parse(lexer.lex(text))
@@ -254,6 +255,8 @@ class Parser(ParserBase):
             (L2R, self.visit_cleanup, []),
         ]
 
+        self.module_name = "<string>"
+
         self.warnings = {
             Parser.W_BRANCH_FALSE: "false branch of if statement is not safe",
             Parser.W_BRANCH_TRUE: "true branch of if statement is not safe",
@@ -317,8 +320,8 @@ class Parser(ParserBase):
         if message:
             text += ":" + message
 
-        text = "WARNING: line: %d column: %d type: %s value: %s : %s\n" % (
-            token.line, token.index, token.type, token.value, text)
+        text = "WARNING: module: %s line: %d column: %d type: %s value: %s : %s\n" % (
+            self.module_name, token.line, token.index, token.type, token.value, text)
 
         sys.stdout.write(text)
 

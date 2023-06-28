@@ -394,7 +394,6 @@ class Formatter(object):
 
                 out.append((depth, token.type, token.value))
             elif token.type == Token.T_DOCUMENTATION:
-
                 out.append((depth, token.type, token.value))
             elif token.type == Token.T_NEWLINE:
 
@@ -723,10 +722,12 @@ def main():  # pragma: no cover
     class C {static #g static #f() {}  f2(){}}
     """
     text1 = """
-    x = `${a}_${b}_${c}`
+    // comment
+    /* comment */
+    /** doc string */
     """
 
-    tokens = Lexer().lex(text1)
+    tokens = Lexer({"preserve_documentation": True}).lex(text1)
     mod = Parser().parse(tokens)
 
     print(mod.toString())

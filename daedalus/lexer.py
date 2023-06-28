@@ -244,6 +244,7 @@ class Lexer(LexerBase):
     """
     read tokens from a file or string
     """
+    debug = False
 
     def __init__(self, opts=None):
         super(Lexer, self).__init__()
@@ -251,6 +252,9 @@ class Lexer(LexerBase):
         if not opts:
             opts = {}
         self.preserve_documentation = opts.get('preserve_documentation', False)
+
+        #if Lexer.debug and 'template_string' not in opts:
+        #    print("lexer opts", opts, self.preserve_documentation)
 
     def lex(self, seq):
 
