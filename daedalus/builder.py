@@ -9,6 +9,17 @@ TODO: a syntax error inside a template string produces an incorrect
       line number report in the the html error view
 
 TODO: option for clean build (ignore ast cache)
+
+TODO: {"a", b:3} does not produce an error
+      missing string after property id
+
+TODO: formatter throw as a keyword does not space arguments
+            throw"error"
+      similar to else:  }else{; and if: if(
+
+TODO: in daedalus, implement a util for fmtFloat and fmtInt
+
+TODO "{x:,7}" should be a syntax error
 """
 import os
 import sys

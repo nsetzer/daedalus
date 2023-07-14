@@ -1700,6 +1700,39 @@ class FormatterTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         output = self.formatter.format(ast)
 
+    @unittest.expectedFailure
+    def test_001_object_comma_missing(self):
+
+        # python -m tests.formatter_test FormatterTestCase.test_001_expect_brace
+        text = """
+            const obj = {
+                x:1
+                y:2
+            }
+
+        """
+        tokens = Lexer().lex(text)
+
+        ast = Parser().parse(tokens)
+        output = self.formatter.format(ast)
+
+    @unittest.expectedFailure
+    def test_001_object_comma_extra(self):
+
+        # python -m tests.formatter_test FormatterTestCase.test_001_expect_brace
+        text = """
+            const obj = {
+                x:1,
+                y:,2,
+                z:3,
+            }
+
+        """
+        tokens = Lexer().lex(text)
+
+        ast = Parser().parse(tokens)
+        output = self.formatter.format(ast)
+
 class FormatterStressTestCase(unittest.TestCase):
 
     @classmethod

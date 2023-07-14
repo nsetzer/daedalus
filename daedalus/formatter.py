@@ -726,6 +726,12 @@ def main():  # pragma: no cover
     /* comment */
     /** doc string */
     """
+    text1= """{
+        x:1
+        y:,2,
+        z:3
+    }
+    """
 
     tokens = Lexer({"preserve_documentation": True}).lex(text1)
     mod = Parser().parse(tokens)
