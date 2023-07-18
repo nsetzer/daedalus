@@ -327,6 +327,38 @@ class RunCLI(CLI):
         rv, _ = runtime.run_text(open(jspath).read())
         return 0 # todo return proper exit status
 
+class ModPackCLI(CLI):
+    """ package a single daedalus module for export
+        allows importing said module using modern js syntax
+
+        this cli tool is a placeholder. serving to document this feature.
+
+        In order to support modern js, which uses modules, a new builder
+        will need to be written. this builder should output valid js modules
+
+        daedalus modpack  res/daedalus/daedalus.js ./dist/daedalus.jsm
+    """
+
+    def register(self, parser):
+        subparser = parser.add_parser('modpack',
+            description=self.__doc__,
+            help=self.__doc__.strip().split("\n")[0])
+        subparser.set_defaults(func=self.execute, cli=self)
+
+        subparser.add_argument('--minify', action='store_true')
+        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--env', type=str, action='append', default=[],
+            help="key=value settings, can be provided multiple times")
+        subparser.add_argument('--platform', type=str, default=None)
+        subparser.add_argument('--static', type=str, default="./static")
+        subparser.add_argument('index_js')
+        subparser.add_argument('out')
+
+    def execute(self, args):
+
+        return 0 # todo return proper exit status
+
+
 def register_parsers(parser):
 
     BuildCLI().register(parser)

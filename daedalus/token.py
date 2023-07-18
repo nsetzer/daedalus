@@ -190,14 +190,14 @@ class Token(object):
     T_BLOCK_PUSH = "T_BLOCK_PUSH"
     T_BLOCK_POP = "T_BLOCK_POP"
 
-    def __init__(self, type, line=0, index=0, value="", children=None):
+    def __init__(self, type, line=0, index=0, value="", children=None,file=None):
         super(Token, self).__init__()
         self.type = type
         self.line = line
         self.index = index
         self.value = value
         self.children = list(children) if children is not None else []
-        self.file = None
+        self.file = file
         self.original_value = None
         self.ref = None
         self.ref_attr = 0 # 1: define, 2: store, 4: load

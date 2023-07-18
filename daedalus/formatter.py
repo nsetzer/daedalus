@@ -17,6 +17,7 @@ import sys
 import io
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser
+from .sourcemap import SourceMap
 
 class FormatError(TokenError):
     pass
@@ -70,6 +71,8 @@ def isctrlflow(child):
     elif child.type == Token.T_DOWHILE:
         if (child.children[-1].type == Token.T_ARGLIST):
             return True
+    elif child.type == Token.T_DOCUMENTATION:
+        return True
     return False
 
 class Formatter(object):
@@ -91,6 +94,8 @@ class Formatter(object):
         self._prev = self._null
         self._prev_char = ''
 
+        self.sourcemap = SourceMap()
+
         self.tokens = self._format(mod)
 
         if self.pretty_print:
@@ -108,13 +113,14 @@ class Formatter(object):
         prev_type = Token.T_NEWLINE
         prev_text = ""
         pad = True
-        for depth, type_, text in self.tokens:
+        for depth, token, type_, text in self.tokens:
 
             if type_ == Token.T_NEWLINE:
                 continue
 
             if pad and isalphanum(prev_text, text):
                 line_len += self.stream.write(" ")
+                self.sourcemap.column += 1
 
             # hack to prevent line breaks and white space from being inserted into template strings
             if type_ == Token.T_SPECIAL and text == '`':
@@ -122,9 +128,16 @@ class Formatter(object):
                 #      FORMAT_START / FORMAT_END
                 pad = not pad
 
+            if isinstance(token, Token):
+                self.sourcemap.write(token)
+                self.sourcemap.column += len(text)
+            else:
+                self.sourcemap.column += len(text)
+
             line_len += self.stream.write(text)
 
             if pad and line_len > width and text in {'(', '{', '[', ';', ','}:
+                self.sourcemap.write_line()
                 self.stream.write("\n")
                 line_len = 0
             prev_type = type_
@@ -139,12 +152,20 @@ class Formatter(object):
         prev_text = ""
         padding = " " * self.indent_width
         pad = True
-        for depth, type_, text in self.tokens:
+        for depth, token, type_, text in self.tokens:
+
+            #print("%32s: %r" % (type_, text))
+
+            ##if self.sourcemap.debug_count < 5:
+            ##    print(self.sourcemap.column, type_, text)
 
             if line_len == 0 and type_ != Token.T_NEWLINE:
-                line_len += self.stream.write(padding * (depth-1))
+                padding_string = padding * (depth-1)
+                self.sourcemap.column += len(padding_string)
+                line_len += self.stream.write(padding_string)
 
             elif pad and isalphanum(prev_text, text):
+                self.sourcemap.column += 1
                 line_len += self.stream.write(" ")
 
             # hack to prevent line breaks and white space from being inserted into template strings
@@ -153,18 +174,35 @@ class Formatter(object):
                 #      FORMAT_START / FORMAT_END
                 pad = not pad
 
+            if isinstance(token, Token):
+                self.sourcemap.write(token)
+                if not type_ == Token.T_NEWLINE:
+                    self.sourcemap.column += len(text)
+                else:
+                    self.sourcemap.column = 0
+            else:
+                if text != "\n":
+                    self.sourcemap.column += len(text)
+                else:
+                    self.sourcemap.write_line()
+                    self.sourcemap.column = 0
+
             line_len += self.stream.write(text)
 
             if type_ == Token.T_NEWLINE:
                 line_len = 0
 
             elif pad and line_len > width and text in {'(', '{', '[', ';', ','}:
+                self.sourcemap.write_line()
                 self.stream.write("\n")
-                line_len += self.stream.write(padding * (depth-1))
+                padding_string = padding * (depth-1)
+                self.sourcemap.column += len(padding_string)
+                line_len += self.stream.write(padding_string)
                 line_len = 0
 
             prev_type = type_
             prev_text = text
+
         return self.stream.getvalue()
 
     def _format(self, token):
@@ -177,11 +215,24 @@ class Formatter(object):
         out = []
 
         while seq:
-            depth, state, token = seq.pop()
+            arg = seq.pop()
+            if len(arg) == 4:
+                depth, visit, state, token = arg
+                if isinstance(token, str):
+                    _text = token
+                else:
+                    _text = token.value
+            else:
+                depth, state, token = arg
+                if isinstance(token, str):
+                    _text = token
+                    visit = False
+                else:
+                    _text = token.value
+                    visit = True
 
-            if isinstance(token, str):
-
-                out.append((depth, state, token))
+            if not visit:
+                out.append((depth, token, state, _text))
             elif token.type == Token.T_MODULE:
                 insert = False
                 if self.pretty_print and len(token.children) > 0 and not isctrlflow(token.children[-1]):
@@ -329,13 +380,13 @@ class Formatter(object):
                         first = False
             elif token.type in (Token.T_TEXT, Token.T_GLOBAL_VAR, Token.T_LOCAL_VAR, Token.T_FREE_VAR):
 
-                out.append((depth, token.type, token.value))
+                out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_REGEX:
 
-                out.append((depth, token.type, token.value))
+                out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_NUMBER:
                 num = token.value.replace("_", "")
-                out.append((depth, token.type, num))
+                out.append((depth, token, token.type, num))
             elif token.type == Token.T_TAGGED_TEMPLATE:
                 lhs,rhs = token.children
                 seq.append((depth, None, rhs))
@@ -355,7 +406,7 @@ class Formatter(object):
                 seq.append((depth, Token.T_SPECIAL, '`'))
             elif token.type == Token.T_STRING:
 
-                out.append((depth, token.type, token.value))
+                out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_KEYWORD:
 
                 if token.value == "static" and len(token.children)>0:
@@ -363,10 +414,10 @@ class Formatter(object):
                     for child in reversed(token.children):
                         seq.append((depth, None, child))
                     seq.append((depth, Token.T_SPECIAL, ' '))
-                out.append((depth, token.type, token.value))
+                out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_STATIC_PROPERTY:
 
-                out.append((depth, token.type, token.value))
+                out.append((depth, token, token.type, token.value))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
             elif token.type == Token.T_OPTIONAL_CHAINING:
@@ -392,9 +443,12 @@ class Formatter(object):
                     raise FormatError(token, "not supported")
             elif token.type == Token.T_ATTR:
 
-                out.append((depth, token.type, token.value))
+                out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_DOCUMENTATION:
-                out.append((depth, token.type, token.value))
+                parts = token.value.splitlines()
+                for part in parts:
+                    out.append((depth, token, token.type, part))
+                    out.append((depth, None, Token.T_NEWLINE, "\n"))
             elif token.type == Token.T_NEWLINE:
 
                 raise FormatError(token, "unexpected")
@@ -425,7 +479,7 @@ class Formatter(object):
                 seq.append((depth, None, token.children[2]))
                 seq.append((depth, None, token.children[1]))
                 seq.append((depth, None, token.children[0]))
-                seq.append((depth, token.type, token.value))
+                seq.append((depth, False, token.type, token))
             elif token.type == Token.T_METHOD:
                 seq.append((depth, None, token.children[2]))
                 seq.append((depth, None, token.children[1]))
@@ -537,12 +591,17 @@ class Formatter(object):
                     if not isctrlflow(token.children[2]):
                         seq.append((depth, Token.T_SPECIAL, ";"))
                     seq.append((depth, None, token.children[2]))
+
+                    # note: for source maps, else doesnt exist
+                    # tok = Token(Token.T_KEYWORD, token.line, token.index, "else", file=token.file)
+                    # seq.append((depth, False, Token.T_KEYWORD, tok))
+
                     seq.append((depth, Token.T_KEYWORD, "else"))
                 if not isctrlflow(token.children[1]):
                     seq.append((depth, Token.T_SPECIAL, ";"))
                 seq.append((depth, None, token.children[1]))
                 seq.append((depth, None, token.children[0]))
-                seq.append((depth, token.type, token.value))
+                seq.append((depth, False, token.type, token))
             elif token.type == Token.T_FOR:
                 if len(token.children) == 1:
                     sys.stderr.write("error: line: %d col: %d" % (token.line, token.index));
@@ -634,7 +693,6 @@ class Formatter(object):
                 if self.pretty_print:
                     seq.append((depth, Token.T_SPECIAL, " "))
                 seq.append((depth, token.type, token.value))
-
             elif token.type == Token.T_DEFAULT:
                 #first = True
                 for child in reversed(token.children):
@@ -651,11 +709,11 @@ class Formatter(object):
                 for child in reversed(token.children):
                     seq.append((depth, child.type, child.value))
 
-                out.append((depth,token.type, token.value))
+                out.append((depth,token, token.type, token.value))
             elif token.type == Token.T_RETURN:
                 for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))
-                seq.append((depth, token.type, token.value))
+                seq.append((depth, False, token.type, token))
             elif token.type == Token.T_NEW:
                 for child in reversed(token.children):  # length is zero or one
                     seq.append((depth, None, child))

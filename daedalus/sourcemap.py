@@ -2,9 +2,13 @@
 import sys
 import io
 import base64
+from .lexer import Lexer, Token, TokenError
 
 class SourceMap(object):
     """
+    this implements a restricted subset of the full version 3 spec
+    only 4-field VLQs are supported
+
     5 fields: output column, file index, input line, input column, name index
     4 fields: output column, file index, input line, input column,
     1 fields: column
@@ -14,28 +18,22 @@ class SourceMap(object):
     def __init__(self):
         super(SourceMap, self).__init__()
 
-        self.version = "3"
-        self.sources = []
+        self.version = 3
+        self.sources = {}
         self.names = {}
-        self.mappings = []
+        # the first line is for the comment indicating
+        # where the source map is located
+        # effectively ones-based indexing
+        self.mappings = [[],[]]
         self.sourceRoot = ""
-        self.file = ""
         self.column = 0
 
-    def toJsonObject(self):
+        self.last_field = None
 
-        mappings = ";".join([",".join(m) for m in self.mappings])
+        self.debug_count = 0
 
-        obj = {
-            "version": self.version,
-            "sources": self.sources,
-            "names": self.names,
-            "mappings": mappings,
-        }
-
-        return obj
-
-    def _encode(self, value):
+    @staticmethod
+    def _encode(value):
 
         text = ""
         # 456 : 1 1000 0 | 0 11100
@@ -60,12 +58,15 @@ class SourceMap(object):
 
             text += SourceMap.ALPHABET[tmp]
 
+
         return text
 
-    def b64encode(self, seq):
-        return ''.join(self._encode(i) for i in seq)
+    @staticmethod
+    def b64encode(seq):
+        return ''.join(SourceMap._encode(i) for i in seq)
 
-    def b64decode(self, text):
+    @staticmethod
+    def b64decode(text):
 
         seq = []
 
@@ -73,7 +74,10 @@ class SourceMap(object):
         sign = 1
         value = 0
         for char in text:
-            i = SourceMap.ALPHABET.index(char)
+            try:
+                i = SourceMap.ALPHABET.index(char)
+            except ValueError:
+                raise ValueError(f"{char} not found in alphabet")
             if pos == 0:
                 if i & 1:
                     sign = -1
@@ -90,22 +94,76 @@ class SourceMap(object):
                 pos = 0
         return seq
 
+    @staticmethod
+    def decode(mappings):
+        fields = []
+        last_field = [0,0,0,0]
+        for line in mappings.split(";"):
+            # the column index resets to zero for every line
+            last_field = last_field[:]
+            last_field[0] = 0
+            fields.append([])
+            if line:
+                mapping = line.split(",")
+                for field in [SourceMap.b64decode(vlq) for vlq in mapping]:
+
+                    field = [(a+b) for a,b in zip(field, last_field)]
+                    last_field = field
+                    fields[-1].append(field)
+        return fields
+
+    def write_line(self):
+        self.mappings.append([])
+        self.column = 0
+        if self.last_field:
+            self.last_field[0] = 0
+
     def write(self, token):
 
         if token.type == Token.T_NEWLINE:
-            self.mappings.append([])
-            self.column = 0
+            self.write_line()
 
-        elif token.type == Token.T_TEXT:
-            fields = [self.column, token.file, token.line, token.column]
-            if token.original_value:
-                fields.append(self.getIndex(token.original_value))
-            self.mappings[-1].append(self.b64encode(fields))
-            self.column += len(token.value)
         else:
-            self.column += len(token.value)
 
-    def getIndex(self, name):
+            if token.type == Token.T_DOCUMENTATION:
+                return
+
+
+            if token.file is not None:
+
+                if token.file not in self.sources:
+                    self.sources[token.file] = len(self.sources)
+                file_index = self.sources[token.file]
+
+                field = [self.column, file_index, token.line-1, token.index]
+                # optional fifth field for symbol name
+                #if token.original_value:
+                #    field.append(self._getNameIndex(token.original_value))
+
+                if self.last_field:
+                    delta_field = [(a-b) for a,b in zip(field, self.last_field)]
+                    vlq = SourceMap.b64encode(delta_field)
+                else:
+                    vlq = SourceMap.b64encode(field)
+
+                self.last_field = field
+
+                self.mappings[-1].append(vlq)
+
+    def _getNameIndex(self, name):
         if name not in self.names:
             self.names[name] = len(self.names)
         return self.names[name]
+
+    def getSourceMap(self):
+        # https://sourcemaps.info/spec.html#h.lmz475t4mvbx
+        mappings = ";".join([",".join(mapping) for mapping in self.mappings])
+        return {
+            "version" : self.version,
+            # "file": "index.js",
+            # "sourceRoot": "/static/sourcemap/src/",
+            "sources": list(self.sources.keys()),
+            #"sourcesContent": [null, null],
+            "names": list(self.names.keys()),
+            "mappings": mappings
+        }

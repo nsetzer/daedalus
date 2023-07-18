@@ -188,6 +188,14 @@ class ParserBase(object):
 
                 i += callback(token, token.children, j, operators)
 
+def xform_apply_file(mod, filepath):
+
+    seq = [mod]
+    while seq:
+        child = seq.pop(0)
+        seq.extend(child.children)
+        child.file = filepath
+
 class Parser(ParserBase):
 
     W_BRANCH_FALSE = 1
@@ -278,7 +286,7 @@ class Parser(ParserBase):
 
         self._offset = 0  # used by consume in the negative direction
 
-    def parse(self, tokens):
+    def parse(self, tokens, source_file=None):
 
         mod = super().parse(tokens)
 
@@ -293,6 +301,8 @@ class Parser(ParserBase):
 
         # the template transform is last because it recursively uses the parser
         TransformTemplateString().transform(mod)
+
+
 
         return mod
 

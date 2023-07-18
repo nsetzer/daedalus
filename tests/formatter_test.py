@@ -71,13 +71,13 @@ class FormatterTestCase(unittest.TestCase):
          */
         x = 1
         """
-
-        expected = "/**\n         * comment\n         */;x=1"
+        # with minify = True there should be no new lines
+        expected = "/**         * comment         */x=1"
         tokens = Lexer({'preserve_documentation': True}).lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
 
-        self.assertEqual(expected, output)
+        self.assertEqual(expected.replace("\n","\\n"), output.replace("\n","\\n"))
 
     def test_001_number_separated(self):
         self._chkeq("""1_234.000_000""", "1234.000000")

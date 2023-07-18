@@ -27,7 +27,7 @@ import time
 from . import __path__
 import json
 from .lexer import Lexer, Token, TokenError
-from .parser import Parser
+from .parser import Parser, xform_apply_file
 from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
     TransformConstEval, getModuleImportExport
 from .formatter import Formatter
@@ -97,7 +97,7 @@ def buildFileIIFI(mod, exports):
 
     def TOKEN(type, value, *children):
         tok = Token(type, 1, 0, value, children)
-        tok.file = "<file_iifi>"
+        #tok.file = "<file_iifi>"
         return tok
 
     tok_export_names1 = [TOKEN('T_TEXT', text) for text in sorted(exports)]
@@ -136,7 +136,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
 
     def TOKEN(type, value, *children):
         tok = Token(type, 1, 0, value, children)
-        tok.file = "<module_iifi>"
+        #tok.file = "<module_iifi>"
         return tok
 
     import_names = sorted(list(imports.keys()))
@@ -415,6 +415,9 @@ class JsFile(object):
 
             data = (self.size, self.ast, self.imports,
                 self.module_imports, self.exports, self.styles)
+
+            xform_apply_file(self.ast, self.name)
+
             with open(cachepath, 'wb') as f:
                 pickle.dump(data, f)
 
@@ -438,11 +441,13 @@ class JsFile(object):
         return False
 
 class JsModule(object):
-    def __init__(self, index_js, platform=None, quiet=False):
+    def __init__(self, index_js, module_name=None, platform=None, quiet=False):
         super(JsModule, self).__init__()
         self.index_js = index_js
         self.files = {index_js.path: index_js}
         self.static_data = None
+        self.module_name = module_name or os.path.split(os.path.split(index_js.path)[0])[1]
+
         self.module_exports = set()
         self.module_imports = {}
         self.static_exports = set()
@@ -506,6 +511,8 @@ class JsModule(object):
                     pass
                 elif path not in self.files:
                     tmp_name = os.path.splitext(os.path.split(path)[1])[0]
+                    if self.module_name:
+                        tmp_name = self.module_name + "." + tmp_name
                     jf = JsFile(path, tmp_name, 2, platform=self.platform, quiet=self.quiet)
                     jf.lexer_opts = self.lexer_opts
                     queue.append(jf)
@@ -626,13 +633,16 @@ class Builder(object):
 
                 if modpath not in self.files:
                     if modname.endswith(".js"):
-                        modname = os.path.splitext(os.path.split(modpath)[1])[0]
+                        modname = jos.path.splitext(os.path.split(modpath)[1])[0]
+                    #modname =  jsm.module_name + "." + modname
                     jf = JsFile(modpath, modname, 2, platform=self.platform, quiet=self.quiet)
                     jf.lexer_opts = self.lexer_opts
                     self.files[modpath] = jf
 
                 if modpath not in self.modules:
-                    jm = JsModule(self.files[modpath], platform=self.platform, quiet=self.quiet)
+                    modname = os.path.split(os.path.split(self.files[modpath].path)[0])[1]
+                    #modname =  jsm.module_name + "." + modname
+                    jm = JsModule(self.files[modpath], module_name=modname, platform=self.platform, quiet=self.quiet)
                     jm.lexer_opts = self.lexer_opts
                     self.modules[modpath] = jm
                     self.modules[modpath].setStaticData(self.static_data.get(modname, None))
@@ -673,6 +683,7 @@ class Builder(object):
             raise Exception("incompatible types")
 
         if path not in self.modules:
+            print("adding module", self.files[path].path)
             jm = JsModule(self.files[path], platform=self.platform, quiet=self.quiet)
             jm.lexer_opts = self.lexer_opts
             self.modules[path] = jm
@@ -774,7 +785,34 @@ class Builder(object):
                 self.globals = xform.transform(ast)
 
             formatter = Formatter(opts={'minify': minify})
+
+
             js = formatter.format(ast)
+
+
+            sources = formatter.sourcemap.sources
+            name2path = {}
+            url2path = {}
+            url2index = {}
+            for path, jf in self.files.items():
+                name2path[jf.name] = path
+
+            for name in sources.keys():
+                if name in name2path:
+                    abspath = name2path[name]
+                    url = f'/static/srcmap/{name.replace(".", "/")}.js'
+                    url2index[url] = sources[name]
+                    url2path[url] = abspath
+                else:
+                    raise Exception(name)
+
+            formatter.sourcemap.sources = url2index
+            formatter.sourcemap.source_routes = url2path
+
+            # the sourcemap payload is:
+            #  - a dictionary mapping a url to a local path
+            #  - a json object, the source map data.
+            sourcemap = (url2path, json.dumps(formatter.sourcemap.getSourceMap()))
 
         except TokenError as e:
             filepath = ""
@@ -804,17 +842,23 @@ class Builder(object):
         t2 = time.time()
         if not self.quiet:
             sys.stderr.write("%10d %.2f %.2f%% of %d bytes\n" % (final_source_size, t2 - t1, p, source_size))
-        return css, js, export_name
+
+        return css, js, sourcemap, export_name
 
     def build(self, path, minify=False, onefile=False):
         # make this have API functions which
         # can be overridden
         try:
-            css, js, root = self._build_impl(path, minify=minify)
+            css, js, sourcemap, root = self._build_impl(path, minify=minify)
         except BuildError as e:
             return self.build_error(e)
         except FileNotFoundError as e:
             return self.build_error(e)
+
+        # for the sourcemap, prepend this line in the js output
+        # //# sourceMappingURL=example.out.js.map\n
+        #
+        self.sourcemap = sourcemap
 
         script = '<script src="/static/index.js"></script>'
         try:
@@ -839,7 +883,7 @@ class Builder(object):
             .replace("<!--FAVICON-->", self.getHtmlFavIcon()) \
             .replace("<!--STYLE-->", self.getHtmlStyle(css, onefile)) \
             .replace("<!--SOURCE-->", self.getHtmlSource(js, onefile)) \
-            .replace("<!--EVENT-->", self.getHtmlEvent(js, onefile)) \
+            .replace("<!--EVENT-->", self.getHtmlEvent(onefile)) \
             .replace("<!--RENDER-->", self.getHtmlRender(render_function, root))
 
         return css, js, html
@@ -923,7 +967,7 @@ class Builder(object):
         else:
             return f'<script type="text/javascript" src="{prefix}static/index.js"></script>'
 
-    def getHtmlEvent(self, js, onefile):
+    def getHtmlEvent(self, onefile):
         """
         Returns platform dependent HTML/JS for handling API gateways
         """
