@@ -165,9 +165,9 @@ class GamePanel extends DomElement {
             counter: new TextElement(""),
             btnNewGame: new ButtonElement("New Game", this.handleNewGame.bind(this)),
             newGame: () => {console.log("error")},
-            inpWidth: new NumberInputElement(),
-            inpHeight: new NumberInputElement(),
-            inpCount: new NumberInputElement(),
+            inpWidth: new TextElement("fixme"), // require number input element
+            inpHeight: new TextElement("fixme"),
+            inpCount: new TextElement("fixme"),
         }
 
         this.attrs.btnNewGame.addClassName(style.button)
@@ -444,7 +444,7 @@ export class Game extends DomElement {
     constructor() {
         super("div", {className: style.block}, [])
 
-        const em_width = getComputedStyle(document.querySelector('body'))['font-size']
+        const em_width = window.getComputedStyle(document.querySelector('body'))['font-size']
         const width = window.innerWidth / parseFloat(em_width)
         const default_size = Math.floor(Math.min(0.7 * (width / 1.7), 15))
         const default_count = Math.ceil(0.15 * default_size * default_size)

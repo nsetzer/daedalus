@@ -5,10 +5,11 @@ TODO: if a new include file is added to the project
       the server will need to be restarted.
       fix loading new project files
 
-TODO: a syntax error inside a template string produces an incorrect
-      line number report in the the html error view
-
 TODO: option for clean build (ignore ast cache)
+
+TODO: js ast cache needs a machine uuid embedded
+      daedalus commit hash?
+      date? to invalidate the cache after some time
 
 TODO: {"a", b:3} does not produce an error
       missing string after property id
@@ -17,9 +18,11 @@ TODO: formatter throw as a keyword does not space arguments
             throw"error"
       similar to else:  }else{; and if: if(
 
-TODO: in daedalus, implement a util for fmtFloat and fmtInt
+TODO: in daedalus-js, implement a util for fmtFloat and fmtInt
 
 TODO "{x:,7}" should be a syntax error
+
+
 """
 import os
 import sys
@@ -786,9 +789,7 @@ class Builder(object):
 
             formatter = Formatter(opts={'minify': minify})
 
-
             js = formatter.format(ast)
-
 
             sources = formatter.sourcemap.sources
             name2path = {}
@@ -804,7 +805,7 @@ class Builder(object):
                     url2index[url] = sources[name]
                     url2path[url] = abspath
                 else:
-                    raise Exception(name)
+                    print("sourcemap not found:", name)
 
             formatter.sourcemap.sources = url2index
             formatter.sourcemap.source_routes = url2path

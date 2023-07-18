@@ -145,7 +145,8 @@ try:
             print("--", isinstance(obj, QObject))
             self.channel.registerObject(name, obj)
 
-except ImportError:
+except ImportError as e:
+    print(e)
     print("daedalus webview import error")
 
     def export_webchannel_js(path):

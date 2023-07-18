@@ -333,7 +333,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             print(e)
 
     def acceptsGzip(self):
-        return "gzip" in self.headers['Accept-Encoding'].lower()
+        if 'Accept-Encoding' in self.headers:
+            h = self.headers['Accept-Encoding']
+            return h and "gzip" in h.lower()
+        return False
 
 class TcpServer(socketserver.TCPServer):
     allow_reuse_address = True

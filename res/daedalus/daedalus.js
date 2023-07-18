@@ -138,6 +138,7 @@ function workLoop(deadline=null) {
             }
         }
     } catch (e) {
+        console.log(e)
         console.error("unhandled workloop exception: " + e.message)
     }
 
