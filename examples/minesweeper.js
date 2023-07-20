@@ -3,7 +3,7 @@
 from module daedalus import {
     StyleSheet, DomElement,
     TextElement, ListItemElement, ListElement,
-    HeaderElement, ButtonElement, NumberInputElement, LinkElement
+    HeaderElement, ButtonElement, LinkElement
 }
 
 const style = {
@@ -100,6 +100,37 @@ StyleSheet(`.${style.button}:active`, {
     'background-image': 'linear-gradient(#063f19, #0c7f33)';
 })
 
+class NumberInputElement extends DomElement {
+
+    constructor(value) {
+        super("input", {value: value, type: "number"}, []);
+
+
+    }
+
+    getValue() {
+
+
+        return this.props.value
+    }
+
+    onChange(event) {
+        this.updateProps({value: parseInt(event.target.value, 10)}, false)
+        console.log(event.target.value)
+    }
+
+    onPaste(event) {
+        this.updateProps({value: parseInt(event.target.value, 10)}, false)
+        console.log(event.target.value)
+    }
+
+    onKeyUp(event) {
+    }
+
+    onInput(event) {
+    }
+}
+
 class GameCell extends DomElement {
     constructor(board, row, col) {
         super("div", {className: style.cell}, [])
@@ -165,9 +196,9 @@ class GamePanel extends DomElement {
             counter: new TextElement(""),
             btnNewGame: new ButtonElement("New Game", this.handleNewGame.bind(this)),
             newGame: () => {console.log("error")},
-            inpWidth: new TextElement("fixme"), // require number input element
-            inpHeight: new TextElement("fixme"),
-            inpCount: new TextElement("fixme"),
+            inpWidth: new NumberInputElement(), // require number input element
+            inpHeight: new NumberInputElement(),
+            inpCount: new NumberInputElement(),
         }
 
         this.attrs.btnNewGame.addClassName(style.button)
@@ -199,20 +230,31 @@ class GamePanel extends DomElement {
 
     handleNewGame(event) {
         console.log(this.attrs.newGame)
-        this.attrs.newGame(
-            this.attrs.inpWidth.props.value,
-            this.attrs.inpHeight.props.value,
-            this.attrs.inpCount.props.value,
-        )
+
+        const w = this.attrs.inpWidth.getValue()
+        const h = this.attrs.inpHeight.getValue()
+        const c = Math.min(w*h-1, this.attrs.inpCount.getValue())
+        this.attrs.newGame(w, h, c)
 
     }
 
     setNewGameCallback(callback) {
         this.attrs.newGame = callback
     }
-
 }
 
+function shuffle(array) {
+  let currentIndex = array.length,  randomIndex;
+
+  while (currentIndex != 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = \
+        [array[randomIndex], array[currentIndex]];
+  }
+
+  return array;
+}
 
 class GameBoard extends DomElement {
     constructor(width, height, mineCount) {
@@ -233,6 +275,8 @@ class GameBoard extends DomElement {
         this.children = []
 
         this.attrs.initialized = false
+
+        console.log("mineCount", mineCount)
 
         this.updateState({
             width: width,
@@ -258,20 +302,28 @@ class GameBoard extends DomElement {
     }
 
     placeMines(mrow, mcol) {
-        let placed = 0
-        while (placed < this.state.mineCount) {
 
-            let row = daedalus.util.randomInt(0, this.state.height-1);
-            let col = daedalus.util.randomInt(0, this.state.width-1);
-            // don't place a mine where the user clicked
-            if (row == mrow && col == mcol) {
-                continue
+        // get a list of all valid positions
+        let positions = []
+        for (let x=0; x < this.state.width; x++) {
+            for (let y=0; y < this.state.height; y++) {
+                if (!(y == mrow && x == mcol)) {
+                    positions.push({x,y})
+                }
             }
-            const cell = this.children[row].children[col];
-            if (!cell.state.isMine) {
-                cell.updateState({isMine: true});
-                placed++;
-            }
+        }
+
+        // shuffle the possible positions
+        positions = shuffle(positions)
+
+        // pick N positions
+        let placed = 0
+        while (placed < this.state.mineCount && positions.length > 0) {
+            let pos = positions.shift();
+
+            const cell = this.children[pos.y].children[pos.x];
+            cell.updateState({isMine: true});
+            placed++;
         }
     }
 
@@ -426,18 +478,12 @@ class GameBoard extends DomElement {
                     }
                 }
                 cells = cells.filter(c => !c.state.isRevealed)
-                const flag = !cells.reduce((a, c)=> a && c.state.isFlagged, true)
-                cells.forEach(c => {
-                    ///c.updateState({isFlagged: flag})
-                    //const cls = flag?style.cellf:style.cell
-                    //c.updateProps({className: cls})
-                    this.flagCell(c, flag)
-                })
+                const flag = !(cells.reduce((a, c)=> a && c.state.isFlagged, true))
+                cells.forEach(cell => this.flagCell(cell, flag))
 
             }
         }
     }
-
 }
 
 export class Game extends DomElement {
