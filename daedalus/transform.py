@@ -660,6 +660,12 @@ class Ref(object):
         # the full scope name for this ref
         s = 'f' if self.flags & SC_FUNCTION else 'b'
         self.name = "%s.%s@%s%d" % (scname, label, s, counter)
+        # reference count for the reference
+        # functions are defered to after processing of the current block scope
+        # refrence counts allow for tracking of unused variables that may end
+        # up being used in a defered function.
+        # this is separate from the `counter` for clones
+        self.count = 0
 
     def short_name(self):
         s = 'f' if self.flags & SC_FUNCTION else 'b'
@@ -812,7 +818,8 @@ class VariableScope(object):
 
     def _createRef(self, scflags, label, type_):
 
-        return PythonRef(self._getScopeName(), scflags, label, 1)
+        # return PythonRef(self._getScopeName(), scflags, label, 1)
+        raise NotImplementedError()
 
     def _define_block(self, token):
         label = token.value
@@ -880,10 +887,12 @@ class VariableScope(object):
 
         if scflags & SC_FUNCTION:
             self.fnscope[label] = new_ref
+            new_ref.count = 1
         else:
             if len(self.blscope) == 0:
                 raise TokenError(token, "block scope not defined")
             self.blscope[-1][label] = new_ref
+            new_ref.count = 1
 
         token.value = identifier
         if token.type == Token.T_TEXT:
@@ -1019,7 +1028,6 @@ class VariableScope(object):
                     file = "???"
                     line = 0
                     index = 0
-
                 sys.stderr.write("variable defined but never used: %s\n  %s:%s col %s\n" % (key, file, line, index))
 
     def popBlockScope(self):
@@ -1029,7 +1037,11 @@ class VariableScope(object):
         self.blscope_jump_tokens.pop()
 
         for key, ref in mapping.items():
-            self._warn_def(key, ref)
+            ref.count -= 1
+            if ref.count == 0:
+                self._warn_def(key, ref)
+            if ref.count < 0:
+                print("error ref count")
 
         self.blscope_stale.update(mapping)
         return mapping
@@ -1039,7 +1051,12 @@ class VariableScope(object):
         # proof of concept
         for scope in [self.blscope[0], self.fnscope]:
             for key, ref in scope.items():
-                self._warn_def(key, ref)
+                ref.count -= 1
+                if ref.count == 0:
+                    self._warn_def(key, ref)
+                if ref.count < 0:
+                    print("error ref count")
+
 
     def flattenBlockScope(self):
         out = {}
@@ -1051,19 +1068,22 @@ class VariableScope(object):
         self.defered_functions.append(DeferedToken(token))
 
     def updateDefered(self):
-
+        # copy function scope refs to the defered scopes
         for key, ref in self.fnscope.items():
             for defered in self.defered_functions:
                 if key not in defered.fnrefs:
                     defered.fnrefs[key] = ref
+                    ref.count += 1
 
     def updateDeferedBlock(self):
+        # copy block scope refs to the defered scopes
 
         refs = self.flattenBlockScope()
         for key, ref in refs.items():
             for defered in self.defered_functions:
                 if key not in defered.blrefs:
                     defered.blrefs[key] = ref
+                    ref.count += 1
 
     def _diag(self, token):
         sys.stderr.write("%10s %s %s %s\n" % (token.type, list(self.vars), list(self.freevars.keys()), list(self.cellvars.keys())))
@@ -3252,5 +3272,40 @@ function f() {
 
     print(ast.toString(1))
 
+def main(): # pragma: no cover
+    from .parser import Parser, xform_apply_file
+    from .formatter import Formatter
+
+    # this generates a warning because the
+    # lambda is defered and processed after
+    # the block scope where flag is defined
+    # the solution may be to reference count references
+    # and only warn if there are no more references
+    # otherwise there seem to be no errors with defered functions
+    # the lambda could reference things defined elsewhere in the function or loop
+    # so changing every block scope to handle the lambda first is not possible
+    text = """
+
+    function f() {
+        while (true) {
+            const flag=true;
+            g(()=>h(flag));
+        }
+    }
+    export f
+    """
+    tokens = Lexer().lex(text)
+    parser =  Parser()
+    ast = parser.parse(tokens)
+
+    print("\n\n----\n")
+    xform_apply_file(ast, "<string>")
+
+    #print(ast.toString(2))
+    #TransformIdentityScope().transform(ast)
+    TransformMinifyScope().transform(ast)
+    text = Formatter({"minify": True}).format(ast)
+    print(text)
+
 if __name__ == '__main__': # pragma: no cover
-    main_unused()
+    main()

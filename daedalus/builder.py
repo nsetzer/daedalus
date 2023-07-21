@@ -32,7 +32,7 @@ import json
 from .lexer import Lexer, Token, TokenError
 from .parser import Parser, xform_apply_file
 from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
-    TransformConstEval, getModuleImportExport
+    TransformConstEval, getModuleImportExport, TransformIdentityScope
 from .formatter import Formatter
 from ast import literal_eval
 import pickle
@@ -314,10 +314,14 @@ class JsFile(object):
         # exists use that file instead
         self.source_path = path
         if platform:
-            dir, _ = os.path.split(path)
-            platpath = os.path.join(dir, "%s.%s.js" % (name, platform))
+            fdir, fname = os.path.split(path)
+            fname, _ = os.path.splitext(fname)
+            platpath = os.path.join(fdir, "%s.%s.js" % (fname, platform))
             if os.path.exists(platpath):
                 self.source_path = platpath
+
+    def __repr__(self):
+        return f"<JsFile({self.name})"
 
     def _newBuildError(self, token, ex):
         """
@@ -462,6 +466,9 @@ class JsModule(object):
         self.quiet = quiet
         self.lexer_opts = {}
 
+    def __repr__(self):
+        return f"<JsModule({self.module_name})"
+
     def _getFiles(self):
         # sort include files
         jsf = self.index_js
@@ -531,7 +538,7 @@ class JsModule(object):
         return files
 
     def name(self):
-        return self.index_js.name
+        return self.module_name # self.index_js.name
 
     def getAST(self, merge=False):
         t1 = time.time()
@@ -635,10 +642,9 @@ class Builder(object):
                 modpath = self._name2path(modname)
 
                 if modpath not in self.files:
-                    if modname.endswith(".js"):
-                        modname = jos.path.splitext(os.path.split(modpath)[1])[0]
-                    #modname =  jsm.module_name + "." + modname
-                    jf = JsFile(modpath, modname, 2, platform=self.platform, quiet=self.quiet)
+                    jsname = modname + "." + os.path.splitext(os.path.split(modpath)[1])[0]
+                    # jsname = os.path.splitext(os.path.split(modpath)[1])[0]
+                    jf = JsFile(modpath, jsname, 2, platform=self.platform, quiet=self.quiet)
                     jf.lexer_opts = self.lexer_opts
                     self.files[modpath] = jf
 
@@ -659,42 +665,30 @@ class Builder(object):
         load all imported modules and files starting with the given file
         """
 
+        source_type = 1 # TODO: deprecate and remove
+                        # source_map == 2 is only used to surpress warnings
+
         if path.endswith(".js"):
-            source_type = 1
-            modname = os.path.splitext(os.path.split(path)[1])[0]
+            path = os.path.abspath(path)
+            modname = path.replace("\\","/").split("/")[-1]
+            if modname.endswith(".js"):
+                modname = modname[:-3]
         else:
-            raise Exception("document source_type and remove this")
             modname = path
             path = self._name2path(modname)
-            source_type = 2
 
-        if path not in self.files:
-            # for the root file check pwd otherwise use findFile
-            tmp = os.path.abspath(path)
-            if os.path.exists(tmp):
-                path = tmp
-            else:
-                path = self._name2path(path)
+        jf = JsFile(path, modname, source_type, platform=self.platform, quiet=self.quiet)
+        jf.lexer_opts = self.lexer_opts
+        self.files[path] = jf
 
-        if path not in self.files:
-            name = os.path.splitext(os.path.split(path)[1])[0]
-            jf = JsFile(path, name, source_type, platform=self.platform, quiet=self.quiet)
-            jf.lexer_opts = self.lexer_opts
-            self.files[path] = jf
+        jm = JsModule(self.files[path], modname, platform=self.platform, quiet=self.quiet)
+        jm.lexer_opts = self.lexer_opts
+        jm.setStaticData(self.static_data.get(modname, None))
+        self.modules[path] = jm
 
-        if self.files[path].source_type != source_type:
-            raise Exception("incompatible types")
+        self._discover(jm)
 
-        if path not in self.modules:
-            print("adding module", self.files[path].path)
-            jm = JsModule(self.files[path], platform=self.platform, quiet=self.quiet)
-            jm.lexer_opts = self.lexer_opts
-            self.modules[path] = jm
-            self.modules[path].setStaticData(self.static_data.get(modname, None))
-
-        self._discover(self.modules[path])
-
-        return self.modules[path]
+        return jm
 
     def _sort_modules(self, jsm):
         name2path = {m.name(): m.index_js.path for m in self.modules.values()}
@@ -703,7 +697,9 @@ class Builder(object):
         while queue:
             m, d = queue.pop(0)
             d = depth[m.index_js.path]
+
             for n in m.module_imports:
+
                 if n.endswith(".js"):
                     n = os.path.splitext(os.path.split(n)[1])[0]
                 p = name2path[n]
@@ -786,6 +782,15 @@ class Builder(object):
                 xform = TransformMinifyScope()
                 xform.disable_warnings = self.disable_warnings
                 self.globals = xform.transform(ast)
+            else:
+                ast = Token.deepCopy(ast)
+                print(Formatter({'minify': minify}).format(ast))
+
+                print(ast.toString(2))
+                xform = TransformIdentityScope()
+                xform.disable_warnings = self.disable_warnings
+                self.globals = xform.transform(ast)
+
 
             formatter = Formatter(opts={'minify': minify})
 
@@ -813,7 +818,8 @@ class Builder(object):
             # the sourcemap payload is:
             #  - a dictionary mapping a url to a local path
             #  - a json object, the source map data.
-            sourcemap = (url2path, json.dumps(formatter.sourcemap.getSourceMap()))
+            self.sourcemap_obj = formatter.sourcemap.getSourceMap()
+            sourcemap = (url2path, json.dumps(self.sourcemap_obj))
 
         except TokenError as e:
             filepath = ""
@@ -854,6 +860,7 @@ class Builder(object):
         except BuildError as e:
             return self.build_error(e)
         except FileNotFoundError as e:
+            print("path", path)
             return self.build_error(e)
 
         # for the sourcemap, prepend this line in the js output
@@ -891,13 +898,16 @@ class Builder(object):
 
     def build_error(self, e):
         sys.stderr.write("\nError:\n")
-        sys.stderr.write("Filepath: %s\n" % e.filepath)
-        sys.stderr.write("Line: %s\n" % e.line)
+        if hasattr(e, 'filepath'):
+            sys.stderr.write("Filepath: %s\n" % e.filepath)
+        if hasattr(e, 'line'):
+            sys.stderr.write("Line: %s\n" % e.line)
         sys.stderr.write("message: %s\n" % e)
-        if e.lines:
-            sys.stderr.write("Source:\n")
-            sys.stderr.write("\n".join(e.lines))
-            sys.stderr.write("\n")
+        if hasattr(e, 'lines'):
+            if e.lines:
+                sys.stderr.write("Source:\n")
+                sys.stderr.write("\n".join(e.lines))
+                sys.stderr.write("\n")
 
         html = (
             '<!DOCTYPE html>'

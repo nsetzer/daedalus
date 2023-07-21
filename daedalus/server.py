@@ -408,8 +408,14 @@ class SampleResource(Resource):
         self.builder = Builder(search_path, static_data, platform=platform)
         self.index_js = index_js
         self.opts = opts
-        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
         self.static_path = static_path
+        self._build()
+
+    def _build(self):
+        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
+        self.srcmap_routes, self.srcmap = self.builder.sourcemap
+        self.source = "//# sourceMappingURL=/static/index.js.map\n" + self.source
+
 
     @get("/static/index.css")
     def get_style(self, request, location, matches):
@@ -427,6 +433,29 @@ class SampleResource(Resource):
         """
         response = Response(payload=self.source, compress=request.acceptsGzip())
         response.headers['Content-Type'] = 'application/javascript'
+        return response
+
+    @get("/static/index.js.map")
+    def get_source_map(self, request, location, matches):
+        """
+        serve the compiled javascript code
+        """
+        response = Response(payload=self.srcmap, compress=request.acceptsGzip())
+        response.headers['Content-Type'] = 'application/json'
+        return response
+
+    @get("/static/srcmap/:path*")
+    def get_source_map_file(self, request, location, matches):
+        """
+        serve the compiled javascript code
+        """
+        path = '/static/srcmap/' + matches['path']
+        path = self.srcmap_routes[path]
+
+        response = Response(payload=open(path, "rb"))
+        type, _ = mimetypes.guess_type(path)
+        response.headers['Content-Type'] = type
+
         return response
 
     @get("/static/:path*")
@@ -473,7 +502,7 @@ class SampleResource(Resource):
         """
         rebuild the javascript and html, return the html
         """
-        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
+        self._build()
         return Response(payload=self.html)
 
 class SampleServer(Server):
