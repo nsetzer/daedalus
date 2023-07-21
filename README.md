@@ -4,6 +4,7 @@
 
 javascript web framework for building single page applications
 
+
 Daedalus is an unopinionated javascript web framework used for creating Single Page Applications.
 A javascript to javascript compiler written in python is used to merge javascript source code into a single file.
 A sample web server is also provided for testing and supports reloading of javascript source.
