@@ -1,6 +1,6 @@
 
-import daedalus
-import unittest
+$import("daedalus", {})
+$import("unittest", {})
 
 export const Root = unittest.UnitTestRoot
 

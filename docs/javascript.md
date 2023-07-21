@@ -1,13 +1,17 @@
 
 ## Import and Export
 
-
 ### Import Daedalus package
 ```javascript
+
+// the current prefered import syntax for other daedalus modules
+$import("package_name", {name[, name...]})
+
+// alternative syntax is supported
 import module package_name
 import package_name.subpackage
-
 from module package_name import {name[, name...]}
+
 
 ```
 
@@ -25,7 +29,13 @@ The default search path includes the directory of the root javascript file.
 ### Module Include
 
 ```javascript
+// the current prefered import syntax for other daedalus modules
+$include('./path/to/file.js')
+
+// alternative syntax is supported
 include './path/to/file.js'
+
+
 ```
 
 A Module can be split into multiple files and the compiler will merge the files together.

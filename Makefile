@@ -26,12 +26,12 @@ cover:
 
 .PHONY: demo
 demo:
-	python -m daedalus build --onefile ./examples/minesweeper.js --favicon ./res/favicon.ico:/daedalus/favicon.ico ./docs
+	python -m daedalus build --minify --sourcemap ./examples/minesweeper.js ./build
 
 .PHONY: serve_demo
 serve_demo:
-	python -m daedalus serve ./examples/minesweeper.js
+	python -m daedalus serve --minify ./examples/minesweeper.js
 
-.PHONY: serve_demo
+.PHONY: serve_test
 serve_test:
 	python -m daedalus serve daedalus_test

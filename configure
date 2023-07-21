@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# git submodule update --init --recursive
+
+if [ ! -e venv ]; then
+    python -m venv venv
+    source venv/bin/activate
+    pip install -e daedalus
+else
+    source venv/bin/activate
+fi
+
