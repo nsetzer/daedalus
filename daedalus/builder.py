@@ -806,7 +806,7 @@ class Builder(object):
             for name in sources.keys():
                 if name in name2path:
                     abspath = name2path[name]
-                    url = f'/static/srcmap/{name.replace(".", "/")}.js'
+                    url = f'static/srcmap/{name.replace(".", "/")}.js'
                     url2index[url] = sources[name]
                     url2path[url] = abspath
                 else:
@@ -868,7 +868,7 @@ class Builder(object):
         #
         self.sourcemap = sourcemap
 
-        script = '<script src="/static/index.js"></script>'
+        script = '<script src="static/index.js"></script>'
         try:
             index_html = self.find("index.%s.html" % self.platform)
         except FileNotFoundError as e:
@@ -946,7 +946,7 @@ class Builder(object):
         elif self.platform == "qt":
             return "./"
         else:
-            return "/"
+            return ""
 
     def getHtmlTitle(self):
 
@@ -999,7 +999,7 @@ class Builder(object):
                 "}\n" \
                 "</script>\n";
         if self.platform == "qt":
-            return "<script type=\"text/javascript\" src=\"./static/qwebchannel.js\"></script>\n" \
+            return "<script type=\"text/javascript\" src=\"static/qwebchannel.js\"></script>\n" \
                 "<script type=\"text/javascript\">\n" \
                 "window.channel = new QWebChannel(qt.webChannelTransport, (channel)=>{\n" \
                 "    console.log(\"channel init\")\n" \

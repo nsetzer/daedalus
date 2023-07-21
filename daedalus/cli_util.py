@@ -90,7 +90,7 @@ def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platfor
 
         if not onefile:
             makedirs(os.path.join(outdir, 'static'))
-            js = "//# sourceMappingURL=/static/index.js.map\n" + js
+            js = "//# sourceMappingURL=index.js.map\n" + js
             with open(js_path_output + ".map", "w") as wf:
                 wf.write(content)
         else:
