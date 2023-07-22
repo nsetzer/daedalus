@@ -8,7 +8,7 @@ from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser as ParserBase, ParseError
 from daedalus.transform import TransformIdentityScope, \
     TransformMinifyScope, getModuleImportExport, TransformIdentityBlockScope, \
-    TransformExtractStyleSheet
+    TransformExtractStyleSheet, TransformError
 
 class Parser(ParserBase):
     def __init__(self):
@@ -475,7 +475,6 @@ class TransformIdentityTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-
     @unittest.expectedFailure
     def test_001_identity_restorevar_block_2(self):
 
@@ -505,6 +504,50 @@ class TransformIdentityTestCase(unittest.TestCase):
         self.assertFail("not implemented")
         expected = TOKEN('T_MODULE', '')
         self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_unused_var_lambda(self):
+        text = """
+
+        # a variable ina block scope is not used
+        # but it is used inside a lambda, which is defered
+        function f() {
+            while (true) {
+                const flag=true;
+                g(()=>h(flag));
+            }
+        }
+        export f
+        """
+        tokens = Lexer().lex(text)
+        parser =  Parser()
+        ast = parser.parse(tokens)
+
+        xform = TransformMinifyScope()
+        xform.warnings_as_errors = True
+        xform.transform(ast)
+
+    def test_001_unused_var(self):
+
+        # a variable in a block scope is not used
+        text = """
+        function f() {
+            while (true) {
+                const flag_error = false;
+                g(()=>h());
+            }
+        }
+        export f
+        """
+        tokens = Lexer().lex(text)
+        parser =  Parser()
+        ast = parser.parse(tokens)
+
+        xform = TransformMinifyScope()
+        xform.warnings_as_errors = True
+
+        with self.assertRaises(TransformError):
+            xform.transform(ast)
+
 
 
 def main():

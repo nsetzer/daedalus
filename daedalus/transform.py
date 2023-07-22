@@ -744,9 +744,12 @@ DF_IDENTIFIER = 1
 DF_FUNCTION   = 2  # unused
 DF_CLASS      = 3
 
+class ScopeOptions(object):
+    disable_warnings = False
+    warnings_as_errors = False
+
 class VariableScope(object):
     # require three scope instances, for global, function and block scope
-    disable_warnings = False
 
     def __init__(self, name, parent=None):
         super(VariableScope, self).__init__()
@@ -784,7 +787,9 @@ class VariableScope(object):
 
         self.defered_functions = []
 
-        self.disable_warnings = False
+        self.options = ScopeOptions()
+
+        self._updateRefCount(1)
 
     def _getRef(self, label):
         """
@@ -887,12 +892,12 @@ class VariableScope(object):
 
         if scflags & SC_FUNCTION:
             self.fnscope[label] = new_ref
-            new_ref.count = 1
+            new_ref.count = 0
         else:
             if len(self.blscope) == 0:
                 raise TokenError(token, "block scope not defined")
             self.blscope[-1][label] = new_ref
-            new_ref.count = 1
+            new_ref.count = 0
 
         token.value = identifier
         if token.type == Token.T_TEXT:
@@ -1018,7 +1023,7 @@ class VariableScope(object):
 
     def _warn_def(self, key, ref):
         if ref.load_count == 0:
-            if not self.disable_warnings:
+            if not self.options.disable_warnings:
 
                 if ref.token:
                     file = ref.token.file
@@ -1028,7 +1033,12 @@ class VariableScope(object):
                     file = "???"
                     line = 0
                     index = 0
-                sys.stderr.write("variable defined but never used: %s\n  %s:%s col %s\n" % (key, file, line, index))
+
+                message = "variable defined but never used: %s\n  %s:%s col %s\n" % (key, file, line, index)
+                if self.options.warnings_as_errors:
+                    raise TransformError(ref.token, message)
+                else:
+                    sys.stderr.write(message)
 
     def popBlockScope(self):
 
@@ -1038,10 +1048,7 @@ class VariableScope(object):
 
         for key, ref in mapping.items():
             ref.count -= 1
-            if ref.count == 0:
-                self._warn_def(key, ref)
-            if ref.count < 0:
-                print("error ref count")
+            #print("ref.count--", key, ref.count)
 
         self.blscope_stale.update(mapping)
         return mapping
@@ -1052,10 +1059,7 @@ class VariableScope(object):
         for scope in [self.blscope[0], self.fnscope]:
             for key, ref in scope.items():
                 ref.count -= 1
-                if ref.count == 0:
-                    self._warn_def(key, ref)
-                if ref.count < 0:
-                    print("error ref count")
+                #print("ref.count--", key, ref.count)
 
 
     def flattenBlockScope(self):
@@ -1074,6 +1078,7 @@ class VariableScope(object):
                 if key not in defered.fnrefs:
                     defered.fnrefs[key] = ref
                     ref.count += 1
+                    #print("ref.count++", key, ref.count)
 
     def updateDeferedBlock(self):
         # copy block scope refs to the defered scopes
@@ -1084,9 +1089,34 @@ class VariableScope(object):
                 if key not in defered.blrefs:
                     defered.blrefs[key] = ref
                     ref.count += 1
+                    #print("ref.count++", key, ref.count)
+
+    def _updateRefCount(self, v):
+
+        scope = self.parent
+
+        while scope is not None:
+            for key,ref in scope.refs.items():
+                ref.count += v
+                #print("ref.count++" if v == 1 else "ref.count--", key, ref.count)
+            scope = scope.parent
+
+    def finalize(self):
+        # a destructor for the scope
+        self._updateRefCount(-1)
+
+        scope = self.parent
+        while scope is not None:
+            for key,ref in scope.refs.items():
+                if ref.load_count == 0 and ref.count == 0:
+                    self._warn_def(key, ref)
+            scope = scope.parent
 
     def _diag(self, token):
         sys.stderr.write("%10s %s %s %s\n" % (token.type, list(self.vars), list(self.freevars.keys()), list(self.cellvars.keys())))
+
+    def __repr__(self):
+        return "<%s(%s)>" % (self.__class__.__name__, self.name)
 
     def __hash__(self):
         return hash(self.name)
@@ -1422,6 +1452,7 @@ class TransformAssignScope(object):
 
     """
     disable_warnings = False
+    warnings_as_errors = False
 
     def __init__(self):
         super(TransformAssignScope, self).__init__()
@@ -1550,7 +1581,8 @@ class TransformAssignScope(object):
 
     def newScope(self, name, parentScope=None):
         scope = VariableScope(name, parentScope)
-        scope.disable_warnings = self.disable_warnings
+        scope.options.disable_warnings = self.disable_warnings
+        scope.options.warnings_as_errors = self.warnings_as_errors
         return scope
 
     def transform(self, ast):
@@ -2298,6 +2330,8 @@ class TransformAssignScope(object):
         for name, ref in scope.blscope[0].items():
             self.globals[name] = ref.identity()
 
+        scope.finalize()
+
     def finalize_function(self, flags, scope, token, parent):
 
         #if self.python:
@@ -2336,9 +2370,12 @@ class TransformAssignScope(object):
             tok.ref_attr = 8
             closure.children.append(tok)
 
+        scope.finalize()
+
         #token.children.append(closure)
 
     def finalize_class(self, flags, scope, token, parent):
+
         closure = Token(Token.T_CLOSURE, 0, 0, "")
         token.children.append(closure)
 
@@ -2353,6 +2390,8 @@ class TransformAssignScope(object):
             tok.ref = ref
             tok.ref_attr = 8
             closure.children.append(tok)
+
+        scope.finalize()
 
     def finalize_block(self, flags, scope, token, parent):
 
@@ -2686,8 +2725,10 @@ class TransformIdentityScope(TransformAssignScope):
         super(TransformIdentityScope, self).__init__()
 
     def newScope(self, name, parentScope=None):
+
         scope = IdentityScope(name, parentScope)
-        scope.disable_warnings = self.disable_warnings
+        scope.options.disable_warnings = self.disable_warnings
+        scope.options.warnings_as_errors = self.warnings_as_errors
         return scope
 
 class TransformIdentityBlockScope(TransformAssignScope):
@@ -2700,7 +2741,8 @@ class TransformIdentityBlockScope(TransformAssignScope):
 
     def newScope(self, name, parentScope=None):
         scope = IdentityBlockScope(name, parentScope)
-        scope.disable_warnings = self.disable_warnings
+        scope.options.disable_warnings = self.disable_warnings
+        scope.options.warnings_as_errors = self.warnings_as_errors
         return scope
 
 class TransformMinifyScope(TransformAssignScope):
@@ -2720,9 +2762,11 @@ class TransformMinifyScope(TransformAssignScope):
     def __init__(self):
         super(TransformMinifyScope, self).__init__()
 
+
     def newScope(self, name, parentScope=None):
         scope = MinifyVariableScope(name, parentScope)
-        scope.disable_warnings = self.disable_warnings
+        scope.options.disable_warnings = self.disable_warnings
+        scope.options.warnings_as_errors = self.warnings_as_errors
         return scope
 
 class TransformBaseV2(object):
@@ -3288,6 +3332,7 @@ def main(): # pragma: no cover
 
     function f() {
         while (true) {
+            //const flag_error = false;
             const flag=true;
             g(()=>h(flag));
         }
@@ -3303,7 +3348,10 @@ def main(): # pragma: no cover
 
     #print(ast.toString(2))
     #TransformIdentityScope().transform(ast)
-    TransformMinifyScope().transform(ast)
+    xform = TransformMinifyScope()
+    xform.warnings_as_errors = True
+
+    xform.transform(ast)
     text = Formatter({"minify": True}).format(ast)
     print(text)
 
