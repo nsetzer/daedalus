@@ -87,6 +87,7 @@ class BuildCLI(CLI):
         subparser.add_argument('--static', type=str, default="./static")
         subparser.add_argument('--htmlname', type=str, default="index.html")
         subparser.add_argument('--sourcemap', action='store_true')
+        subparser.add_argument('--webroot', type=str, default="/")
         subparser.add_argument('index_js')
         subparser.add_argument('out')
 
@@ -115,7 +116,8 @@ class BuildCLI(CLI):
             minify=minify,
             onefile=onefile,
             htmlname=args.htmlname,
-            sourcemap=args.sourcemap)
+            sourcemap=args.sourcemap,
+            webroot=args.webroot)
 
 class BuildProfileCLI(CLI):
     """

@@ -146,8 +146,8 @@ try:
             self.channel.registerObject(name, obj)
 
 except ImportError as e:
-    print(e)
-    print("daedalus webview import error")
+    #print(e)
+    #print("daedalus webview import error")
 
     def export_webchannel_js(path):
         raise RuntimeError("qt6 unavailable")

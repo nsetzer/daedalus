@@ -145,16 +145,20 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     import_names = sorted(list(imports.keys()))
     argument_names = import_names[:]
     for i, name in enumerate(import_names):
-        if name.endswith('.js'):
-            import_names[i] = os.path.splitext(os.path.split(name)[1])[0]
-            argument_names[i] = import_names[i]
-        else:
-            import_names[i] = name.split('.')[0]
-            argument_names[i] = name.split('.')[0]
+        import_names[i] = name.split('.')[-1]
+        argument_names[i] = name
+        #if name.endswith('.js'):
+        #    import_names[i] = os.path.splitext(os.path.split(name)[1])[0]
+        #    argument_names[i] = import_names[i]
+        #else:
+        #    import_names[i] = name.split('.')[0]
+        #    argument_names[i] = name.split('.')[0]
 
     if modname.endswith('.js'):
-        sys.stderr.write("warning: module with invalid modname %s\n" % modname)
-        modname = os.path.splitext(os.path.split(modname)[1])[0]
+        raise ValueError(modname)
+    #if modname.endswith('.js'):
+    #    sys.stderr.write("warning: module with invalid modname %s\n" % modname)
+    #    modname = os.path.splitext(os.path.split(modname)[1])[0]
 
     tok_import_names = [TOKEN('T_TEXT', text) for text in import_names]
     tok_argument_names = [TOKEN('T_TEXT', text) for text in argument_names]
@@ -598,10 +602,13 @@ class Builder(object):
 
         self.files = {}
         self.modules = {}
+        self.root_module = None
         self.source_types = {}
         self.quiet = True
         self.disable_warnings = False
         self.lexer_opts = {}
+
+        self.webroot = "/"
 
         if static_data is None:
             static_data = {}
@@ -639,7 +646,15 @@ class Builder(object):
             self.files.update(files)
 
             for modname in jsm.module_imports.keys():
+
+
+
                 modpath = self._name2path(modname)
+
+                modname = os.path.split(os.path.split(modpath)[0])[1]
+                if modname != "daedalus" and jsm is not self.root_module:
+                    modname =  jsm.module_name + "." + modname
+
 
                 if modpath not in self.files:
                     jsname = modname + "." + os.path.splitext(os.path.split(modpath)[1])[0]
@@ -649,8 +664,7 @@ class Builder(object):
                     self.files[modpath] = jf
 
                 if modpath not in self.modules:
-                    modname = os.path.split(os.path.split(self.files[modpath].path)[0])[1]
-                    #modname =  jsm.module_name + "." + modname
+
                     jm = JsModule(self.files[modpath], module_name=modname, platform=self.platform, quiet=self.quiet)
                     jm.lexer_opts = self.lexer_opts
                     self.modules[modpath] = jm
@@ -680,35 +694,46 @@ class Builder(object):
         jf = JsFile(path, modname, source_type, platform=self.platform, quiet=self.quiet)
         jf.lexer_opts = self.lexer_opts
         self.files[path] = jf
-
         jm = JsModule(self.files[path], modname, platform=self.platform, quiet=self.quiet)
         jm.lexer_opts = self.lexer_opts
         jm.setStaticData(self.static_data.get(modname, None))
         self.modules[path] = jm
+
+        self.root_module = jm
 
         self._discover(jm)
 
         return jm
 
     def _sort_modules(self, jsm):
-        name2path = {m.name(): m.index_js.path for m in self.modules.values()}
+        name2mod = {m.name(): m for m in self.modules.values()}
         queue = [(jsm, 0)]
-        depth = {jsm.index_js.path: 0}
+        depth = {jsm.name(): 0}
         while queue:
             m, d = queue.pop(0)
-            d = depth[m.index_js.path]
+            d = depth[m.name()]
 
+            _x_module_imports = {}
             for n in m.module_imports:
 
-                if n.endswith(".js"):
-                    n = os.path.splitext(os.path.split(n)[1])[0]
-                p = name2path[n]
-                if p not in depth:
-                    depth[p] = d + 1
-                else:
-                    depth[p] = max(depth[p], d + 1)
+                original_name = n
+                # TODO: this seems like something that should have been resolved
+                #       when building the imports list
+                if n not in name2mod:
+                    t1 = m.name() + "." + n
+                    t2 = self.root_module.name() + "." + n # TODO: root module name
+                    for t in [t1, t2]:
+                        if t in name2mod:
+                            n = t
+                            break
 
-                jsm = self.modules[p]
+                if n not in depth:
+                    depth[n] = d + 1
+                else:
+                    depth[n] = max(depth[n], d + 1)
+
+                jsm = name2mod[n]
+                _x_module_imports[original_name] = n
 
                 # worst case depth is a simple linked list with length
                 # of N where N is the number of modules. If the computed
@@ -718,8 +743,11 @@ class Builder(object):
                     raise BuildError(m.index_js.path, None, [], msg)
                 queue.append((jsm, d + 1))
 
-        order = sorted(depth.keys(), key=lambda p: depth[p], reverse=True)
-        return [self.modules[p] for p in order]
+            # TODO: this is a hack, can the imports be fixed prior to sort?
+            m.module_imports = {_x_module_imports[k]:v for k,v in m.module_imports.items()}
+
+        order = sorted(depth.keys(), key=lambda n: depth[n], reverse=True)
+        return [name2mod[n] for n in order]
 
     def build_module(self, path, minify=False):
         jsm = self.discover(path)
@@ -784,9 +812,7 @@ class Builder(object):
                 self.globals = xform.transform(ast)
             else:
                 ast = Token.deepCopy(ast)
-                print(Formatter({'minify': minify}).format(ast))
 
-                print(ast.toString(2))
                 xform = TransformIdentityScope()
                 xform.disable_warnings = self.disable_warnings
                 self.globals = xform.transform(ast)
@@ -803,14 +829,24 @@ class Builder(object):
             for path, jf in self.files.items():
                 name2path[jf.name] = path
 
-            for name in sources.keys():
-                if name in name2path:
-                    abspath = name2path[name]
-                    url = f'static/srcmap/{name.replace(".", "/")}.js'
-                    url2index[url] = sources[name]
+            #print(">>1", list(name2path.keys()))
+            #print(">>2", list(sources))
+
+            for name1 in sources.keys():
+
+                name2 = name1
+
+                if name2 not in name2path:
+                    name2 = "app." + name1
+
+                if name2 in name2path:
+                    abspath = name2path[name2]
+                    url = f'static/srcmap/{name2.replace(".", "/")}.js'
+                    url2index[url] = sources[name1]
                     url2path[url] = abspath
+                    #print("adding sourcemap", url)
                 else:
-                    print("sourcemap not found:", name)
+                    print("sourcemap not found:", name1, name2)
 
             formatter.sourcemap.sources = url2index
             formatter.sourcemap.source_routes = url2path
@@ -946,7 +982,7 @@ class Builder(object):
         elif self.platform == "qt":
             return "./"
         else:
-            return ""
+            return self.webroot
 
     def getHtmlTitle(self):
 
@@ -999,6 +1035,7 @@ class Builder(object):
                 "}\n" \
                 "</script>\n";
         if self.platform == "qt":
+            # TODO: does src need {[refix]}
             return "<script type=\"text/javascript\" src=\"static/qwebchannel.js\"></script>\n" \
                 "<script type=\"text/javascript\">\n" \
                 "window.channel = new QWebChannel(qt.webChannelTransport, (channel)=>{\n" \

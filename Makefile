@@ -26,7 +26,7 @@ cover:
 
 .PHONY: demo
 demo:
-	python -m daedalus build --minify --sourcemap ./examples/minesweeper.js ./build
+	python -m daedalus build --minify --sourcemap ./examples/minesweeper.js --webroot="" ./build
 
 .PHONY: serve_demo
 serve_demo:
