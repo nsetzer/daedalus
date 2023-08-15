@@ -52,7 +52,7 @@ def findFile(name, search_paths):
     if os.path.isfile(mfilepath):
         return mfilepath
 
-    raise FileNotFoundError(name)
+    raise FileNotFoundError("%s not found in search paths: %s" % (name, search_paths))
 
 def findModule(name, search_paths):
     if name.endswith('.js'):
@@ -766,6 +766,8 @@ class Builder(object):
         if len(jsm.module_exports) > 1:
             sys.stderr.write("warning: root module exports more than one symbol\n")
 
+        self.root_exports = jsm.module_exports
+
         if standalone is False:
             order = self._sort_modules(jsm)
             ast = Token(Token.T_MODULE, 0, 0, "")
@@ -841,7 +843,8 @@ class Builder(object):
 
                 if name2 in name2path:
                     abspath = name2path[name2]
-                    url = f'static/srcmap/{name2.replace(".", "/")}.js'
+                    # TODO: optional relative path to support github actions
+                    url = f'srcmap/{name2.replace(".", "/")}.js'
                     url2index[url] = sources[name1]
                     url2path[url] = abspath
                     #print("adding sourcemap", url)
@@ -855,6 +858,7 @@ class Builder(object):
             #  - a dictionary mapping a url to a local path
             #  - a json object, the source map data.
             self.sourcemap_obj = formatter.sourcemap.getSourceMap()
+            self.servermap = formatter.sourcemap.getServerMap()
             sourcemap = (url2path, json.dumps(self.sourcemap_obj))
 
         except TokenError as e:
@@ -921,6 +925,11 @@ class Builder(object):
         else:
             render_function = 'daedalus.render'
 
+        try:
+            self.favicon_path = findFile("favicon.ico", self.search_paths)
+        except FileNotFoundError:
+            self.favicon_path = None
+
         html = html \
             .replace("${PATH}", self.getPlatformPathPrefix().rstrip("/")) \
             .replace("<!--TITLE-->", self.getHtmlTitle()) \
@@ -945,6 +954,11 @@ class Builder(object):
                 sys.stderr.write("\n".join(e.lines))
                 sys.stderr.write("\n")
 
+        _filename = getattr(e, 'filepath', "")
+        _line = getattr(e, 'line', -1)
+        _column = getattr(e, 'column', -1)
+        _raw_message = getattr(e, 'raw_message', str(e))
+        _lines = getattr(e, 'lines', [])
         html = (
             '<!DOCTYPE html>'
             '<meta charset="UTF-8">'
@@ -964,11 +978,11 @@ class Builder(object):
             '</html>'
         ) % (
             '<p>Error: %s</p>' % str(e),
-            '' if not e.filepath else '<p>File: %s</p>' % e.filepath,
-            '' if e.line < 0 else '<p>Line: %s</p>' % e.line,
-            '' if e.column < 0 else '<p>Column: %s</p>' % e.column,
-            "<br>".join(e.lines),
-            '' if not e.raw_message else '<p>Raw Error: %s</p>' % e.raw_message,
+            '' if _filename else '<p>File: %s</p>' % _filename,
+            '' if _line < 0 else '<p>Line: %s</p>' % _line,
+            '' if _column < 0 else '<p>Column: %s</p>' % _column,
+            "<br>".join(_lines),
+            '' if not _raw_message else '<p>Raw Error: %s</p>' % _raw_message,
         )
         return "", "", html
 

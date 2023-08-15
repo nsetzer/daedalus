@@ -25,6 +25,7 @@ class SourceMap(object):
         # where the source map is located
         # effectively ones-based indexing
         self.mappings = [[],[]]
+        self.line2file = [] # lineNumber to (fileIndex, originalLineNumber)
         self.sourceRoot = ""
         self.column = 0
 
@@ -114,6 +115,7 @@ class SourceMap(object):
 
     def write_line(self):
         self.mappings.append([])
+        self.line2file.append(None)
         self.column = 0
         if self.last_field:
             self.last_field[0] = 0
@@ -150,6 +152,9 @@ class SourceMap(object):
 
                 self.mappings[-1].append(vlq)
 
+                if self.line2file[-1] is None:
+                    self.line2file[-1] = (file_index, token.line-1)
+
     def _getNameIndex(self, name):
         if name not in self.names:
             self.names[name] = len(self.names)
@@ -167,3 +172,8 @@ class SourceMap(object):
             "names": list(self.names.keys()),
             "mappings": mappings
         }
+
+    def getServerMap(self):
+        sources = list(self.sources.keys())
+        mapping = self.line2file
+        return sources, mapping
