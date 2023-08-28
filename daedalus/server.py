@@ -413,7 +413,11 @@ class SampleResource(Resource):
 
     def _build(self):
         self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
-        self.srcmap_routes, self.srcmap = self.builder.sourcemap
+        if self.builder.error:
+            self.srcmap_routes = {}
+            self.srcmap = ""
+        else:
+            self.srcmap_routes, self.srcmap = self.builder.sourcemap
         self.source = "//# sourceMappingURL=/static/index.js.map\n" + self.source
 
 
@@ -449,14 +453,21 @@ class SampleResource(Resource):
         """
         serve the compiled javascript code
         """
-        path = '/static/srcmap/' + matches['path']
-        path = self.srcmap_routes[path]
+        path = 'srcmap/' + matches['path']
+        try:
+            path = self.srcmap_routes[path]
 
-        response = Response(payload=open(path, "rb"))
-        type, _ = mimetypes.guess_type(path)
-        response.headers['Content-Type'] = type
+            response = Response(payload=open(path, "rb"))
+            content_type, _ = mimetypes.guess_type(path)
+            response.headers['Content-Type'] = content_type
 
-        return response
+            return response
+
+        except KeyError as e:
+            print(self.srcmap_routes)
+
+            raise e
+
 
     @get("/static/:path*")
     def get_static(self, request, location, matches):
@@ -533,6 +544,7 @@ def main():  # pragma: no cover
 
         def greet(self, request, location, matches):
             name = request.query.get("name", "World")
+
             return JsonResponse({"response": f"Hello {name}!"})
 
     class DemoServer(Server):

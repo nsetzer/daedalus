@@ -161,7 +161,7 @@ class ServeCLI(CLI):
 
         subparser.add_argument('--minify', action='store_true')
         subparser.add_argument('--onefile', action='store_true')
-        subparser.add_argument('--paths', default=None)
+        subparser.add_argument('--paths', default=None, help="colon separated list of search paths")
         subparser.add_argument('--host', default='0.0.0.0', type=str)
         subparser.add_argument('--port', default=4100, type=int)
         subparser.add_argument('--env', type=str, action='append', default=[],

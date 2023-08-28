@@ -283,6 +283,15 @@ class BuildError(Exception):
             self.line = token.line
             self.column = token.index
 
+    @staticmethod
+    def fromTokenError(filepath, error):
+        e = BuildError(filepath, error.token, [], str(error))
+        e.line = error.token.line
+        e.column = error.token.index
+        return e
+
+
+
 class JsFile(object):
     def __init__(self, path, name=None, source_type=1, platform=None, quiet=False):
         super(JsFile, self).__init__()
@@ -418,8 +427,11 @@ class JsFile(object):
                 raise error
 
             self.size = len(source)
-            self.ast, self.imports, self.module_imports, self.exports = \
-                getModuleImportExport(ast, self.source_type != 2)
+            try:
+                self.ast, self.imports, self.module_imports, self.exports = \
+                    getModuleImportExport(ast, self.source_type != 2)
+            except TokenError as e:
+                raise BuildError.fromTokenError(self.source_path, e)
 
             if not os.path.exists(cachedir):
                 os.makedirs(cachedir)
@@ -893,6 +905,7 @@ class Builder(object):
         return css, js, sourcemap, export_name
 
     def build(self, path, minify=False, onefile=False):
+        self.error = None
         # make this have API functions which
         # can be overridden
         try:
@@ -942,17 +955,25 @@ class Builder(object):
         return css, js, html
 
     def build_error(self, e):
-        sys.stderr.write("\nError:\n")
+
+        message = [str(e)]
+        message.append("\nError:\n")
         if hasattr(e, 'filepath'):
-            sys.stderr.write("Filepath: %s\n" % e.filepath)
+            message.append("Filepath: %s\n" % e.filepath)
         if hasattr(e, 'line'):
-            sys.stderr.write("Line: %s\n" % e.line)
-        sys.stderr.write("message: %s\n" % e)
+            message.append("Line: %s\n" % e.line)
+        message.append("message: %s\n" % e)
         if hasattr(e, 'lines'):
             if e.lines:
-                sys.stderr.write("Source:\n")
-                sys.stderr.write("\n".join(e.lines))
-                sys.stderr.write("\n")
+                message.append("Source:\n")
+                message.append("\n".join(e.lines))
+                message.append("\n")
+
+        message = "".join(message)
+        sys.stdout.write(message)
+
+        # BuildError(filepath, token, lines, message, raw_message)
+        self.error = Exception(message)
 
         _filename = getattr(e, 'filepath', "")
         _line = getattr(e, 'line', -1)

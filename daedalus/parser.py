@@ -1407,18 +1407,11 @@ class Parser(ParserBase):
            token.value not in operators:
             return 1
 
-        try:
-            rhs1 = self.consume(tokens, token, index, 1)
-            rhs2 = self.consume(tokens, token, index, 1)
-            rhs3 = self.consume(tokens, token, index, 1)
-            lhs0 = self.consume(tokens, token, index, -1)
-        except ParseError as e:
-            print([t.value for t in tokens], index)
-            print(tokens[index].toString())
-            print(tokens[index+1].toString())
-            print(tokens[index+2].toString())
-            print(tokens[index+3].toString())
-            raise
+        rhs1 = self.consume(tokens, token, index, 1)
+        rhs2 = self.consume(tokens, token, index, 1)
+        rhs3 = self.consume(tokens, token, index, 1)
+        lhs0 = self.consume(tokens, token, index, -1)
+
         if rhs2.type != Token.T_SPECIAL or rhs2.value != ':':
             raise ParseError(rhs2, "invalid ternary expression")
 
@@ -1685,12 +1678,15 @@ class Parser(ParserBase):
         token = tokens[index]
         token.type = Token.T_CLASS
 
+        # check for the class name
         i1 = self.peek_token(tokens, token, index, 1)
         if i1 is not None and tokens[i1].type == Token.T_TEXT:
             token.children = [self.consume(tokens, token, index, 1)]
         else:
+            # anonymous class
             token.children = [Token(Token.T_TEXT, token.line, token.index, "")]
 
+        # check for inheritance
         i2 = self.peek_keyword(tokens, token, index, 1)
         if (i2 is not None and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'extends'):
             rhs2 = self.consume_keyword(tokens, token, index, 1)
@@ -1718,6 +1714,7 @@ class Parser(ParserBase):
 
         token.children.append(rhs1)
 
+        # loop over the class body
         index = 0
         while index < len(rhs1.children):
             child = rhs1.children[index]
@@ -1797,6 +1794,10 @@ class Parser(ParserBase):
                     rhs1.children[index] = tok
                 else:
                     child.children.append(tok)
+
+            elif child.type == Token.T_GROUPING:
+                raise ParseError(child, "unexpected object in class body")
+
             index += offset
 
     def collect_keyword_switch_case(self, tokens, index):
@@ -2607,6 +2608,17 @@ def main():  # pragma: no cover
         include './foo.js'
         $include('./foo.js')
         """
+
+    text1 = """
+
+    class A {
+        foo {
+            this.a = 1
+            this.b = 2
+        }
+    }
+
+    """
 
     #text1 = "(x:int): int => x"
     print("="* 79)
