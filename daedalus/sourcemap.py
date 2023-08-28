@@ -152,6 +152,8 @@ class SourceMap(object):
 
                 self.mappings[-1].append(vlq)
 
+                if len(self.line2file) == 0:
+                    self.line2file.append([])
                 if self.line2file[-1] is None:
                     self.line2file[-1] = (file_index, token.line-1)
 
