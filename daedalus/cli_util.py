@@ -65,42 +65,27 @@ def build(outdir, index_js, staticdir=None, staticdata=None, paths=None, platfor
     if staticdata is None:
         staticdata = {}
 
+    # name = os.path.splitext(htmlname)[0]
+    name = 'index'
     html_path_output = os.path.join(outdir, htmlname)
-    js_path_output = os.path.join(outdir, "static", "index.js")
-    css_path_output = os.path.join(outdir, "static", "index.css")
+    js_path_output = os.path.join(outdir, "static", name + ".js")
+    css_path_output = os.path.join(outdir, "static", name + ".css")
 
     builder = Builder(paths, staticdata, platform=platform)
     builder.webroot = webroot
     builder.lexer_opts = {"preserve_documentation": not minify}
     builder.quiet = not verbose
-    css, js, html = builder.build(index_js, minify=minify, onefile=onefile)
+    css, js, html = builder.build(index_js, minify=minify, onefile=onefile, sourcemap=sourcemap)
 
     if sourcemap:
 
-        srcmap_routes, _ = builder.sourcemap
-        srcmap = builder.sourcemap_obj
-
-        sources = []
-        for src in srcmap['sources']:
-            path = srcmap_routes[src]
-            with open(path) as rf:
-                sources.append(rf.read())
-        srcmap['sourcesContent'] = sources
-
-        content = json.dumps(srcmap)
+        srcmap_routes, json_content = builder.sourcemap
 
         if not onefile:
             makedirs(os.path.join(outdir, 'static'))
-            js = "//# sourceMappingURL=index.js.map\n" + js
+            # js = "//# sourceMappingURL=index.js.map\n" + js
             with open(js_path_output + ".map", "w") as wf:
-                wf.write(content)
-        else:
-            encoded = base64.b64encode(content.encode("UTF-8")).decode("utf-8")
-            header = "//# sourceMappingURL=data:application/json;base64,"
-            header += encoded + "\n"
-            js = header + js
-            # TODO: rebuild the html file with this js embedded
-            raise NotImplementedError("sourcemap cannot be embedded in html yet")
+                wf.write(json_content)
 
     makedirs(outdir)
 

@@ -412,7 +412,7 @@ class SampleResource(Resource):
         self._build()
 
     def _build(self):
-        self.style, self.source, self.html = self.builder.build(self.index_js, **self.opts)
+        self.style, self.source, self.html = self.builder.build(self.index_js, sourcemap=True, **self.opts)
         if self.builder.error:
             self.srcmap_routes = {}
             self.srcmap = ""

@@ -36,6 +36,7 @@ from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
 from .formatter import Formatter
 from ast import literal_eval
 import pickle
+import base64
 
 def findFile(name, search_paths):
     """
@@ -767,7 +768,7 @@ class Builder(object):
 
         return ast
 
-    def _build_impl(self, path, standalone=False, minify=False):
+    def _build_impl(self, path, standalone=False, sourcemap=False, minify=False):
         t1 = time.time()
 
         jsm = self.discover(path)
@@ -836,42 +837,44 @@ class Builder(object):
 
             js = formatter.format(ast)
 
-            sources = formatter.sourcemap.sources
-            name2path = {}
-            url2path = {}
-            url2index = {}
-            for path, jf in self.files.items():
-                name2path[jf.name] = path
+            if sourcemap:
+                sources = formatter.sourcemap.sources
+                name2path = {}
+                url2path = {}
+                url2index = {}
+                for path, jf in self.files.items():
+                    name2path[jf.name] = path
 
-            #print(">>1", list(name2path.keys()))
-            #print(">>2", list(sources))
+                #print(">>1", list(name2path.keys()))
+                #print(">>2", list(sources))
 
-            for name1 in sources.keys():
+                for name1 in sources.keys():
 
-                name2 = name1
+                    name2 = name1
 
-                if name2 not in name2path:
-                    name2 = "app." + name1
+                    if name2 not in name2path:
+                        name2 = "app." + name1
 
-                if name2 in name2path:
-                    abspath = name2path[name2]
-                    # TODO: optional relative path to support github actions
-                    url = f'srcmap/{name2.replace(".", "/")}.js'
-                    url2index[url] = sources[name1]
-                    url2path[url] = abspath
-                    #print("adding sourcemap", url)
-                else:
-                    print("sourcemap not found:", name1, name2)
+                    if name2 in name2path:
+                        abspath = name2path[name2]
+                        # TODO: optional relative path to support github actions
+                        url = f'srcmap/{name2.replace(".", "/")}.js'
+                        url2index[url] = sources[name1]
+                        url2path[url] = abspath
+                        #print("adding sourcemap", url)
+                    else:
+                        print("sourcemap not found:", name1, name2)
 
-            formatter.sourcemap.sources = url2index
-            formatter.sourcemap.source_routes = url2path
+                formatter.sourcemap.sources = url2index
+                formatter.sourcemap.source_routes = url2path
 
-            # the sourcemap payload is:
-            #  - a dictionary mapping a url to a local path
-            #  - a json object, the source map data.
-            self.sourcemap_obj = formatter.sourcemap.getSourceMap()
-            self.servermap = formatter.sourcemap.getServerMap()
-            sourcemap = (url2path, json.dumps(self.sourcemap_obj))
+                # the sourcemap payload is:
+                #  - a dictionary mapping a url to a local path
+                #  - a json object, the source map data.
+                self.sourcemap_obj = formatter.sourcemap.getSourceMap()
+                self.servermap = formatter.sourcemap.getServerMap()
+                self.sourcemap_url2path = url2path
+
 
         except TokenError as e:
             filepath = ""
@@ -902,24 +905,46 @@ class Builder(object):
         if not self.quiet:
             sys.stderr.write("%10d %.2f %.2f%% of %d bytes\n" % (final_source_size, t2 - t1, p, source_size))
 
-        return css, js, sourcemap, export_name
+        return css, js, export_name
 
-    def build(self, path, minify=False, onefile=False):
+    def build(self, path, minify=False, onefile=False, sourcemap=False):
         self.error = None
         # make this have API functions which
         # can be overridden
         try:
-            css, js, sourcemap, root = self._build_impl(path, minify=minify)
+            css, js, root = self._build_impl(path, sourcemap=sourcemap, minify=minify)
         except BuildError as e:
             return self.build_error(e)
         except FileNotFoundError as e:
             print("path", path)
             return self.build_error(e)
 
-        # for the sourcemap, prepend this line in the js output
-        # //# sourceMappingURL=example.out.js.map\n
-        #
-        self.sourcemap = sourcemap
+        if sourcemap:
+            # inject the file content into the sourcemap
+
+            sources = []
+            for src in self.sourcemap_obj['sources']:
+                path = self.sourcemap_url2path[src]
+                with open(path) as rf:
+                    sources.append(rf.read())
+            self.sourcemap_obj['sourcesContent'] = sources
+
+            srcmap_content = json.dumps(self.sourcemap_obj)
+
+            if onefile:
+
+                header = "//# sourceMappingURL=data:application/json;base64,"
+                header += base64.b64encode(srcmap_content.encode("UTF-8")).decode("utf-8")
+                header += "\n"
+                js = header + js
+
+            else:
+                js = "//# sourceMappingURL=index.js.map\n" + js
+
+        else:
+            srcmap_content = json.dumps(self.sourcemap_obj)
+
+        self.sourcemap = (self.sourcemap_url2path, srcmap_content)
 
         script = '<script src="static/index.js"></script>'
         try:
