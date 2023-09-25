@@ -830,7 +830,7 @@ class VariableScope(object):
         label = token.value
 
         if label in self.blscope[-1]:
-            raise TokenError(token, "already defined at scope %s" % self.name)
+            raise TokenError(token, "`%s` already defined at scope %s" % (label, self.name))
 
         for bl in reversed(self.blscope):
             if label in bl:

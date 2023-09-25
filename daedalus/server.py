@@ -418,7 +418,7 @@ class SampleResource(Resource):
             self.srcmap = ""
         else:
             self.srcmap_routes, self.srcmap = self.builder.sourcemap
-        self.source = "//# sourceMappingURL=/static/index.js.map\n" + self.source
+        #self.source = "//# sourceMappingURL=/static/index.js.map\n" + self.source
 
 
     @get("/static/index.css")

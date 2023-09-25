@@ -291,11 +291,10 @@ class BuildError(Exception):
         e.column = error.token.index
         return e
 
-
-
 class JsFile(object):
     def __init__(self, path, name=None, source_type=1, platform=None, quiet=False):
         super(JsFile, self).__init__()
+
         self.path = path
         self.ast = None
         # imports are a dictionary of file_path => list of included names
@@ -657,21 +656,20 @@ class Builder(object):
             jsm = queue.pop()
             files = jsm.load()
             self.files.update(files)
+            #print("visit", jsm.name(), list(jsm.module_imports.keys()))
+            #print("   ", ','.join(list([x.name for x in files.values()])))
 
             for modname in jsm.module_imports.keys():
-
-
 
                 modpath = self._name2path(modname)
 
                 modname = os.path.split(os.path.split(modpath)[0])[1]
-                if modname != "daedalus" and jsm is not self.root_module:
-                    modname =  jsm.module_name + "." + modname
-
+                #if modname != "daedalus" and jsm is not self.root_module:
+                #    modname =  jsm.module_name + "." + modname
 
                 if modpath not in self.files:
-                    jsname = modname + "." + os.path.splitext(os.path.split(modpath)[1])[0]
-                    # jsname = os.path.splitext(os.path.split(modpath)[1])[0]
+                    #jsname = modname + "." + os.path.splitext(os.path.split(modpath)[1])[0]
+                    jsname = os.path.splitext(os.path.split(modpath)[1])[0]
                     jf = JsFile(modpath, jsname, 2, platform=self.platform, quiet=self.quiet)
                     jf.lexer_opts = self.lexer_opts
                     self.files[modpath] = jf
@@ -842,18 +840,18 @@ class Builder(object):
                 name2path = {}
                 url2path = {}
                 url2index = {}
+
+                # TODO: clean this up
+                #
                 for path, jf in self.files.items():
                     name2path[jf.name] = path
-
-                #print(">>1", list(name2path.keys()))
-                #print(">>2", list(sources))
 
                 for name1 in sources.keys():
 
                     name2 = name1
 
-                    if name2 not in name2path:
-                        name2 = "app." + name1
+                    #if name2 not in name2path:
+                    #    name2 = "app." + name1
 
                     if name2 in name2path:
                         abspath = name2path[name2]
