@@ -90,14 +90,17 @@ class TransformGrouping(TransformBase):
                     #   {1} {a.b} {f()}
                     ref = self._isObject(child)
                     if ref is None:
+
                         child.type = Token.T_OBJECT
 
                         # another hack
                         # if the rhs is an object, raise a syntax error
                         # need to wait until the object transform is run
                         if hasattr(child, '_maybe_illegal'):
-                            raise TransformError(child, "invalid object literal. must be wrapped in parenthesis")
-
+                            if len(child.children) == 0:
+                                child.type = Token.T_BLOCK
+                            else:
+                                raise TransformError(child, "invalid object literal. must be wrapped in parenthesis")
                     else:
                         child.type = Token.T_BLOCK
                 else:

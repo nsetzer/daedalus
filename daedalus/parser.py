@@ -2623,7 +2623,7 @@ def main():  # pragma: no cover
 
     """
 
-    text1 = "const f = () => {x:1, y:2}"
+    text1 = "const f = () => {}"
 
     #text1 = "(x:int): int => x"
     print("="* 79)
