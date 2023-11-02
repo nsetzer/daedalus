@@ -768,54 +768,54 @@ class Builder(object):
 
     def _build_impl(self, path, standalone=False, sourcemap=False, minify=False):
         t1 = time.time()
-
-        jsm = self.discover(path)
-
-        if len(jsm.module_exports) == 0:
-            raise BuildError(jsm.index_js.path, None, [], "does not export any symbols")
-
-        if len(jsm.module_exports) > 1:
-            sys.stderr.write("warning: root module exports more than one symbol\n")
-
-        self.root_exports = jsm.module_exports
-
-        if standalone is False:
-            order = self._sort_modules(jsm)
-            ast = Token(Token.T_MODULE, 0, 0, "")
-            source_size = 0
-            mod_structure = {}
-
-            def _get(name):
-                struct = mod_structure
-                for part in name.split('.'):
-                    if part not in struct:
-                        struct[part] = {}
-                    struct = struct[part]
-                return struct
-
-            for mod in order:
-                _get(mod.name())
-
-            for key, struct in mod_structure.items():
-                if struct:
-                    source = '%s = %s' % (key, json.dumps(struct))
-                    tokens = Lexer(self.lexer_opts).lex(source)
-                    ast = merge_ast(ast, Parser().parse(tokens))
-
-            for mod in order:
-                struct = _get(mod.name())
-                ast = merge_ast(ast, mod.getAST(merge=len(struct) > 0))
-                source_size += mod.source_size
-
-            styles = sum([mod.styles for mod in order], [])
-        else:
-            ast = jsm.getAST()
-            styles = jsm.styles
-            source_size = jsm.source_size
-
-        css = "\n".join(styles)
-        error = None
         try:
+
+            jsm = self.discover(path)
+
+            if len(jsm.module_exports) == 0:
+                raise BuildError(jsm.index_js.path, None, [], "does not export any symbols")
+
+            if len(jsm.module_exports) > 1:
+                sys.stderr.write("warning: root module exports more than one symbol\n")
+
+            self.root_exports = jsm.module_exports
+
+            if standalone is False:
+                order = self._sort_modules(jsm)
+                ast = Token(Token.T_MODULE, 0, 0, "")
+                source_size = 0
+                mod_structure = {}
+
+                def _get(name):
+                    struct = mod_structure
+                    for part in name.split('.'):
+                        if part not in struct:
+                            struct[part] = {}
+                        struct = struct[part]
+                    return struct
+
+                for mod in order:
+                    _get(mod.name())
+
+                for key, struct in mod_structure.items():
+                    if struct:
+                        source = '%s = %s' % (key, json.dumps(struct))
+                        tokens = Lexer(self.lexer_opts).lex(source)
+                        ast = merge_ast(ast, Parser().parse(tokens))
+
+                for mod in order:
+                    struct = _get(mod.name())
+                    ast = merge_ast(ast, mod.getAST(merge=len(struct) > 0))
+                    source_size += mod.source_size
+
+                styles = sum([mod.styles for mod in order], [])
+            else:
+                ast = jsm.getAST()
+                styles = jsm.styles
+                source_size = jsm.source_size
+
+            css = "\n".join(styles)
+            error = None
             self.globals = {}
 
             if minify:
@@ -824,11 +824,33 @@ class Builder(object):
                 xform.disable_warnings = self.disable_warnings
                 self.globals = xform.transform(ast)
             else:
+                ast_source = ast
                 ast = Token.deepCopy(ast)
 
                 xform = TransformIdentityScope()
                 xform.disable_warnings = self.disable_warnings
-                self.globals = xform.transform(ast)
+                try:
+                    self.globals = xform.transform(ast)
+                except TokenError as e:
+
+                    # certain syntax errors (double defines)
+                    # can trigger this
+
+                    # feels like a hack.
+                    name2path = {}
+                    for path, jf in self.files.items():
+                        name2path[jf.name] = path
+                    e.token.file = name2path[e.token.file]
+
+                    # TODO: the source file could be None: need to fix this
+                    nodes = [ast_source]
+                    sources = set()
+                    while nodes:
+                        node = nodes.pop(0)
+                        sources.add(node.file)
+                        nodes.extend(node.children)
+                    print(sources)
+                    raise e
 
 
             formatter = Formatter(opts={'minify': minify})
@@ -981,8 +1003,9 @@ class Builder(object):
 
         message = [str(e)]
         message.append("\nError:\n")
-        if hasattr(e, 'filepath'):
-            message.append("Filepath: %s\n" % e.filepath)
+
+        filepath =  getattr(e, 'filepath', '<>')
+        message.append("Filepath: %s\n" % filepath)
         if hasattr(e, 'line'):
             message.append("Line: %s\n" % e.line)
         message.append("message: %s\n" % e)
@@ -998,7 +1021,8 @@ class Builder(object):
         # BuildError(filepath, token, lines, message, raw_message)
         self.error = Exception(message)
 
-        _filename = getattr(e, 'filepath', "")
+        print("=--= filepath", e.filepath)
+        _filename = getattr(e, 'filepath', '<>')
         _line = getattr(e, 'line', -1)
         _column = getattr(e, 'column', -1)
         _raw_message = getattr(e, 'raw_message', str(e))
@@ -1022,7 +1046,7 @@ class Builder(object):
             '</html>'
         ) % (
             '<p>Error: %s</p>' % str(e),
-            '' if _filename else '<p>File: %s</p>' % _filename,
+            '<p>File: %s</p>' % _filename,
             '' if _line < 0 else '<p>Line: %s</p>' % _line,
             '' if _column < 0 else '<p>Column: %s</p>' % _column,
             "<br>".join(_lines),

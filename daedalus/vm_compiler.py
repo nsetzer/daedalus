@@ -176,7 +176,7 @@ class VmClassTransform2(TransformBaseV2):
             // when the instance is called or an attribute is retrieved
             // it must look up the correct constructor or attribute using
             // the __proto__ chain
-            SUPER_X_Y = (CLASS_PARENT ?? (()=>{}))
+            SUPER_X_Y = (CLASS_PARENT ?? (()=>({})))
             for (let name in SUPER_X_Y.prototype) {
                 PROTOTYPE_X_Y[name] = SUPER_X_Y.prototype[name]
             }

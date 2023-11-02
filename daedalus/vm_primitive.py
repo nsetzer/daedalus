@@ -140,20 +140,26 @@ def jsc(fn):
     string will be parsed as javascript and compiled.
     """
 
-    text = fn(None)
+    compiled = None
+    def lazy(*args, **kwargs):
 
-    ast = vmGetAst(text)
+        if compiled is None:
 
-    compiler = VmCompiler()
-    module = compiler.compile(ast)
+            text = fn(None)
 
-    #if debug:
-    #    print(ast.toString(1))
-    #    module.dump()
+            ast = vmGetAst(text)
 
-    fn = VmFunction(module, module.functions[1], None, None, None, None, None)
+            compiler = VmCompiler()
+            module = compiler.compile(ast)
 
-    return fn
+            #if debug:
+            #    print(ast.toString(1))
+            #    module.dump()
+
+            compiled = VmFunction(module, module.functions[1], None, None, None, None, None)
+
+        return compiled(*args, **kwargs)
+    return lazy
 
 class JsObject(object):
 

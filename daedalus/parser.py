@@ -1281,7 +1281,10 @@ class Parser(ParserBase):
         token.children.append(rhs)
         token.type = Token.T_LAMBDA
 
-        if lhs.type == Token.T_GROUPING:
+        if rhs.type == Token.T_GROUPING and rhs.value == '{}':
+            rhs._maybe_illegal = True
+
+        if lhs.type == Token.T_GROUPING and lhs.value == "()":
             lhs.type = Token.T_ARGLIST
 
         for arg in lhs.children:
@@ -2619,6 +2622,8 @@ def main():  # pragma: no cover
     }
 
     """
+
+    text1 = "const f = () => {x:1, y:2}"
 
     #text1 = "(x:int): int => x"
     print("="* 79)

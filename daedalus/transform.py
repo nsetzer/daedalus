@@ -67,6 +67,8 @@ class TransformGrouping(TransformBase):
 
         for i, child in enumerate(token.children):
 
+
+
             if child.type == Token.T_GROUPING and child.value == "{}":
                 if (token.type == Token.T_MODULE) or \
                    (token.type == Token.T_ASYNC_FUNCTION) or \
@@ -89,6 +91,13 @@ class TransformGrouping(TransformBase):
                     ref = self._isObject(child)
                     if ref is None:
                         child.type = Token.T_OBJECT
+
+                        # another hack
+                        # if the rhs is an object, raise a syntax error
+                        # need to wait until the object transform is run
+                        if hasattr(child, '_maybe_illegal'):
+                            raise TransformError(child, "invalid object literal. must be wrapped in parenthesis")
+
                     else:
                         child.type = Token.T_BLOCK
                 else:
@@ -130,6 +139,8 @@ class TransformGrouping(TransformBase):
                     if tmp.type == Token.T_CASE or tmp.type == Token.T_DEFAULT:
                         break
                     child.children.append(token.children.pop(j))
+
+
 
     def _isObject(self, token):
         # test if a token is an object, this is only valid
