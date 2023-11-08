@@ -207,6 +207,7 @@ class Parser(ParserBase):
     W_UNSAFE_BOOLEAN_TEST = 7  # Note: could be expanded to testing between operator &&, ||
     W_USELESS_KEYWORD = 8
     W_GROUPING = 9
+    W_ELSE_UNSAFE = 10
 
     def __init__(self):
         super(Parser, self).__init__()
@@ -275,6 +276,7 @@ class Parser(ParserBase):
             Parser.W_UNSAFE_BOOLEAN_TEST: "unsafe boolean test. use (!!{token}) or (({token} !== undefined) && ({token} !== null))",
             Parser.W_USELESS_KEYWORD: "useless use of keyword",
             Parser.W_GROUPING: "expected parenthetical grouping",
+            Parser.W_ELSE_UNSAFE: "unsafe `else` expression. did you mean `else if`",
         }
         self.warnings_count = {}
 
@@ -2426,12 +2428,21 @@ class Parser(ParserBase):
                 return
 
             # drop the else
-            tokens.pop(i3)
+            tok_else = tokens.pop(i3)
 
             # consume else block
             # this could be another if, or other control flow
             # or a block or single statement
             tok4 = self.consume_block(tokens, index)
+            if not (tok4.type == Token.T_GROUPING and tok4.value == '{}'):
+                j = self.peek_token(tokens, tok4, index, 1)
+                if j is not None:
+                    # catch what JS considers to be a specific syntax error
+                    # be permissive, but warn that the allowed syntax is ambiguous.
+                    if tokens[j].type == Token.T_GROUPING and tokens[j].value == "{}":
+                        raise ParseError(tokens[j], "Unexpected {")
+                    else:
+                        self.warn(tok_else, Parser.W_ELSE_UNSAFE)
             token.children.append(tok4)
 
     def collect_keyword_return(self, tokens, index):
@@ -2623,7 +2634,7 @@ def main():  # pragma: no cover
 
     """
 
-    text1 = "const f = () => {}"
+    text1 = "if (true) {} else 4 {}"
 
     #text1 = "(x:int): int => x"
     print("="* 79)

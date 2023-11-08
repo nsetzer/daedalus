@@ -1602,12 +1602,12 @@ class FormatterTestCase(unittest.TestCase):
 
     def test_001_labeled_block_2(self):
         self._chkeq("""
-            ()=>{
+            ()=>({
                 ident: {
                     break ident;
                 }
-            }
-        """, "()=>{ident:{break ident}}")
+            })
+        """, "()=>({ident:{break ident}})")
 
     def test_001_labeled_block_3(self):
         self._chkeq("""

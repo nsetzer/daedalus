@@ -961,10 +961,13 @@ class Builder(object):
             else:
                 js = "//# sourceMappingURL=index.js.map\n" + js
 
-        else:
-            srcmap_content = json.dumps(self.sourcemap_obj)
+            self.sourcemap = (self.sourcemap_url2path, srcmap_content)
 
-        self.sourcemap = (self.sourcemap_url2path, srcmap_content)
+        else:
+            #srcmap_content = "" #json.dumps(self.sourcemap_obj)
+            self.sourcemap = ({}, "")
+
+
 
         script = '<script src="static/index.js"></script>'
         try:
@@ -1134,13 +1137,16 @@ class Builder(object):
         the script removes all existing children of the root dom node
         and then mounts the root element.
         """
+        # construct the document root node first, so that the javascript
+        # is parsed and syntax errors can be uncovered. may delay page rendering
         lines = [
             '<script type="text/javascript">',
-            'const document_root = document.getElementById("root")',
+            'const document_node = new %s();' % (root),
+            'const document_root = document.getElementById("root");',
             'while (document_root.hasChildNodes()) {',
             '    document_root.removeChild(document_root.lastChild);',
             '}',
-            '%s(document_root, new %s())' % (render_function, root),
+            '%s(document_root, document_node)' % (render_function),
             '</script>',
         ]
 

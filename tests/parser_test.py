@@ -1101,19 +1101,19 @@ class ParserKeywordTestCase(unittest.TestCase):
                                     TOKEN('T_LAMBDA', '=>',
                                         TOKEN('T_TEXT', 'Anonymous'),
                                         TOKEN('T_TEXT', 'res'),
-                                        TOKEN('T_OBJECT', '{}')))),
+                                        TOKEN('T_BLOCK', '{}')))),
                             TOKEN('T_ATTR', 'catch')),
                         TOKEN('T_ARGLIST', '()',
                             TOKEN('T_LAMBDA', '=>',
                                 TOKEN('T_TEXT', 'Anonymous'),
                                 TOKEN('T_TEXT', 'err'),
-                                TOKEN('T_OBJECT', '{}')))),
+                                TOKEN('T_BLOCK', '{}')))),
                     TOKEN('T_KEYWORD', 'finally')),
                 TOKEN('T_ARGLIST', '()',
                     TOKEN('T_LAMBDA', '=>',
                         TOKEN('T_TEXT', 'Anonymous'),
                         TOKEN('T_ARGLIST', '()'),
-                        TOKEN('T_OBJECT', '{}')))))
+                        TOKEN('T_BLOCK', '{}')))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -1151,6 +1151,13 @@ class ParserKeywordTestCase(unittest.TestCase):
             )
 
         self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_002_else_error(self):
+
+        text = "if (true) {} else (false) {}"
+        tokens = Lexer().lex(text)
+        with self.assertRaises(ParseError) as ctxt:
+            Parser().parse(tokens)
 
 class ParserFunctionTestCase(unittest.TestCase):
 
@@ -1197,7 +1204,7 @@ class ParserFunctionTestCase(unittest.TestCase):
             TOKEN('T_LAMBDA', '=>',
                 Token(Token.T_TEXT, 1, 3, 'Anonymous'),
                 TOKEN('T_ARGLIST', '()'),
-                TOKEN('T_OBJECT', '{}'))
+                TOKEN('T_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
@@ -1214,7 +1221,7 @@ class ParserFunctionTestCase(unittest.TestCase):
                     TOKEN('T_TEXT', 'a'),
                     TOKEN('T_TEXT', 'b'),
                     TOKEN('T_TEXT', 'c')),
-                TOKEN('T_OBJECT', '{}'))
+                TOKEN('T_BLOCK', '{}'))
         )
 
         self.assertFalse(parsecmp(expected, ast, False))
