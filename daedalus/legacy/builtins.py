@@ -7,7 +7,7 @@ import inspect
 import math
 import types
 
-from .lexer import Lexer, Token, TokenError
+from .lexer import Token
 
 def _dumps_impl(obj):
     if isinstance(obj, types.FunctionType):
@@ -95,7 +95,7 @@ class JsUndefined(JsObjectBase):
     def __init__(self):
         super(JsUndefined, self).__init__()
 
-        if JsUndefined._instance != None:
+        if JsUndefined._instance is not None:
             raise Exception("singleton")
 
     def __getattr__(self, name):
@@ -307,9 +307,7 @@ class JsSuper(JsObjectBase):
 
         frame = inspect.currentframe()
         try:
-            code = frame.f_back.f_code
             code_locals = frame.f_back.f_locals
-            nvars = code.co_argcount
             if 'this' in code_locals:
                 this = code_locals['this']
                 print(this)

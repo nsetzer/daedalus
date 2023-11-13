@@ -3,13 +3,13 @@ def LEB128u(value):
     """ encode a variable length unsigned number as bytes in LEB128 format
     """
     out = value & 0b0111_1111
-    value >>= 7;
+    value >>= 7
     n = 1
     while value:
         out |= 0b1000_0000
-        out <<= 8;
+        out <<= 8
         lsb = (value & 0b0111_1111)
-        value >>= 7;
+        value >>= 7
         out |= lsb
         n += 1
     return out.to_bytes(n, 'big')

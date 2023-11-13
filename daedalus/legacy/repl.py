@@ -1,17 +1,13 @@
 
-import os
-import sys
 
 # magic import for better input support
 # may not be available on windows
 try:
     import readline
-except ImportError as e:
+except ImportError:
     pass
 
-from daedalus.lexer import Lexer, Token, TokenError
-from daedalus.parser import Parser
-from daedalus.compiler import Compiler
+from daedalus.lexer import TokenError
 from daedalus.jseval import JsContext
 from daedalus.builtins import defaultGlobals
 
@@ -44,7 +40,7 @@ def unescape(text):
                 elif c == ']':
                     pass
                 elif c == '0':
-                    s = next(g) + next(g)
+                    next(g) + next(g)
                     pass
                 else:
                     out += c
@@ -84,9 +80,9 @@ class Repl(object):
 
                 # process the line
                 self._main(text)
-            except ExitRepl as e:
+            except ExitRepl:
                 break
-            except KeyboardInterrupt as e:
+            except KeyboardInterrupt:
                 pass
             except TokenError as e:
                 print("exception", e)

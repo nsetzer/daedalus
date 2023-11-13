@@ -1,4 +1,5 @@
 
+from ..token import Token
 
 class VmClassTransform(TransformBaseV2):
 

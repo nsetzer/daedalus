@@ -1,3 +1,4 @@
+from ..token import Token
 
 
 class TransformReplaceIdentity(TransformBaseV2):
@@ -94,7 +95,7 @@ class TransformClassToFunction(TransformBaseV2):
         co = token.index
 
         name = token.children[0]
-        extends = token.children[1]
+        token.children[1]
         clsbody = token.children[2]
 
         # mode 1 is the default, for when this transform is run priorto AssignScope
@@ -206,7 +207,7 @@ class TransformClassToFunction(TransformBaseV2):
         arglist = constructor.children[1]
         fnbody = constructor.children[2]
 
-        closure = Token(Token.T_CLOSURE, token.line, token.index, "")
+        Token(Token.T_CLOSURE, token.line, token.index, "")
 
         for method in methods:
             anonfn = Token(Token.T_LAMBDA, token.line, token.index, "=>",

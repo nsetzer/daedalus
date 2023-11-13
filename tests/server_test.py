@@ -2,7 +2,6 @@
 
 
 import unittest
-from tests.util import edit_distance
 
 from daedalus.server import Router, Response, JsonResponse
 

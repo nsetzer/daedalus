@@ -1,19 +1,8 @@
 
 import os
 import sys
-import argparse
-import logging
-import time
-import cProfile
-import json
-import base64
 
 from .builder import Builder
-from .server import SampleServer
-from .lexer import Lexer
-from .parser import Parser
-from .formatter import Formatter
-from .transform import TransformMinifyScope
 from .webview import export_webchannel_js
 
 def makedirs(path):
@@ -28,7 +17,6 @@ def copy_staticdir(staticdir, outdir, verbose=False):
             if verbose:
                 print("copy from %s" % dirpath)
 
-            paths = []
             for dirname in dirnames:
                 src_path = os.path.join(dirpath, dirname)
                 dst_path = os.path.join(outdir, "static", os.path.relpath(src_path, staticdir))

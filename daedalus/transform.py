@@ -1,7 +1,6 @@
 #! cd .. && python3 -m daedalus.transform
 import os
 import sys
-import io
 import ast as py_ast
 import operator
 import hashlib
@@ -14,7 +13,7 @@ class TransformError(TokenError):
 def literal_eval(token):
     try:
         return py_ast.literal_eval(token.value)
-    except SyntaxError as e:
+    except SyntaxError:
         pass
     raise TransformError(token, "syntax error")
 
@@ -515,7 +514,6 @@ class TransformExtractStyleSheet(TransformBase):
         style = self._object2style(selector_text, obj)
         self.styles.append(style)
 
-        name = "dcs-%s-%d" % (self.uid, self.style_count)
         self.style_count += 1
 
         token.type = Token.T_EMPTY_TOKEN if keep else Token.T_STRING
@@ -543,7 +541,7 @@ class TransformExtractStyleSheet(TransformBase):
                 self.named_styles[style_name] = name
 
             self.style_count += 1
-        except TransformError as e:
+        except TransformError:
             # the style is not trivial and cannot be processed
             return False
 
@@ -946,7 +944,7 @@ class VariableScope(object):
 
                 if scopes[-1].contains(label):
                     found = True
-                    break;
+                    break
 
                 scopes.append(scopes[-1].parent)
 
@@ -2134,11 +2132,11 @@ class TransformAssignScope(object):
             self.seq.append((new_flags, scope, child, token))
 
     def visit_unpack_sequence(self, flags, scope, token, parent):
-        scflags = (flags & ST_SCOPE_MASK) >> 12
+        (flags & ST_SCOPE_MASK) >> 12
         self._push_children(scope, token, flags)
 
     def visit_unpack_object(self, flags, scope, token, parent):
-        scflags = (flags & ST_SCOPE_MASK) >> 12
+        (flags & ST_SCOPE_MASK) >> 12
         self._push_children(scope, token, flags)
 
     def visit_for(self, flags, scope, token, parent):
@@ -2270,7 +2268,7 @@ class TransformAssignScope(object):
                 break
 
             if tag == "switch":
-                token.type = Token.T_SWITCH_BREAK;
+                token.type = Token.T_SWITCH_BREAK
                 idx = i
                 break
 
@@ -2547,35 +2545,6 @@ class TransformAssignScope(object):
             elif pair.type == Token.T_TEXT:
                 # argument with no default
                 next_scope.define(SC_FUNCTION, pair)
-            else:
-                raise TransformError(pair, "not supported for parameter matching")
-
-    # TODO: remove
-    def _handle_function_arg_obj(self, scope, next_scope, token):
-        # function argument object destructuring
-        # identifiers are not minified because the identifier
-        # acts as an attribute of an object.
-
-        # to minify, the reference would need to be converted
-        # first build a reference:
-        #       next_scope.define(SC_NO_MINIFY|SC_FUNCTION, ident_)
-        #       ref = next_scope.load(ident_)
-        # then update the function body. add a line to unpack
-        # the identifier into a new variable
-        #       *ref = ident_.value
-        # then replace the reference from an identity reference to a
-        # minified reference
-
-        for pair in token.children:
-
-            if pair.type == Token.T_ASSIGN and pair.value == "=":
-                ident_, default_ = pair.children
-                next_scope.define(SC_NO_MINIFY|SC_FUNCTION, ident_)
-                # process the RHS as a default argument value
-                self._push_tokens(ST_VISIT, scope, [default_], pair)
-            elif pair.type == Token.T_TEXT:
-                # argument with no default
-                next_scope.define(SC_NO_MINIFY|SC_FUNCTION, pair)
             else:
                 raise TransformError(pair, "not supported for parameter matching")
 
@@ -2928,10 +2897,10 @@ class TransformConstEval(TransformBaseV3):
             if ref.name in self.constexpr_values:
                 new_token = self.constexpr_values[ref.name]
                 if new_token in visited:
-                    break;
+                    break
                 token = new_token
             else:
-                break;
+                break
         return token
 
     def visit_assign(self, token, parent):
@@ -3189,49 +3158,9 @@ def main_unused(): # pragma: no cover
     #  prune unused variables, functions, classes
     #  repeat until nothing is removed
     from .parser import Parser
-    from .formatter import Formatter
 
-    mod1_text = """
 
-        let x=0;
-        let y=0; // unused
 
-        function f() {
-            return x;
-        }
-
-        function g() { // unused
-            return x;
-        }
-
-        export function h() {
-            return f()
-        }
-
-        // todo:
-        //function i() { // unused
-        //    return g()
-        //}
-
-        h()
-
-    """
-
-    mod2_text = """
-        include './mod1.js'
-        import module daedalus
-        export x = h()
-    """
-
-    mod2_text = """
-        export function f() {
-            try {
-                throw "str"
-            } catch (ex) {
-                console.log(ex)
-            }
-        }
-    """
 
 
     text = """
@@ -3316,7 +3245,7 @@ function f() {
                     return True
             return False
 
-        i=0;
+        i=0
         while i < len(ast.children):
             node = ast.children[i]
 

@@ -1,7 +1,6 @@
 #! cd .. && python3 -m tests.compiler_test -v
 
 import unittest
-from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
@@ -725,7 +724,7 @@ try:
                 let d = new Dog('Mitzie');
                 d.speak(); // Mitzie barks.
             """
-            result = self.evaljs(text)
+            self.evaljs(text)
 
         @unittest.skip("not implemented")
         def test_evaljs_class_prototype(self):
@@ -865,7 +864,7 @@ try:
             self.assertEqual(result[0], True)
             self.assertEqual(result[1], False)
 
-except ImportError as e:
+except ImportError:
     pass
 
 def main():

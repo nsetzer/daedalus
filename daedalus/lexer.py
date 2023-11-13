@@ -1,11 +1,10 @@
 #! cd .. && python3 -m daedalus.lexer
 
 # TODO: better support for regex
-import logging
 import sys
-import io
 
 from .token import Token, TokenError
+import cProfile
 
 class LexError(TokenError):
     pass
@@ -442,7 +441,6 @@ class Lexer(LexerBase):
         self._type = Token.T_TEMPLATE_STRING if string_terminal == '`' else Token.T_STRING
         self._putch(string_terminal)
 
-        escape = False
 
         while True:
             try:
@@ -718,9 +716,6 @@ class Lexer(LexerBase):
 
 Lexer.reserved_words = {*reserved_words, *reserved_words_extra}
 
-import timeit
-import cProfile
-import re
 
 def perf():  # pragma: no cover
 

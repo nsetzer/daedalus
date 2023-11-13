@@ -1,8 +1,5 @@
 
-import sys
-import io
-import base64
-from .lexer import Lexer, Token, TokenError
+from .lexer import Token
 
 class SourceMap(object):
     """

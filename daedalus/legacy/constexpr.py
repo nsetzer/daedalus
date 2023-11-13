@@ -1,8 +1,8 @@
 #! cd .. && python3 -m daedalus.constexpr
 
-from .token import Token, TokenError
-from .lexer import Lexer, LexError
-from .parser import Parser, ParseError
+from .token import Token
+from .lexer import Lexer
+from .parser import Parser
 
 from .transform import TransformIdentityScope, TransformBaseV3, \
     TransformReplaceIdentity
@@ -10,7 +10,6 @@ from .transform import TransformIdentityScope, TransformBaseV3, \
 from .compiler import Compiler
 from .formatter import Formatter
 from .builtins import JsArray, JsObject, JsObjectType
-from tests.util import parsecmp
 
 class TransformScope(TransformIdentityScope):
 
@@ -92,10 +91,10 @@ class TransformConstExpr(TransformBaseV3):
             if ref.name in self.constexpr_values:
                 new_token = self.constexpr_values[ref.name]
                 if new_token in visited:
-                    break;
+                    break
                 token = new_token
             else:
-                break;
+                break
         return token
 
     def literalToToken(self, parent, value):
@@ -158,7 +157,7 @@ class TransformConstExpr(TransformBaseV3):
         cc.compile(ast)
 
         #cc.dump()
-        result = cc.function_body()
+        cc.function_body()
 
         result_value = cc.globals[identity]
         #self.globals[identity] = result_value

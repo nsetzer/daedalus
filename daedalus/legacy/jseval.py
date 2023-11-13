@@ -6,17 +6,14 @@ import time
 import struct
 import marshal
 
-from importlib.util import spec_from_file_location, MAGIC_NUMBER, cache_from_source
+from importlib.util import MAGIC_NUMBER
 
-from .lexer import Lexer, TokenError
+from .lexer import Lexer
 from .parser import Parser
 from .formatter import Formatter
 from .compiler import Compiler
 from .builder import Builder
-from .builtins import JsObject
-from .util import Namespace
-from .transform import TransformAssignScope, \
-    TransformClassToFunction, TransformMinifyScope,\
+from .transform import TransformClassToFunction, TransformMinifyScope,\
     TransformIdentityScope, TransformClassToFunction, \
     TransformReplaceIdentity
 

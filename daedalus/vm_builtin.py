@@ -1,31 +1,11 @@
 #! cd .. && python -m daedalus.vm
-import os
-import io
-import struct
-import ctypes
-import binascii
-import operator
-import ast as pyast
-import math
-import random
 import re
 import time
-import traceback
 import urllib.request
-import logging
 
-from . import vm_opcodes as opcodes
 
-from .token import Token, TokenError
-from .lexer import Lexer
-from .parser import Parser, ParseError
-from .transform import TransformBaseV2, TransformIdentityBlockScope
-from .builder import findModule
 
-from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
-    VmClassTransform2
-from .vm_primitive import vmGetAst, JsObject, JsObjectPropIterator, \
-    VmFunction, jsc, JsUndefined, JsString, JsNumber, JsSet, JsArray, \
+from .vm_primitive import JsObject, VmFunction, jsc, JsUndefined, JsString, JsSet, JsArray, \
     JsObjectCtor, JsMath, JsNumberObject
 
 class JsAssert(JsObject):
@@ -67,7 +47,7 @@ class JsTimerFactory(object):
 
         timeout = time.time() + delay/1000.0
 
-        posargs = JsObject()
+        JsObject()
 
         stackgenerator = lambda: [self.runtime._new_frame(fn, len(args), args, JsObject())]
 

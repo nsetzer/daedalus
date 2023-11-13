@@ -58,7 +58,6 @@ import struct
 import ctypes
 import binascii
 
-from enum import Enum
 
 from . import wasm_opcodes as opcodes
 
@@ -67,13 +66,13 @@ WASM_VERSION = b"\x01\x00\x00\x00"
 
 def UINT2LEB128(value):
     out = value & 0b0111_1111
-    value >>= 7;
+    value >>= 7
     n = 1
     while value:
         out |= 0b1000_0000
-        out <<= 8;
+        out <<= 8
         lsb = (value & 0b0111_1111)
-        value >>= 7;
+        value >>= 7
         out |= lsb
         n += 1
     return out.to_bytes(n, 'big')
@@ -97,6 +96,7 @@ def read_LEB128u(stream):
 
 def SINT2LEB128(val):
     out = []
+    idx = 0
     while True:
         byte = val & 0x7f
         idx = idx >> 7
@@ -131,18 +131,18 @@ def read_LEB128s(stream):
 # return value and count of bytes read
 
 class SectionType(opcodes.Enum):
-    CUSTOM    = 0;
-    TYPE      = 1;
-    IMPORT    = 2;
-    FUNCTION  = 3;
-    TABLE     = 4;
-    MEMORY    = 5;
-    GLOBAL    = 6;
-    EXPORT    = 7;
-    START     = 8;
-    ELEMENT   = 9;
-    CODE      = 10;
-    DATA      = 11;
+    CUSTOM    = 0
+    TYPE      = 1
+    IMPORT    = 2
+    FUNCTION  = 3
+    TABLE     = 4
+    MEMORY    = 5
+    GLOBAL    = 6
+    EXPORT    = 7
+    START     = 8
+    ELEMENT   = 9
+    CODE      = 10
+    DATA      = 11
 
 class WasmInstruction(object):
     __slots__ = ['opcode', 'args', 'tgt']
@@ -207,10 +207,10 @@ class WasmMemory(object):
             for i in range(s, e+1, self.block_size):
                 if i not in self.mem:
                     self.mem[i] = bytearray(self.block_size)
-                l = min(self.block_size, o + length)
-                parts.append(self.mem[i][o:l])
+                _len = min(self.block_size, o + length)
+                parts.append(self.mem[i][o:_len])
                 o = 0
-                length -= l
+                length -= _len
             return bytearray().join(parts)
 
     def _store(self, addr, data, length):
@@ -225,16 +225,15 @@ class WasmMemory(object):
 
             self.mem[s][o:o+length] = data[p:p+length]
         else:
-            parts = []
 
             for i in range(s, e+1, self.block_size):
                 if i not in self.mem:
                     self.mem[i] = bytearray(self.block_size)
-                l = min(self.block_size, o + length)
-                self.mem[i][o:l] = data[p:p+l-o]
+                _len = min(self.block_size, o + length)
+                self.mem[i][o:_len] = data[p:p+_len-o]
                 o = 0
-                p += l
-                length -= l
+                p += _len
+                length -= _len
 
     def store_i8(self, addr, value):
         encoded = (value&0xFF).to_bytes(1, 'little')
@@ -724,7 +723,7 @@ class WasmModule(object):
 
         offset0 = stream.tell()
 
-        unknown = stream.read(1)
+        stream.read(1)
 
         depth = 0
         while True:
@@ -845,7 +844,7 @@ class WasmModule(object):
         elif section_type == SectionType.TABLE:
             raise NotImplementedError()
         elif section_type == SectionType.MEMORY:
-            num_memories = read_LEB128u(stream)
+            read_LEB128u(stream)
             raise NotImplementedError()
         elif section_type == SectionType.GLOBAL:
             raise NotImplementedError()
@@ -873,9 +872,8 @@ class WasmModule(object):
         else:
             raise Exception("invalid section type %s" % section_type)
 
-        section_size_fixup = 0
         if section_size == 0:
-            section_size_fixup = read_LEB128u(stream)
+            read_LEB128u(stream)
 
         offset1 = stream.tell()
 
@@ -967,7 +965,7 @@ class PythonBackend(object):
 
     def call(self, name, locals=None):
 
-        fn = self.module.getFunctionByName(name);
+        fn = self.module.getFunctionByName(name)
         self.contexts = [WasmStackContext(fn, locals)]
 
         return self.run()
@@ -1534,7 +1532,7 @@ def main():
     backend.mem.store(0, b"hello world\x00")
     print(backend.mem.load(0, 16))
 
-    instrs = [
+    [
         WasmInstruction(opcodes.ctrl.BLOCK, opcodes.ResultType.VOID),
         WasmInstruction(opcodes.i32.CONST, 4),
         WasmInstruction(opcodes.i32.CONST, 5),

@@ -34,7 +34,6 @@ from .parser import Parser, xform_apply_file
 from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
     TransformConstEval, getModuleImportExport, TransformIdentityScope
 from .formatter import Formatter
-from ast import literal_eval
 import pickle
 import base64
 
@@ -246,8 +245,8 @@ def buildPythonAst(modname, mod, imports, exports):
         sys.stderr.write("warning: module with invalid modname %s\n" % modname)
         modname = os.path.splitext(os.path.split(modname)[1])[0]
 
-    tok_import_names = [TOKEN('T_TEXT', text) for text in import_names]
-    tok_argument_names = [TOKEN('T_TEXT', text) for text in argument_names]
+    [TOKEN('T_TEXT', text) for text in import_names]
+    [TOKEN('T_TEXT', text) for text in argument_names]
     tok_export_names = [TOKEN('T_TEXT', text) for text in sorted(exports)]
     tok_exports = TOKEN('T_MODULE', '',
         TOKEN('T_RETURN', 'return',
@@ -969,10 +968,9 @@ class Builder(object):
 
 
 
-        script = '<script src="static/index.js"></script>'
         try:
             index_html = self.find("index.%s.html" % self.platform)
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             index_html = None
 
         if index_html is None:
@@ -1103,7 +1101,7 @@ class Builder(object):
         """
         Returns platform dependent HTML/JS for handling API gateways
         """
-        prefix = self.getPlatformPathPrefix()
+        self.getPlatformPathPrefix()
 
         if self.platform == "android":
             return "<script type=\"text/javascript\">\n" \
@@ -1118,7 +1116,7 @@ class Builder(object):
                 "        console.error(\"unregistered event: \" + name);\n" \
                 "    }\n" \
                 "}\n" \
-                "</script>\n";
+                "</script>\n"
         if self.platform == "qt":
             # TODO: does src need {[refix]}
             return "<script type=\"text/javascript\" src=\"static/qwebchannel.js\"></script>\n" \

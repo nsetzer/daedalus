@@ -257,9 +257,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     buf = response.payload.read(RequestHandler.BUFFER_TX_SIZE)
             else:
                 self.wfile.write(response.payload)
-        except ConnectionAbortedError as e:
+        except ConnectionAbortedError:
             sys.stderr.write("%s aborted\n" % url.path)
-        except BrokenPipeError as e:
+        except BrokenPipeError:
             sys.stderr.write("%s aborted\n" % url.path)
         finally:
             if hasattr(response.payload, "close"):
@@ -291,7 +291,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             for part in parts:
                 part = part.strip()
                 if part.startswith("boundary="):
-                    boundary = part[len("boundary="):]
+                    part[len("boundary="):]
 
             with open(path, "wb") as wb:
 

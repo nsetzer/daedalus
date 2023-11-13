@@ -1,5 +1,4 @@
 
-import os
 import struct
 
 from .lexer import TokenError
@@ -93,7 +92,7 @@ def parseNumber(token):
     if base == -1:
         try:
             value = int(text, 16)
-        except Exception as e:
+        except Exception:
             value = None
 
         if value and len(text) == 8:
@@ -105,13 +104,13 @@ def parseNumber(token):
     else:
         try:
             value = int(text, base)
-        except Exception as e:
+        except Exception:
             value = None
     if not value and "." in text or 'e' in text:
         try:
             if base == 10:
                 value = float(text)
-        except Exception as e:
+        except Exception:
             value = None
 
     if value is None:

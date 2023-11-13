@@ -49,32 +49,15 @@ TODO: update assignments and destructuring assignments must be transformed
 
 """
 import os
-import io
-import struct
-import ctypes
-import binascii
 import operator
-import ast as pyast
-import math
-import random
-import re
-import time
-import traceback
-import urllib.request
 
 from . import vm_opcodes as opcodes
 
-from .token import Token, TokenError
-from .lexer import Lexer
-from .parser import Parser, ParseError
 from .builder import findModule
 from .formatter import Formatter
 
-from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
-    VmClassTransform2
-from .vm_primitive import vmGetAst, JsObject, JsObjectPropIterator, \
-    VmFunction, jsc, JsUndefined, JsString, JsNumber, JsSet, JsArray, \
-    JsObjectCtor
+from .vm_compiler import VmCompiler
+from .vm_primitive import vmGetAst, JsObject, VmFunction, JsUndefined, JsString, JsNumber, JsArray
 
 from .vm_builtin import JsTimerFactory, populate_builtins
 
@@ -354,7 +337,7 @@ class VmRuntime(object):
             self.steps += 1
 
             tstack = self.timer.check()
-            if tstack != None:
+            if tstack is not None:
                 history.append((self.stack_frames, frame, instrs, return_value))
                 self.stack_frames = tstack
                 frame = tstack[-1]
@@ -525,7 +508,7 @@ class VmRuntime(object):
             elif instr.opcode == opcodes.ctrl.CATCH:
 
                 if self.exception is None:
-                    raise RunTimeError("no exception")
+                    raise RuntimeError("no exception")
 
                 frame.stack.append(self.exception.value)
                 self.exception.handled = True
@@ -555,7 +538,7 @@ class VmRuntime(object):
                 module_name = str(frame.stack.pop())
                 if module_name.lower().endswith(".js"):
                     if not frame.module.path:
-                        raise RunTimeError("relative import from module without a path")
+                        raise RuntimeError("relative import from module without a path")
                     dirpath, _ = os.path.split(frame.module.path)
                     path = os.path.normpath(os.path.join(dirpath, module_name))
                 else:
@@ -941,20 +924,6 @@ class VmRuntime(object):
 
 def main():  # pragma: no cover
 
-    text_fclass1 = """
-
-    function f() {
-        x = 5;
-        return () => {this.x+=1; return this.x};
-    }
-    g1 = f()
-    g2 = f()
-
-    r1 = g1()
-    r2 = g2()
-    r3 = g1()
-    r4 = g2()
-    """
 
     text1 = """
         function f() {
@@ -980,95 +949,15 @@ def main():  # pragma: no cover
     }
     """
 
-    class0 = """
-        function App(x) {
-
-            this.get_x = () => {
-                return this.x
-            }
-
-            this.x = x
-
-            return this
-        }
-
-        y = App(7).get_x()
-        console.log(y)
-    """
     # compiler trasforms class into the above example
-    class1 = """
-
-        // export
-        class App {
-            constructor(x) {
-                this.x = x;
-            }
-
-            get_x() {
-                return this.x
-            }
-        }
-
-        y = App(7).get_x()
-        console.log(y)
-    """
-
-    class2 = """
-
-        class P {
-            constructor(x, y) {
-                this.x = x
-                this.y = y
-            }
-        }
-
-        class T extends P {
-            constructor(x, y) {
-                //super = P.bind(this)
-                super(x, y)
-            }
-
-            mul() {
-                return this.x * this.y
-            }
-        }
-
-        console.log(T(6, 7).mul())
-    """
 
 
-    array1 = """
-
-        let a = [1, 2, 3]
-        console.log(a.length, a[1])
-        a.push(4)
-        console.log(a.length, a[1])
-    """
-
-    promise1 = """
-        p = Promise(()=>{return 1})
-        //console.log()
-        //console.log(fetch("/root", {}))
-    """
 
 
-    export1 = """
 
-        //export let v1
-        //export let v1, v2
 
-        // export function a() {}
-        export default function a() {}
 
-    """
 
-    set1 = """
-        let s = new Set()
-    """
-
-    not1 = """
-        let a = !true
-    """
 
     # ----------
     # add these as  tests
@@ -1082,12 +971,6 @@ def main():  # pragma: no cover
         let b = typeof(a)
     """
 
-    export2 = """
-
-        export class A {
-            //constructor() {}
-        }
-    """
 
     text1 = """
         a = [1,2,3]
@@ -1120,12 +1003,6 @@ def main():  # pragma: no cover
     # regex
     # anonymous functions
 
-    template_string1 = """
-
-        let a = 1
-
-        let s = `a=${a}`
-    """
 
     text1 = """
         sum(...a)
@@ -1135,15 +1012,7 @@ def main():  # pragma: no cover
         zz ??= 4 // 4
     """
 
-    regex1 = """
-        //let r = new Regex(a, b)
-        let r = /a+b/g
-    """
 
-    instanceof1 = """
-        let x = 1
-        let y = x instanceof Function
-    """
 
     text1 = """
         function f(a, ...rest) {
@@ -1166,42 +1035,8 @@ def main():  # pragma: no cover
         } while (c < 5);
     """
 
-    mapping1 = """
 
-        //function f(...rest) {
-        //    console.log(rest)
-        //}
-        //f()
 
-        //x = [1,2,3]
-        //console.log(x[2])
-
-        fn = x => x*x
-
-        console.log([1,2,3].map(fn))
-        console.log([1,2,3,4].length)
-
-        //o = {a: 1, b: 2}
-        //console.log(Object.keys(o).map(k => o[k]*5))
-
-        //chars= "abc"
-        //console.log(chars.length, chars[0])
-
-    """
-
-    keys1 = """
-
-        o = {a:1}
-        x = Object.keys(o)
-        y = o.keys(o)
-    """
-
-    export_func_default1 = """
-
-        export function parse(text=undefined) {
-            return text
-        }
-    """
     text1 = """
 
         x=[].concat([1,2,3]).join("+")
@@ -1428,114 +1263,10 @@ def main():  # pragma: no cover
         console.log(seq)
     """
 
-    text2 = """
-        include "../morpgsite/frontend/build/static/index.js";
 
-        const document_root = document.getElementById("root")
-        while (document_root.hasChildNodes()) {
-            document_root.removeChild(document_root.lastChild);
-        }
-        app = new app.App()
-        console.log(app)
 
-        daedalus.render(document_root, app)
-        daedalus.workLoop()
 
-        console.log(document.html.toString())
 
-        /*
-        function render(elem) {
-
-            if (elem.type === "TEXT_ELEMENT") {
-                console.log(elem.props.nodeValue)
-            } else {
-
-                s = `<${elem.type}`;
-                for (const prop in elem.props) {
-                    s += ` ${prop}="${elem.props[prop]}"`;
-                }
-                s += ">"
-                console.log(s)
-                for (const child of elem.children) {
-                    render(child)
-                }
-                console.log(`</${elem.type}>`)
-            }
-        }
-
-        render(app)
-        */
-
-    """
-
-    text2 = """
-        import module daedalus
-
-        console.log(daedalus)
-
-        const style = {
-            body: StyleSheet({
-                margin:0,
-                padding:0,
-            }),
-            main: StyleSheet({
-                width: "100%",
-                "text-align": "center",
-            })
-        };
-
-        class App extends DomElement {
-
-            constructor() {
-                super("div", {className: style.main})
-                this.appendChild(new TextElement("Hello World"))
-            }
-        }
-
-        const document_root = document.getElementById("root")
-        app = new App()
-        render(document_root, app)
-        workLoop()
-        console.log("--document----")
-        console.log(document.html.toString())
-        console.log("--------------")
-
-    """
-
-    text2 = """
-        /^(LGBT[^s]+)$/i
-    """
-
-    text2 = """
-        //from module daedalus import {DomElement=x, TextElement, StyleSheet}]
-        //import module daedalus
-        //console.log("element", daedalus.DomElement)
-        fetch("http://www.example.com", {}).then(res => {
-            if (res.ok) {
-                console.log("ok")
-                res.text().then(text => {
-                    console.log(text)
-                }).catch(err => {
-                    console.log(err)
-                })
-            } else {
-                console.log("error")
-            }
-        })
-        wait()
-    """
-
-    text2 = """
-
-    function addOffset(match, ...args) {
-      const hasNamedGroups = typeof args.at(-1) === "object";
-      const offset = hasNamedGroups ? args.at(-3) : args.at(-2);
-      return `${match} (${offset}) `;
-    }
-
-    console.log("abcd".replace(/(bc)/, addOffset)); // "abc (1) d"
-
-    """
 
     text1 = """
         class A {

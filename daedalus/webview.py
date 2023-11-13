@@ -1,6 +1,5 @@
 
 import os
-import sys
 import logging
 
 try:
@@ -15,7 +14,7 @@ try:
 
         QWebChannel.js is required for interop between js and python when using Qt
         """
-        QFile.copy(":/qtwebchannel/qwebchannel.js", path);
+        QFile.copy(":/qtwebchannel/qwebchannel.js", path)
 
     class _Handler(QWebEngineUrlSchemeHandler):
         # https://doc.qt.io/qt-6.2/qwebengineurlschemehandler.html
@@ -103,7 +102,7 @@ try:
             self.engine.load(self.url)
             print(settings)
 
-            self.channel = QWebChannel(self.engine.page());
+            self.channel = QWebChannel(self.engine.page())
             self.engine.page().setWebChannel(self.channel)
 
 
@@ -114,7 +113,7 @@ try:
             """
             execute a javascript expression inside the context of the webview
             """
-            self.engine.page().runJavaScript(text);
+            self.engine.page().runJavaScript(text)
 
         def reload(self):
 
@@ -145,7 +144,7 @@ try:
             print("--", isinstance(obj, QObject))
             self.channel.registerObject(name, obj)
 
-except ImportError as e:
+except ImportError:
     #print(e)
     #print("daedalus webview import error")
 

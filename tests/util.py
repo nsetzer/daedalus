@@ -1,6 +1,7 @@
 #! cd .. && python -m tests.util
 from daedalus.lexer import Token
-import time, math
+import time
+import math
 
 def edit_distance(hyp, ref, eq=None):
     """

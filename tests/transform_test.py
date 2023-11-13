@@ -2,10 +2,10 @@
 
 
 import unittest
-from tests.util import edit_distance, parsecmp, TOKEN
+from tests.util import parsecmp, TOKEN
 
-from daedalus.lexer import Token, Lexer
-from daedalus.parser import Parser as ParserBase, ParseError
+from daedalus.lexer import Lexer
+from daedalus.parser import Parser as ParserBase
 from daedalus.transform import TransformIdentityScope, \
     TransformMinifyScope, getModuleImportExport, TransformIdentityBlockScope, \
     TransformExtractStyleSheet, TransformError
@@ -40,7 +40,7 @@ class TransformTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
 
         xform = TransformMinifyScope()
-        globals = xform.transform(ast)
+        xform.transform(ast)
 
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'let',

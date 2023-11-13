@@ -1,28 +1,15 @@
-import os
 import sys
-import io
-import struct
-import ctypes
-import binascii
 import operator
-import ast as pyast
 import math
 import random
-import re
-import time
-import traceback
-import urllib.request
 
 from . import vm_opcodes as opcodes
 
-from .token import Token, TokenError
 from .lexer import Lexer
-from .parser import Parser, ParseError
-from .transform import TransformBaseV2, TransformIdentityBlockScope
-from .builder import findModule
+from .parser import Parser
+from .transform import TransformIdentityBlockScope
 
-from .vm_compiler import VmCompiler, VmTransform, VmInstruction, \
-    VmClassTransform2
+from .vm_compiler import VmCompiler, VmTransform, VmClassTransform2
 
 operands = [
     '__lt__',
@@ -143,6 +130,7 @@ def jsc(fn):
     compiled = None
     def lazy(*args, **kwargs):
 
+        nonlocal compiled
         if compiled is None:
 
             text = fn(None)
@@ -726,13 +714,13 @@ class JsString(JsObject, metaclass=JsStringType):
     def indexOf(self, substr):
         try:
             return self.value.index(substr.value)
-        except ValueError as e:
+        except ValueError:
             return -1
 
     def lastIndexOf(self, substr):
         try:
             return self.value.rindex(substr.value)
-        except ValueError as e:
+        except ValueError:
             return -1
 
     def match(self, regex):
@@ -798,7 +786,7 @@ class JsUndefined(JsObject):
     def __init__(self):
         super(JsUndefined, self).__init__()
         if JsUndefined.instance is not None:
-            raise RunTimeError("cannot construct singleton")
+            raise RuntimeError("cannot construct singleton")
 
     def __repr__(self):
         return "<JsUndefined()>"

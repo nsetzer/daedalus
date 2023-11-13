@@ -3,7 +3,7 @@
 import io
 import unittest
 
-from daedalus.lexer import Token, LexerBase, Lexer, TokenError, LexError
+from daedalus.lexer import Token, LexerBase, Lexer, LexError
 from tests.util import edit_distance
 
 def tokcmp(a, b):
@@ -163,13 +163,13 @@ class LexerInputTestCase(unittest.TestCase):
 
         text = " /* comment"
 
-        with self.assertRaises(LexError) as e:
+        with self.assertRaises(LexError):
             Lexer().lex(text)
 
     def test_005_multiline_comment_stop_iteration_v2(self):
 
         text = " /* comment *"
-        with self.assertRaises(LexError) as e:
+        with self.assertRaises(LexError):
             Lexer().lex(text)
 
     def test_006_multiline_doc(self):
@@ -185,12 +185,12 @@ class LexerInputTestCase(unittest.TestCase):
 
     def test_006_multiline_doc_stop_iteration_v1(self):
         text = " /** comment \n more text"
-        with self.assertRaises(LexError) as e:
+        with self.assertRaises(LexError):
             Lexer({'preserve_documentation': True}).lex(text)
 
     def test_006_multiline_doc_stop_iteration_v2(self):
         text = " /** comment \n more text *"
-        with self.assertRaises(LexError) as e:
+        with self.assertRaises(LexError):
             Lexer({'preserve_documentation': True}).lex(text)
 
 class LexerInputErrorTestCase(unittest.TestCase):
@@ -345,7 +345,7 @@ class LexerBasicTestCase(unittest.TestCase):
     def test_006_expr_regex_stop_iteration_1(self):
         text = "x = /a+"
 
-        with self.assertRaises(LexError) as e:
+        with self.assertRaises(LexError):
             Lexer().lex(text)
 
     def test_006_expr_regex_stop_iteration_3(self):
@@ -435,7 +435,7 @@ class LexerBasicTestCase(unittest.TestCase):
 
         self.assertFalse(lexcmp(expected, tokens, False))
 
-    def test_007_special2_break(self):
+    def test_007_special2_break_2(self):
 
         text = "x==-1 "
         expected = [
@@ -576,12 +576,12 @@ class LexerLogicTestCase(unittest.TestCase):
     def test_001_ternary_2(self):
 
         text = "a ?"
-        expected = [
+        [
             Token(Token.T_TEXT, 1, 0, 'a'),
             Token(Token.T_SPECIAL, 1, 2, '?'),
         ]
 
-        with self.assertRaises(LexError) as e:
+        with self.assertRaises(LexError):
             Lexer().lex(text)
 
         #tokens = list(Lexer().lex(text))

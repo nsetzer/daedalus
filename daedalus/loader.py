@@ -2,20 +2,12 @@
 import sys
 import os.path
 
-import time
-import struct
-import marshal
 from importlib.abc import Loader, MetaPathFinder
-from importlib.util import spec_from_file_location, MAGIC_NUMBER, cache_from_source
+from importlib.util import spec_from_file_location, cache_from_source
 import types
 
-from .lexer import Lexer
-from .parser import Parser
-from .compiler import Compiler
-from .builder import Builder
 from .builtins import JsObject
-from .util import Namespace
-from .jseval import save_module, load_module, compile_file
+from .jseval import save_module, compile_file
 
 def isNewer(source_path, compiled_path):
     return os.stat(source_path).st_mtime > os.stat(compiled_path).st_mtime

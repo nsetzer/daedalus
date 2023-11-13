@@ -3,7 +3,6 @@
 # TODO: http://es6-features.org/#MethodProperties
 
 import unittest
-from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser, ParseError
@@ -680,7 +679,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    def test_001_class_2(self):
+    def test_001_class_3(self):
 
         text = """
             class A extends X.Y {
@@ -892,7 +891,7 @@ class FormatterTestCase(unittest.TestCase):
     def test_001_logical_or(self):
         self._chkeq("if (x || y){}", 'if(x||y){}')
 
-    def test_001_generator(self):
+    def test_001_generator_2(self):
         self._chkeq("""
             function* g1() {
                 yield 1
@@ -901,7 +900,7 @@ class FormatterTestCase(unittest.TestCase):
             }
         """, 'function*g1(){yield 1;yield*g2();yield 2}')
 
-    def test_001_anonymous_generator(self):
+    def test_001_anonymous_generator_2(self):
         self._chkeq("""
             function*() {
                 yield 1
@@ -977,7 +976,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    def test_001_import_js_module(self):
+    def test_001_import_js_module_2(self):
 
         text = """
             import * as module from './module/module.js'
@@ -1136,7 +1135,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    def test_001_destructure_object(self):
+    def test_001_destructure_object_2(self):
         text = """
             var {lhs, rhs} = getToken()
         """
@@ -1148,7 +1147,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    def test_001_destructure_object(self):
+    def test_001_destructure_object_3(self):
         text = """
             var {lhs:x, rhs:y} = getToken()
         """
@@ -1270,7 +1269,7 @@ class FormatterTestCase(unittest.TestCase):
         """
         # equivalent to var a = tmp.lhs.op
         #TODO: single quotes are not required
-        expected = "var[{'x':a,'y':b}]=[{'x':1,'y':2}]"
+        expected = "var a=[{'x':1}],[b]=a,{x:c}=b,d=b?.y??3"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         xform = TransformMinifyScope()
@@ -1280,7 +1279,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    def test_001_destructure_assignment_deep_minify_2(self):
+    def test_001_destructure_assignment_deep_minify_3(self):
         text = """
             var [x=[2][0]] = [];
         """
@@ -1296,7 +1295,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
-    def test_001_destructure_assignment_deep_minify_3(self):
+    def test_001_destructure_assignment_deep_minify_4(self):
         text = """
             let [{x1=1, y1=2}, {x2=3, y2=4}] = [];
         """
@@ -1668,8 +1667,8 @@ class FormatterTestCase(unittest.TestCase):
               2 3)
         """
         tokens = self.lexer.lex(text)
-        with self.assertRaises(ParseError) as cm:
-            ast = self.parser.parse(tokens)
+        with self.assertRaises(ParseError):
+            self.parser.parse(tokens)
 
     def test_001_expect_comma_b(self):
         # python -m  tests.formatter_test -v FormatterTestCase.test_001_expect_comma
@@ -1681,8 +1680,8 @@ class FormatterTestCase(unittest.TestCase):
               3)
         """
         tokens = self.lexer.lex(text)
-        with self.assertRaises(ParseError) as cm:
-            ast = self.parser.parse(tokens)
+        with self.assertRaises(ParseError):
+            self.parser.parse(tokens)
 
     @unittest.expectedFailure
     def test_001_expect_brace(self):
@@ -1698,7 +1697,7 @@ class FormatterTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
 
         ast = Parser().parse(tokens)
-        output = self.formatter.format(ast)
+        self.formatter.format(ast)
 
     @unittest.expectedFailure
     def test_001_object_comma_missing(self):
@@ -1714,7 +1713,7 @@ class FormatterTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
 
         ast = Parser().parse(tokens)
-        output = self.formatter.format(ast)
+        self.formatter.format(ast)
 
     @unittest.expectedFailure
     def test_001_object_comma_extra(self):
@@ -1731,7 +1730,7 @@ class FormatterTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
 
         ast = Parser().parse(tokens)
-        output = self.formatter.format(ast)
+        self.formatter.format(ast)
 
 class FormatterStressTestCase(unittest.TestCase):
 

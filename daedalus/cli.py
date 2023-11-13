@@ -1,13 +1,10 @@
 
 import os
 import sys
-import argparse
-import logging
 import time
 import cProfile
 import json
 
-from .builder import Builder
 from .server import SampleServer
 from .lexer import Lexer
 from .parser import Parser
@@ -19,7 +16,6 @@ from .cli_util import build
 
 from .vm import vmGetAst, VmRuntime
 from .vm_compiler import VmCompiler
-from .vm_repl import Repl
 
 def parse_env(envparams):
     env = {}
@@ -258,9 +254,8 @@ class AstCLI(CLI):
 
     def execute(self, args):
 
-        paths = []
-        if args.paths:
-            paths = args.paths.split(":")
+        #if args.paths:
+        #    args.paths.split(":")
 
         jspath = os.path.abspath(args.index_js)
 
@@ -289,9 +284,8 @@ class DisCLI(CLI):
 
     def execute(self, args):
 
-        paths = []
         if args.paths:
-            paths = args.paths.split(":")
+            args.paths.split(":")
 
         jspath = os.path.abspath(args.index_js)
 
@@ -317,9 +311,8 @@ class RunCLI(CLI):
 
     def execute(self, args):
 
-        paths = []
         if args.paths:
-            paths = args.paths.split(":")
+            args.paths.split(":")
 
         jspath = os.path.abspath(args.index_js)
 

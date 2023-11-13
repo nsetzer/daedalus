@@ -48,7 +48,7 @@ def isfunction(child):
         Token.T_ASYNC_ANONYMOUS_GENERATOR,
         Token.T_METHOD,
         Token.T_LAMBDA,
-    );
+    )
 
 def isctrlflow(child):
     """
@@ -110,7 +110,6 @@ class Formatter(object):
 
         width = self.max_columns
         line_len = 0
-        prev_type = Token.T_NEWLINE
         prev_text = ""
         pad = True
         for depth, token, type_, text in self.tokens:
@@ -140,7 +139,6 @@ class Formatter(object):
                 self.sourcemap.write_line()
                 self.stream.write("\n")
                 line_len = 0
-            prev_type = type_
             prev_text = text
         return self.stream.getvalue()
 
@@ -148,7 +146,6 @@ class Formatter(object):
 
         width = self.max_columns
         line_len = 0
-        prev_type = Token.T_NEWLINE
         prev_text = ""
         padding = " " * self.indent_width
         pad = True
@@ -200,7 +197,6 @@ class Formatter(object):
                 line_len += self.stream.write(padding_string)
                 line_len = 0
 
-            prev_type = type_
             prev_text = text
 
         return self.stream.getvalue()
@@ -604,7 +600,7 @@ class Formatter(object):
                 seq.append((depth, False, token.type, token))
             elif token.type == Token.T_FOR:
                 if len(token.children) == 1:
-                    sys.stderr.write("error: line: %d col: %d" % (token.line, token.index));
+                    sys.stderr.write("error: line: %d col: %d" % (token.line, token.index))
                     args = token.children[0]
                 else:
                     args = token.children[0]

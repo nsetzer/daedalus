@@ -217,10 +217,7 @@ class Token(object):
             parts = ["%s%s\n" % (pad * depth, s)]
 
             for child in self.children:
-                try:
-                    parts.append(child.toString(pretty, depth + 1, pad))
-                except:
-                    print(child)
+                parts.append(child.toString(pretty, depth + 1, pad))
 
             return ''.join(parts)
 
@@ -239,10 +236,7 @@ class Token(object):
             parts = ["%s%s\n" % (pad * depth, s)]
 
             for child in self.children:
-                try:
-                    parts.append(child.toString(pretty, depth + 1))
-                except:
-                    print(child)
+                parts.append(child.toString(pretty, depth + 1))
 
             return ''.join(parts)
 

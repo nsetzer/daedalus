@@ -2,11 +2,10 @@
 
 
 import unittest
-from tests.util import edit_distance, parsecmp, TOKEN
+from tests.util import parsecmp, TOKEN
 
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser as ParserBase, ParseError
-from daedalus.transform import TransformMinifyScope, TransformIdentityScope
 
 class Parser(ParserBase):
     def __init__(self):
@@ -202,7 +201,7 @@ class ParserUnaryOpTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
 
         with self.assertRaises(ParseError) as cm:
-            ast = Parser().parse(tokens)
+            Parser().parse(tokens)
 
         e = cm.exception
 
@@ -664,8 +663,8 @@ class ParserBinOpTestCase(unittest.TestCase):
             var [x=[2][0]] = [];
         """
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
-        expected = TOKEN('T_MODULE', '',
+        Parser().parse(tokens)
+        TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'var',
                 TOKEN('T_ASSIGN', '=',
                     TOKEN('T_UNPACK_SEQUENCE', '[]',
@@ -680,7 +679,7 @@ class ParserBinOpErrorTestCase(unittest.TestCase):
 
         text = "a ? b c d "
         tokens = Lexer().lex(text)
-        with self.assertRaises(ParseError) as ctxt:
+        with self.assertRaises(ParseError):
             Parser().parse(tokens)
 
 class ParserKeywordTestCase(unittest.TestCase):
@@ -1156,7 +1155,7 @@ class ParserKeywordTestCase(unittest.TestCase):
 
         text = "if (true) {} else (false) {}"
         tokens = Lexer().lex(text)
-        with self.assertRaises(ParseError) as ctxt:
+        with self.assertRaises(ParseError):
             Parser().parse(tokens)
 
 class ParserFunctionTestCase(unittest.TestCase):
@@ -1381,7 +1380,7 @@ class ParserClassTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    def test_001_obj_function(self):
+    def test_001_obj_function_2(self):
 
         text = """{"x":0, "y":0, distance(){return this.x+this.y}}"""
         tokens = Lexer().lex(text)
@@ -1765,7 +1764,7 @@ class ParserModuleTestCase(unittest.TestCase):
             export default class a {}
         """
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
+        Parser().parse(tokens)
 
     def test_001_module(self):
         text = "import { name } from './module/module.js'"

@@ -29,7 +29,7 @@ def prefix_count(text, char):
         if c == char:
             count += 1
         else:
-            break;
+            break
     return count
 
 class TransformTemplateString(TransformBase):
@@ -66,7 +66,7 @@ class TransformTemplateString(TransformBase):
         """
         segments = []
         text = token.value[1:-1]
-        index=0;
+        index=0
         state = 0
         start = 0
         stack = 0
@@ -470,7 +470,7 @@ class Parser(ParserBase):
                     self.warn(tokens[index], Parser.W_USELESS_KEYWORD)
                     tok = Token(Token.T_BLOCK, tokens[index].line, tokens[index].index, "{}")
                 else:
-                    raise e;
+                    raise e
 
         if self.python and tok.type != Token.T_GROUPING:
             tok = Token(Token.T_BLOCK, tok.line, tok.index, '{}', [tok])
@@ -632,7 +632,6 @@ class Parser(ParserBase):
                 if i2 is not None and tokens[i2].value == "for":
                     return 1
                 lhs = self.consume(tokens, token, index, -1)
-                n = 0
 
                 if lhs.type == Token.T_TEXT and lhs.value in ("catch", "finally"):
                     # the syntax looks like a function call:
@@ -947,7 +946,7 @@ class Parser(ParserBase):
                 index -= 1
 
             if counter != 0:
-                raise ParseError(current, "matching %s not found" % close)
+                raise ParseError(current, "matching `>` not found")
 
             tokens.pop(index)
 
@@ -1371,7 +1370,7 @@ class Parser(ParserBase):
         for now only tests groups within a parenthetical region
             - does not test lists or objects
         """
-        token = tokens[index]
+        tokens[index]
 
         if parent.type != Token.T_GROUPING or parent.value != "()":
             return 1
@@ -1564,7 +1563,7 @@ class Parser(ParserBase):
                     return 1
 
                 if token.children[0].value == "$include":
-                    text = token.children[0]
+                    token.children[0]
                     args = token.children[1].children
                     token.type = Token.T_INCLUDE
                     token.value = "include"
@@ -1863,7 +1862,7 @@ class Parser(ParserBase):
             raise ParseError(rhs2, "expected while")
 
         if rhs3.type != Token.T_GROUPING:
-            raise ParseError(rh3, "expected parenthetical grouping")
+            raise ParseError(rhs3, "expected parenthetical grouping")
         else:
             rhs3.type = Token.T_ARGLIST
         # drop the while keyword
@@ -1916,7 +1915,7 @@ class Parser(ParserBase):
         from_source = None
         i2 = self.peek_keyword(tokens, token, index, 1)
         if i2 is not None and tokens[i2].type == Token.T_TEXT and tokens[i2].value == 'from':
-            keyword = self.consume_keyword(tokens, token, index, 1)
+            self.consume_keyword(tokens, token, index, 1)
             from_source = self.consume(tokens, token, index, 1)
 
         exports = []
@@ -1948,7 +1947,7 @@ class Parser(ParserBase):
 
         # flatten the exports into a single list
         arglist = Token(Token.T_EXPORT_ARGS, token.line, token.index, "()", [child])
-        i=0;
+        i=0
         while i < len(arglist.children):
             if arglist.children[i].type == Token.T_COMMA:
                 node = arglist.children.pop(i)
@@ -2065,7 +2064,7 @@ class Parser(ParserBase):
             module = next_tok
 
         if module.type == Token.T_SPECIAL and module.value == "*":
-            as_ = self.consume(tokens, token, index, 1)
+            self.consume(tokens, token, index, 1)
             name_ = self.consume(tokens, token, index, 1)
             from_ = self.consume(tokens, token, index, 1)
             path_ = self.consume(tokens, token, index, 1)
@@ -2080,14 +2079,14 @@ class Parser(ParserBase):
             token.children = module.children
 
             # undo the previous comma parsing
-            j=0;
+            j=0
             while j < len(token.children):
                 if token.children[j].type == Token.T_COMMA:
                     token.children[j:j+1] = token.children[j].children
                 j += 1
 
             # group based on special keyword 'as'
-            j=0;
+            j=0
             while j < len(token.children):
                 tok = token.children[j]
                 if tok.type == Token.T_TEXT and \
@@ -2635,6 +2634,7 @@ def main():  # pragma: no cover
     """
 
     text1 = "if (true) {} else 4 {}"
+    text1 = "if (true)\n {\n} \nelse \n{\n}"
 
     #text1 = "(x:int): int => x"
     print("="* 79)

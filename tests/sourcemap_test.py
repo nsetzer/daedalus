@@ -1,9 +1,6 @@
 
 import unittest
-from tests.util import edit_distance
 
-from daedalus.lexer import Lexer
-from daedalus.parser import Parser
 from daedalus.sourcemap import SourceMap
 
 class SourceMapTestCase(unittest.TestCase):

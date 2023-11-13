@@ -1,12 +1,10 @@
 #! cd .. && python -m daedalus.vm_repl
-import os
-import sys
 
 # magic import for better input support
 # may not be available on windows
 try:
-    import readline
-except ImportError as e:
+    import readline  # noqa
+except ImportError:
     pass
 
 from .vm import vmGetAst, VmRuntime
@@ -14,7 +12,6 @@ from .vm_compiler import VmCompiler, VmInstruction, VmGlobals
 from . import vm_opcodes as opcodes
 
 from .token import TokenError
-from .parser import ParseError
 
 class ExitRepl(Exception):
     pass
@@ -45,7 +42,9 @@ def unescape(text):
                 elif c == ']':
                     pass
                 elif c == '0':
-                    s = next(g) + next(g)
+                    # \\0xx
+                    next(g)
+                    next(g)
                     pass
                 else:
                     out += c
@@ -90,9 +89,9 @@ class Repl(object):
 
                 # process the line
                 self._main(text)
-            except ExitRepl as e:
+            except ExitRepl:
                 break
-            except KeyboardInterrupt as e:
+            except KeyboardInterrupt:
                 pass
             except TokenError as e:
                 print("exception", e)

@@ -1,10 +1,10 @@
 #! cd .. && python3 -m tests.builder_test
 
 import unittest
-from tests.util import edit_distance, parsecmp, TOKEN
+from tests.util import parsecmp, TOKEN
 
-from daedalus.lexer import Token, Lexer
-from daedalus.parser import Parser, ParseError
+from daedalus.lexer import Lexer
+from daedalus.parser import Parser
 from daedalus.builder import buildFileIIFI, buildModuleIIFI, Builder
 
 class FileIIFIOpTestCase(unittest.TestCase):

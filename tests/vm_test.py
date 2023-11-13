@@ -9,13 +9,12 @@ import time
 import unittest
 import math
 import io
-from tests.util import edit_distance
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser
 from daedalus.transform import VariableScope, TransformIdentityBlockScope
-from daedalus.vm import VmCompiler, VmRuntime, VmTransform, VmClassTransform2, VmRuntimeException
-from daedalus.vm_compiler import VmCompileError, VmGlobals, VmInstruction
+from daedalus.vm import VmCompiler, VmRuntime, VmRuntimeException
+from daedalus.vm_compiler import VmCompileError, VmTransform, VmClassTransform2, VmGlobals, VmInstruction
 from daedalus.vm_primitive import JsUndefined
 from daedalus import vm_opcodes as opcodes
 
@@ -36,7 +35,7 @@ def disjs(text, index=0):
 
     xform = TransformIdentityBlockScope()
     xform.disable_warnings=True
-    globals = xform.transform(ast)
+    xform.transform(ast)
 
     xform = VmTransform()
     xform.transform(ast)
@@ -64,7 +63,7 @@ def make_runtime(text, diag=False):
 
     xform = TransformIdentityBlockScope()
     xform.disable_warnings=True
-    globals = xform.transform(ast)
+    xform.transform(ast)
 
     xform = VmTransform()
     xform.transform(ast)
@@ -98,7 +97,7 @@ def evaljs(text, diag=False):
 
     xform = TransformIdentityBlockScope()
     xform.disable_warnings=True
-    globals = xform.transform(ast)
+    xform.transform(ast)
 
     xform = VmTransform()
     xform.transform(ast)
@@ -221,7 +220,7 @@ class VmTestCase(unittest.TestCase):
             123;
         """
         runtime = make_runtime(text, diag=False)
-        result = runtime.run()
+        runtime.run()
         self.assertEqual(runtime.stack_frames, [])
 
 
@@ -785,7 +784,7 @@ class VmBasicTypesTestCase(unittest.TestCase):
         text = """
             let x1 = 0x123.456
         """
-        with self.assertRaises(VmCompileError) as e:
+        with self.assertRaises(VmCompileError):
             result, globals_ = evaljs(text, diag=False)
 
     def test_number_object(self):

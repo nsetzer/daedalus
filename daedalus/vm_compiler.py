@@ -1,22 +1,12 @@
 #! cd .. && python -m daedalus.vm
 
-import os
-import io
-import struct
-import ctypes
-import binascii
-import operator
 import ast as pyast
-import math
-import random
-import re
-import time
 
 from . import vm_opcodes as opcodes
 
 from .token import Token, TokenError
-from .lexer import Lexer, LexError
-from .parser import Parser, ParseError
+from .lexer import Lexer
+from .parser import Parser
 from .transform import TransformBaseV2
 
 class VmInstruction(object):
@@ -1010,7 +1000,7 @@ class VmCompiler(object):
                 raise VmCompileError(child, "invalid child for prefix delete")
         elif token.value == "++":
 
-            add = VmInstruction(opcodes.math.ADD, token=token)
+            VmInstruction(opcodes.math.ADD, token=token)
             if state & VmCompiler.C_LOAD == 0:
                 self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
             #TODO: this has side effects that need to be fixed
@@ -1024,7 +1014,7 @@ class VmCompiler(object):
             self._push_token(depth, VmCompiler.C_VISIT | VmCompiler.C_LOAD, token.children[0])
         elif token.value == "--":
 
-            add = VmInstruction(opcodes.math.ADD, token=token)
+            VmInstruction(opcodes.math.ADD, token=token)
             if state & VmCompiler.C_LOAD == 0:
                 self._push_token(depth, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.stack.POP, token=token))
             #TODO: this has side effects that need to be fixed
@@ -1431,9 +1421,9 @@ class VmCompiler(object):
 
         try:
             value = pyast.literal_eval(token.value)
-        except SyntaxError as e:
+        except SyntaxError:
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
-        except Exception as e:
+        except Exception:
             raise VmCompileError(token, "unable to load undefined string (%0X)" % state)
         instr = self._build_instr_string(state, token, value)
 
@@ -1604,7 +1594,6 @@ class VmCompiler(object):
                     if not allow_kwargs:
                         raise VmCompileError(child, "syntax error: pos after kwarg")
 
-                    allow_positional = False
 
                     seq.append((depth, flag0, child.children[1]))
                     seq.append((depth, VmCompiler.C_INSTRUCTION, self._build_instr_string(flag0, token, child.children[0].value)))
@@ -1657,7 +1646,6 @@ class VmCompiler(object):
         block = None
         catch = None
         final = None
-        tryarg = 0
 
         block = token.children[0]
 
@@ -1770,7 +1758,7 @@ class VmCompiler(object):
                     src = child
                     tgt = child
 
-                flag0 = VmCompiler.C_VISIT | VmCompiler.C_LOAD
+                VmCompiler.C_VISIT | VmCompiler.C_LOAD
 
                 flag1 = VmCompiler.C_VISIT
                 if token.value == "." and state & VmCompiler.C_STORE:
@@ -1865,9 +1853,9 @@ class VmCompiler(object):
                     arglabels.append(arg.children[0].value)
                     argdefaults.append(arg.children[1])
                 else:
-                    raise CompileError(arg, "invalid argument")
+                    raise VmCompileError(arg, "invalid argument")
             else:
-                raise CompileError(arg, "unexpected argument")
+                raise VmCompileError(arg, "unexpected argument")
 
         self._push_token(0, VmCompiler.C_INSTRUCTION, VmInstruction(opcodes.obj.CREATE_FUNCTION, fnidx, token=token))
 

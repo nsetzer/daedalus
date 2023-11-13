@@ -37,23 +37,19 @@ import ast
 import dis
 import types
 import sys
-import time
 from collections import defaultdict
 
 from .token import Token, TokenError
 from .lexer import Lexer
-from .parser import Parser, ParseError
+from .parser import Parser
 from .builtins import defaultGlobals, \
     JsUndefined, JsStr, JsArray, JsObject, JsNew, \
     JsFunction, JsTypeof, JsInstanceof
-from .transform import TransformAssignScope, TransformClassToFunction
 from .util import parseNumber
 from .bytecode import dump, calcsize, \
     ConcreteBytecode2, \
-    BytecodeInstr, BytecodeJumpInstr, \
-    BytecodeRelJumpInstr, BytecodeContinueInstr, BytecodeBreakInstr
+    BytecodeInstr, BytecodeJumpInstr
 
-import requests
 
 import faulthandler
 faulthandler.enable()
@@ -251,7 +247,7 @@ class Compiler(object):
 
     @staticmethod
     def defaultGlobals():
-        return defaultGlobals();
+        return defaultGlobals()
 
     def execute(self):
         if self.function_body is not None:
@@ -364,13 +360,12 @@ class Compiler(object):
         if not len(self.bc) or self.bc[-1].name != 'RETURN_VALUE':
 
             if self.flags & Compiler.CF_REPL or self.flags & Compiler.CF_MODULE:
-                instr = []
                 for name, identifier in sorted(self.module_globals.items()):
                     tok1 = Token(Token.T_STRING, 0, 0, repr(name))
                     kind1, index1 = self._token2index(tok1, load=True)
                     self.bc.append(BytecodeInstr('LOAD_' + kind1, index1))
 
-                    tok2 = Token(Token.T_TEXT, 0, 0, identifier)
+                    Token(Token.T_TEXT, 0, 0, identifier)
                     if identifier in self.bc.names:
                         opcode = 'LOAD_GLOBAL'
                         index2 = self.bc.names.index(identifier)
