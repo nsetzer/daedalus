@@ -2433,7 +2433,8 @@ class Parser(ParserBase):
             # this could be another if, or other control flow
             # or a block or single statement
             tok4 = self.consume_block(tokens, index)
-            if not (tok4.type == Token.T_GROUPING and tok4.value == '{}'):
+            if not (tok4.type in (Token.T_GROUPING, Token.T_BLOCK) and tok4.value == '{}') and \
+               not tok4.type == Token.T_BRANCH:
                 j = self.peek_token(tokens, tok4, index, 1)
                 if j is not None:
                     # catch what JS considers to be a specific syntax error
@@ -2441,6 +2442,7 @@ class Parser(ParserBase):
                     if tokens[j].type == Token.T_GROUPING and tokens[j].value == "{}":
                         raise ParseError(tokens[j], "Unexpected {")
                     else:
+                        print(tok_else.value, tok4.type, tok4.value, tokens[j].value)
                         self.warn(tok_else, Parser.W_ELSE_UNSAFE)
             token.children.append(tok4)
 
