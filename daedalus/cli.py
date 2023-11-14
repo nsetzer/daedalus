@@ -16,6 +16,7 @@ from .cli_util import build
 
 from .vm import vmGetAst, VmRuntime
 from .vm_compiler import VmCompiler
+from .vm_repl import Repl
 
 def parse_env(envparams):
     env = {}

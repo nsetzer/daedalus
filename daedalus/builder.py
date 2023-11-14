@@ -145,6 +145,19 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     import_names = sorted(list(imports.keys()))
     argument_names = import_names[:]
     for i, name in enumerate(import_names):
+        # TODO: this change is the result of a design bug in the original builder
+        #       and an artifact of the changes made to sort_modules, due to needing
+        #       better module names for source maps
+        #       there is no namespace separation of submodules between packages
+        #       the correct thing to do would be to insert a line inside the module function
+        #       to unpack the imports.
+        #       e.g.
+        #       instead of:
+        #           (iifi(api, daedalus) { ... })(app.api, daedalus)
+        #       use:
+        #           (iifi(app, daedalus) { const api = app.api; ... })(app, daedalus)
+        #
+
         import_names[i] = name.split('.')[-1]
         argument_names[i] = name
         #if name.endswith('.js'):
@@ -468,6 +481,7 @@ class JsModule(object):
         self.index_js = index_js
         self.files = {index_js.path: index_js}
         self.static_data = None
+
         self.module_name = module_name or os.path.split(os.path.split(index_js.path)[0])[1]
 
         self.module_exports = set()
@@ -651,6 +665,9 @@ class Builder(object):
 
         queue = [jsm]
         visited = set()
+
+        modroots = [os.path.abspath(p) for p in self.search_paths]
+
         while queue:
             jsm = queue.pop()
             files = jsm.load()
@@ -659,12 +676,24 @@ class Builder(object):
             #print("   ", ','.join(list([x.name for x in files.values()])))
 
             for modname in jsm.module_imports.keys():
+                # modname here is the name of the module, as imported in the source code
+                # this section determines the true name of the module, and where it is located
 
-                modpath = self._name2path(modname)
+                # TODO: chicken/egg problem: modname must be the complete dotted name
+                modpath = os.path.abspath(self._name2path(modname))
 
-                modname = os.path.split(os.path.split(modpath)[0])[1]
-                #if modname != "daedalus" and jsm is not self.root_module:
-                #    modname =  jsm.module_name + "." + modname
+                commonpath = ""
+                for root in modroots:
+                    common = os.path.commonpath([root, modpath])
+                    if len(common) > len(commonpath):
+                        commonpath = common
+                absname = os.path.split(modpath[len(commonpath)+1:])[0].replace("/", ".")
+
+                if modname.startswith("."):
+                    # allow `$import('daedalus', {})`  ==> daedalus not daedalus.res.daedalus
+                    # allow `$import('api.requests', {})` ==> api.requests
+                    # TODO: allow `$import('.requests', {})` ==> api.requests
+                    modname = absname
 
                 if modpath not in self.files:
                     #jsname = modname + "." + os.path.splitext(os.path.split(modpath)[1])[0]
@@ -674,7 +703,6 @@ class Builder(object):
                     self.files[modpath] = jf
 
                 if modpath not in self.modules:
-
                     jm = JsModule(self.files[modpath], module_name=modname, platform=self.platform, quiet=self.quiet)
                     jm.lexer_opts = self.lexer_opts
                     self.modules[modpath] = jm
@@ -742,6 +770,8 @@ class Builder(object):
                 else:
                     depth[n] = max(depth[n], d + 1)
 
+                if n not in name2mod:
+                    print(list(sorted(name2mod.keys())))
                 jsm = name2mod[n]
                 _x_module_imports[original_name] = n
 
