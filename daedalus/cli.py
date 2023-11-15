@@ -16,7 +16,6 @@ from .cli_util import build
 
 from .vm import vmGetAst, VmRuntime
 from .vm_compiler import VmCompiler
-from .vm_repl import Repl
 
 def parse_env(envparams):
     env = {}
@@ -355,7 +354,6 @@ class ModPackCLI(CLI):
     def execute(self, args):
 
         return 0 # todo return proper exit status
-
 
 def register_parsers(parser):
 

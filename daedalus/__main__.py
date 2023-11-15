@@ -3,7 +3,8 @@ import sys
 import argparse
 import logging
 
-from .cli import register_parsers, Repl
+from .vm_repl import Repl
+from .cli import register_parsers
 
 def getArgs():
     parser = argparse.ArgumentParser(

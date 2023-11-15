@@ -451,6 +451,8 @@ class JsFile(object):
             data = (self.size, self.ast, self.imports,
                 self.module_imports, self.exports, self.styles)
 
+            # reset the file path for all tokens in the ast
+            # use the absolute dotted name of this file
             xform_apply_file(self.ast, self.name)
 
             with open(cachepath, 'wb') as f:
@@ -679,25 +681,29 @@ class Builder(object):
                 # modname here is the name of the module, as imported in the source code
                 # this section determines the true name of the module, and where it is located
 
+                #if modname.startswith("."):
+                #    # allow `$import('daedalus', {})`  ==> daedalus not daedalus.res.daedalus
+                #    # allow `$import('api.requests', {})` ==> api.requests
+                #    # TODO: allow `$import('.requests', {})` ==> api.requests
+                #    modname = absname
+
                 # TODO: chicken/egg problem: modname must be the complete dotted name
                 modpath = os.path.abspath(self._name2path(modname))
+
+                modpath = self._name2path(modname)
+                #modname = os.path.split(os.path.split(modpath)[0])[1]
 
                 commonpath = ""
                 for root in modroots:
                     common = os.path.commonpath([root, modpath])
                     if len(common) > len(commonpath):
                         commonpath = common
-                absname = os.path.split(modpath[len(commonpath)+1:])[0].replace("/", ".")
-
-                if modname.startswith("."):
-                    # allow `$import('daedalus', {})`  ==> daedalus not daedalus.res.daedalus
-                    # allow `$import('api.requests', {})` ==> api.requests
-                    # TODO: allow `$import('.requests', {})` ==> api.requests
-                    modname = absname
+                absname = os.path.splitext(modpath[len(commonpath)+1:])[0].replace("/", ".")
+                if absname == "daedalus.res.daedalus.daedalus":
+                    absname = "daedalus.daedalus"
 
                 if modpath not in self.files:
-                    #jsname = modname + "." + os.path.splitext(os.path.split(modpath)[1])[0]
-                    jsname = os.path.splitext(os.path.split(modpath)[1])[0]
+                    jsname = absname
                     jf = JsFile(modpath, jsname, 2, platform=self.platform, quiet=self.quiet)
                     jf.lexer_opts = self.lexer_opts
                     self.files[modpath] = jf
@@ -897,22 +903,17 @@ class Builder(object):
                 for path, jf in self.files.items():
                     name2path[jf.name] = path
 
-                for name1 in sources.keys():
+                for srcname in sources.keys():
 
-                    name2 = name1
-
-                    #if name2 not in name2path:
-                    #    name2 = "app." + name1
-
-                    if name2 in name2path:
-                        abspath = name2path[name2]
+                    if srcname in name2path:
+                        abspath = name2path[srcname]
                         # TODO: optional relative path to support github actions
-                        url = f'srcmap/{name2.replace(".", "/")}.js'
-                        url2index[url] = sources[name1]
+                        url = f'srcmap/{srcname.replace(".", "/")}.js'
+                        url2index[url] = sources[srcname]
                         url2path[url] = abspath
                         #print("adding sourcemap", url)
                     else:
-                        print("sourcemap not found:", name1, name2)
+                        print("sourcemap not found:", srcname)
 
                 formatter.sourcemap.sources = url2index
                 formatter.sourcemap.source_routes = url2path
