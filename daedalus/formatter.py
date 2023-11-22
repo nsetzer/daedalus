@@ -459,6 +459,17 @@ class Formatter(object):
                 if token.value == "constexpr":
                     token.value = "const"
                 seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_TYPE:
+                seq.append((depth, Token.T_TEXT, "*/"))
+                first = True
+                for child in reversed(token.children):
+                    if not first:
+                        seq.append((depth + 1, Token.T_SPECIAL, ","))
+                    seq.append((depth, None, child))
+                    first = False
+                seq.append((depth, token.type, token.value))
+                seq.append((depth, Token.T_TEXT, "/*"))
+
             elif token.type == Token.T_INTERFACE:
                 # nothing to do
                 pass
@@ -786,6 +797,8 @@ def main():  # pragma: no cover
         z:3
     }
     """
+
+    text1 = "type T = {x:number, y:number}"
 
     tokens = Lexer({"preserve_documentation": True}).lex(text1)
     mod = Parser().parse(tokens)

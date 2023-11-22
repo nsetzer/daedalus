@@ -2637,6 +2637,7 @@ def main():  # pragma: no cover
 
     text1 = "if (true) {} else 4 {}"
     text1 = "if (true)\n {\n} \nelse \n{\n}"
+    text1 = "type T = {x:number, y:number}"
 
     #text1 = "(x:int): int => x"
     print("="* 79)
