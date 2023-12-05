@@ -1492,7 +1492,7 @@ class Parser(ParserBase):
         if token.type == Token.T_TEXT and token.value == "type":
             # type declarations are converted to 'const'
             self.collect_keyword_var(tokens, index)
-            token.type = Token.T_TYPE
+
 
         if token.type != Token.T_KEYWORD:
             return 1
@@ -2008,6 +2008,10 @@ class Parser(ParserBase):
             elif node.type == Token.T_FUNCTION:
                 stack.append(node.children[0])
             elif node.type == Token.T_COMMA:
+                stack.extend(node.children)
+            elif node.type == Token.T_GROUPING:
+                stack.extend(node.children)
+            elif node.type == Token.T_KEYWORD and node.value == "as":
                 stack.extend(node.children)
             elif node.type == Token.T_SPECIAL and node.value == "*":
                 pass
@@ -2624,7 +2628,10 @@ class Parser(ParserBase):
         if index + 1 < len(tokens):
             rhs = tokens.pop(index + 1)
         else:
-            raise ParseError(token, "expected rhs")
+            if token.value == "type":
+                return
+            else:
+                raise ParseError(token, "expected rhs")
         token.children = [rhs]
         token.type = Token.T_VAR
 
@@ -2641,6 +2648,9 @@ class Parser(ParserBase):
                         tmp2 = child.children.pop(0)
                         tmp2.children.append(child)
                         tmp.children[i] = tmp2
+
+        if token.value == "type":
+            token.type = Token.T_TYPE
 
     def collect_keyword_while(self, tokens, index):
 
@@ -2741,6 +2751,22 @@ def main():  # pragma: no cover
 
 
 
+
+    """
+
+    text1 = """
+
+        $import("daedalus", {})
+        import {} from "@daedalus/daedalus"
+
+        export {a,b,c}
+
+        export {a,b,c} from "@daedalus/daedalus"
+
+        export * from "./daedalus.js"
+        $include("./a.js")
+
+        import {} from "./daedalus.js"
     """
 
     #text1 = "(x:int): int => x"

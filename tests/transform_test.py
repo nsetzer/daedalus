@@ -550,6 +550,98 @@ class TransformIdentityTestCase(unittest.TestCase):
         with self.assertRaises(TransformError):
             xform.transform(ast)
 
+class TransformImportExport(unittest.TestCase):
+
+    def parse(self, text):
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        xform = TransformIdentityScope()
+        xform.disable_warnings = True
+        xform.transform(ast)
+        return ast
+
+    def test_001_index_js(self):
+
+        text1 = """
+            $include("./daedalus.js")
+        """
+
+        text2 = """
+            //export {a as b, c as d} from "./daedalus.js"
+            export * from "./daedalus.js"
+        """
+
+        ast1 = self.parse(text1)
+        ast1, imports1, modimports1, exports1 = getModuleImportExport(ast1)
+
+        ast2 = self.parse(text2)
+        ast2, imports2, modimports2, exports2 = getModuleImportExport(ast2)
+
+        self.assertEqual(imports1, imports2)
+        self.assertEqual(modimports1, modimports2)
+        self.assertEqual(exports1, exports2)
+
+        self.assertFalse(parsecmp(ast1, ast2, False))
+
+    def test_001_include(self):
+
+        text1 = """
+            $include("./daedalus.js")
+            //$import("./daedalus.js", {a,b,c})
+        """
+
+        text2 = """
+            import {a,b,c} from "./daedalus.js"
+        """
+
+        ast1 = self.parse(text1)
+        ast2 = self.parse(text2)
+
+        ast1, imports1, modimports1, exports1 = getModuleImportExport(ast1)
+        ast2, imports2, modimports2, exports2 = getModuleImportExport(ast2)
+
+        # include no requires the list of names to include
+        self.assertEqual(imports1.keys(), imports2.keys())
+        self.assertEqual(modimports1, modimports2)
+        self.assertEqual(exports1, exports2)
+
+        self.assertFalse(parsecmp(ast1, ast2, False))
+
+    def test_001_import_module(self):
+
+        text1 = """
+            $import("axertc_common", {a,b,c})
+        """
+
+        text2 = """
+            import {a,b,c} from "@axertc/axertc_common"
+        """
+
+        ast1 = self.parse(text1)
+        ast2 = self.parse(text2)
+
+        #print(ast1.toString(2))
+        #print(ast2.toString(2))
+
+        ast1, imports1, modimports1, exports1 = getModuleImportExport(ast1)
+        ast2, imports2, modimports2, exports2 = getModuleImportExport(ast2)
+
+        #print(ast1.toString(2))
+        #print(ast2.toString(2))
+        #print("imports", imports1)
+        #print("imports", imports2)
+        #print("modimports", modimports1)
+        #print("modimports", modimports2)
+        #print("exprots", exports1)
+        #print("exprots", exports2)
+
+        self.assertEqual(imports1, imports2)
+        self.assertEqual(modimports1, modimports2)
+        self.assertEqual(exports1, exports2)
+
+        self.assertFalse(parsecmp(ast1, ast2, False))
+
+
 
 
 def main():

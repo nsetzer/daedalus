@@ -2989,7 +2989,7 @@ def getModuleImportExport(ast, warn_include=False):
                 sys.stdout.write("warning: include found in file that is not a daedalus module\n")
 
             name = literal_eval(token.children[0])
-            imports[name] = []
+            imports[name] = {}
 
             ast.children.pop(i)
 
@@ -3006,32 +3006,65 @@ def getModuleImportExport(ast, warn_include=False):
 
             ast.children.pop(i)
 
-            if token.value in module_imports:
-                module_imports[token.value].update(dict(fromlist))
+            if token.value.startswith("."):
+                # old style include from within a module
+                # TODO: maybe this should force a relative import from the same directory
+                # with no path traversal allowed.
+                if not (token.value.endswith(".js") or token.value.endswith(".ts")):
+                    raise TransformError(token, "must import relative path with js extension")
+
+                if token.value in imports:
+                    imports[token.value].update(dict(fromlist))
+                else:
+                    imports[token.value] = dict(fromlist)
+
             else:
-                module_imports[token.value] = dict(fromlist)
+
+                modname = token.value
+                if modname.startswith("@"):
+                    _, modname = modname.split("/", 1)
+
+                if modname in module_imports:
+                    module_imports[modname].update(dict(fromlist))
+                else:
+                    module_imports[modname] = dict(fromlist)
 
         elif token.type == Token.T_IMPORT:
             i += 1
 
         elif token.type in (Token.T_EXPORT, Token.T_EXPORT_DEFAULT):
             if len(token.children) == 3:
-                # export from may need to update includes and exports
-                # the from source has not yet been defined.
-                # it may be a filepath or an object - undecided
-                 raise TransformError(token, "export from not implemented")
 
-            for text in token.children[0].children:
-                exports.append(text.value)
+                export_names = token.children[1].children
+                name = literal_eval(token.children[2])
 
-            child = token.children[1].children[0]
-            # remove the token entirely if it does not have any side effects
-            # otherwise remove the export keyword
-            if child.type == Token.T_TEXT:
-                ast.children.pop(i)
+                if len(export_names) == 1 and export_names[0].type == Token.T_SPECIAL and export_names[0].value == "*":
+                    if name.startswith("@"):
+                        raise TransformError(token.children[2], "exporting aliased module not supported")
+                    if not name.startswith("."):
+                        raise TransformError(token.children[2], "must export relative path")
+                    imports[name] = {}
+
+                    ast.children.pop(i)
+
+                else:
+                    # export from may need to update includes and exports
+                    # the from source has not yet been defined.
+                    # it may be a filepath or an object - undecided
+                    raise TransformError(token, "export from not implemented")
             else:
-                ast.children = ast.children[:i] + token.children[1].children + ast.children[i+1:]
-                i += len(token.children[1].children)
+
+                for text in token.children[0].children:
+                    exports.append(text.value)
+
+                child = token.children[1].children[0]
+                # remove the token entirely if it does not have any side effects
+                # otherwise remove the export keyword
+                if child.type == Token.T_TEXT:
+                    ast.children.pop(i)
+                else:
+                    ast.children = ast.children[:i] + token.children[1].children + ast.children[i+1:]
+                    i += len(token.children[1].children)
 
         else:
             i += 1
