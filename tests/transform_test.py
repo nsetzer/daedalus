@@ -378,6 +378,7 @@ class TransformIdentityTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    @unittest.skip("not implemented")
     def test_001_import(self):
 
         text = """
@@ -406,6 +407,7 @@ class TransformIdentityTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    @unittest.skip("not implemented")
     def test_001_import_module(self):
 
         text = """

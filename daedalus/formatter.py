@@ -412,10 +412,36 @@ class Formatter(object):
                     seq.append((depth, Token.T_SPECIAL, ' '))
                 out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_STATIC_PROPERTY:
-
+                out.append((depth, token, Token.T_SPECIAL, ';'))
                 out.append((depth, token, token.type, token.value))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
+
+            elif token.type == Token.T_PUBLIC_STATIC_PROPERTY:
+                out.append((depth, token, Token.T_SPECIAL, ';'))
+                out.append((depth, token, token.type, 'static'))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+
+            elif token.type == Token.T_PRIVATE_STATIC_PROPERTY:
+                out.append((depth, token, Token.T_SPECIAL, ';'))
+                out.append((depth, token, token.type, 'static'))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+
+            elif token.type == Token.T_PUBLIC_PROPERTY:
+                out.append((depth, token, Token.T_SPECIAL, ';'))
+                #out.append((depth, token, token.type, token.value))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+
+            elif token.type == Token.T_PRIVATE_PROPERTY:
+                out.append((depth, token, Token.T_SPECIAL, ';'))
+                #out.append((depth, token, token.type, token.value))
+                for child in reversed(token.children):
+                    seq.append((depth, None, child))
+
+
             elif token.type == Token.T_OPTIONAL_CHAINING:
                 if len(token.children) == 2:
                     lhs, rhs = token.children
@@ -460,15 +486,17 @@ class Formatter(object):
                     token.value = "const"
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_TYPE:
-                seq.append((depth, Token.T_TEXT, "*/"))
+
+                #seq.append((depth, Token.T_TEXT, "*/"))
                 first = True
                 for child in reversed(token.children):
                     if not first:
                         seq.append((depth + 1, Token.T_SPECIAL, ","))
                     seq.append((depth, None, child))
                     first = False
-                seq.append((depth, token.type, token.value))
-                seq.append((depth, Token.T_TEXT, "/*"))
+                #seq.append((depth, token.type, token.value))
+                seq.append((depth, token.type, 'const'))
+                #seq.append((depth, Token.T_TEXT, "/*"))
 
             elif token.type == Token.T_INTERFACE:
                 # nothing to do
@@ -791,14 +819,13 @@ def main():  # pragma: no cover
     /* comment */
     /** doc string */
     """
-    text1= """{
-        x:1
-        y:,2,
-        z:3
-    }
-    """
+    text1= """
 
-    text1 = "type T = {x:number, y:number}"
+        export const a = {}
+        type a = {}
+        export type a = {}
+
+    """
 
     tokens = Lexer({"preserve_documentation": True}).lex(text1)
     mod = Parser().parse(tokens)

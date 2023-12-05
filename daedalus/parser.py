@@ -255,6 +255,7 @@ class Parser(ParserBase):
             (R2L, self.visit_unary, ['yield', 'yield*']),
             (L2R, self.visit_keyword_case, []),
             (L2R, self.visit_colon, [':']),
+            (L2R, self.visit_import_as, ['as']),
             (L2R, self.visit_comma_before, []),
             (L2R, self.visit_comma, [',']),
             (L2R, self.visit_comma_after, []),
@@ -1107,28 +1108,65 @@ class Parser(ParserBase):
            token.value not in operators:
             return 1
 
-
         idx = self.peek_keyword(tokens, token, index, 1)
         rhs = None
         if idx is not None:
             if tokens[idx].type == Token.T_KEYWORD and (
                 tokens[idx].value in reserved_types or tokens[idx].value in ('null', 'undefined', 'true', 'false', 'this')):
                 rhs = self.consume_keyword(tokens, token, index, 1)
+
             elif tokens[idx].type != Token.T_KEYWORD:
                 rhs = self.consume(tokens, token, index, 1)
 
+
+        annotation = False
+        idx = self.peek_keyword(tokens, token, index, -2)
+        if idx is not None:
+            if (tokens[idx].type == Token.T_KEYWORD and tokens[idx].value in ('static', 'const', 'let', 'var')) or \
+               (tokens[idx].type == Token.T_TEXT and tokens[idx].value in ('public', 'private')):
+                annotation = True
+
         lhs = self.consume_keyword(tokens, token, index, -1)
 
-        if rhs is None:
-            token.children = []
-            token.type = Token.T_BLOCK_LABEL
-            token.value = lhs.value
+        if annotation:
+
+            if rhs is not None:
+                tmp = tokens.pop(index - 1)
+                tmp.children.append(rhs)
+                tmp.type = Token.T_ANNOTATION
+                tmp.value = ""
+                tokens.insert(index-1, lhs)
+                lhs.children.append(tmp)
+            else:
+                raise ParseError(token, "invalid type annotation")
+
         else:
-            token.children.append(lhs)
-            token.children.append(rhs)
-            token.type = Token.T_BINARY
+
+            if rhs is None:
+                token.children = []
+                token.type = Token.T_BLOCK_LABEL
+                token.value = lhs.value
+            else:
+                token.children.append(lhs)
+                token.children.append(rhs)
+                token.type = Token.T_BINARY
 
         return self._offset
+
+    def visit_import_as(self, parent, tokens, index, operators):
+        token = tokens[index]
+
+        if token.type not in (Token.T_TEXT, Token.T_KEYWORD) or \
+           token.value not in operators:
+            return 1
+
+        rhs = self.consume_keyword(tokens, token, index, 1)
+        lhs = self.consume_keyword(tokens, token, index, -1)
+
+        token.children = [lhs, rhs]
+        token.type = Token.T_KEYWORD
+
+        return  1
 
     def visit_assign_v2(self, parent, tokens, index, operators):
         """
@@ -1180,10 +1218,12 @@ class Parser(ParserBase):
             k = index - 2
             # test pattern is # TEXT colon something equalsign
             #print([tok.value for tok in tokens[i:index+2]])
+
             if i < 0 or \
-               i >= 0 and (tokens[i].type == Token.T_COMMA or \
-                           tokens[i].type == Token.T_KEYWORD and \
-                           tokens[i].value in  ('constexpr', 'const', 'let', 'var')):
+               i >= 0 and (tokens[i].type == Token.T_COMMA or (tokens[i].type == Token.T_SPECIAL and tokens[i].value == ',') or \
+                           (tokens[i].type == Token.T_TEXT and tokens[i].value in ("private", "public")) or \
+                           (tokens[i].type == Token.T_KEYWORD and \
+                           tokens[i].value in  ('constexpr', 'const', 'let', 'var', 'static'))):
                 if tokens[j].type == Token.T_TEXT and tokens[k].type==Token.T_SPECIAL and tokens[k].value == ":":
                     type_ = self.consume_keyword(tokens, tokens[k], k, 1)
                     tokens.pop(k)
@@ -1191,7 +1231,7 @@ class Parser(ParserBase):
                     tokens[j].children.append(anno)
                     # this will trigger a visit of this node again
                     # but with the correct index
-                    return -2
+                    return 0
 
         rhs = self.consume(tokens, token, index, 1)
         lhs = self.consume(tokens, token, index, -1)
@@ -1325,7 +1365,6 @@ class Parser(ParserBase):
         if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
            token.value not in operators:
             return 1
-
         rhs = None
         while index + 1 < len(tokens):
             if tokens[index+1].type == Token.T_SPECIAL and tokens[index+1].value == ",":
@@ -1450,6 +1489,11 @@ class Parser(ParserBase):
         if token.type == Token.T_TEXT and token.value == "constexpr":
             self.collect_keyword_var(tokens, index)
 
+        if token.type == Token.T_TEXT and token.value == "type":
+            # type declarations are converted to 'const'
+            self.collect_keyword_var(tokens, index)
+            token.type = Token.T_TYPE
+
         if token.type != Token.T_KEYWORD:
             return 1
 
@@ -1557,6 +1601,7 @@ class Parser(ParserBase):
                     token.value = ast.literal_eval(args[0].value)
                     if len(args) > 1:
                         args[1].type = Token.T_OBJECT
+
                         token.children = [args[1]]
                     else:
                         token.children = []
@@ -1730,6 +1775,7 @@ class Parser(ParserBase):
                 if li >= 0:
                     tok = rhs1.children[li]
                     if tok.type == Token.T_KEYWORD and tok.value == 'static':
+
                         tok.type = Token.T_STATIC_PROPERTY
                         tmp = rhs1.children.pop(index)
                         tmp.children[0].type = Token.T_ATTR
@@ -1788,9 +1834,27 @@ class Parser(ParserBase):
 
                 else:
                     raise ParseError(child, "expected function body")
+            elif child.type == Token.T_TEXT and (child.value == 'public' or child.value == 'private'):
+                i = self.peek_keyword(rhs1.children, child, index, 1)
+                if i is not None:
+                    tok = rhs1.children[i]
+                    if tok.type == Token.T_KEYWORD and tok.value == 'static':
+                        rhs1.children.pop(i)
+                        if child.value == 'public':
+                            child.type = Token.T_PUBLIC_STATIC_PROPERTY
+                        if child.value == 'private':
+                            child.type = Token.T_PRIVATE_STATIC_PROPERTY
+                    else:
+                        if child.value == 'public':
+                            child.type = Token.T_PUBLIC_PROPERTY
+                        if child.value == 'private':
+                            child.type = Token.T_PRIVATE_PROPERTY
+                    tmp = rhs1.children.pop(i)
+                    #tmp.children[0].type = Token.T_ATTR
+                    child.children.append(tmp)
+
             elif child.type == Token.T_KEYWORD and child.value == 'static':
                 # static member variables
-
                 tok = self.consume(rhs1.children, child, index, 1)
                 if tok.type == Token.T_FUNCTION:
                     tok.type = Token.T_METHOD
@@ -1912,6 +1976,9 @@ class Parser(ParserBase):
 
         child = self.consume_keyword(tokens, token, index, 1)
 
+        if child.type == Token.T_GROUPING and child.value == "{}":
+            pass
+
         from_source = None
         i2 = self.peek_keyword(tokens, token, index, 1)
         if i2 is not None and tokens[i2].type == Token.T_TEXT and tokens[i2].value == 'from':
@@ -1933,6 +2000,8 @@ class Parser(ParserBase):
             elif node.type == Token.T_ASSIGN and node.value == "=":
                 stack.append(node.children[0])
             elif node.type == Token.T_VAR:
+                stack.append(node.children[0])
+            elif node.type == Token.T_TYPE:
                 stack.append(node.children[0])
             elif node.type == Token.T_CLASS:
                 stack.append(node.children[0])
@@ -2051,6 +2120,7 @@ class Parser(ParserBase):
             import {name1, name2} from './modules/module.js';
             import {name1 as foo, name2 as bar} from './modules/module.js';
             import * as Module from './modules/module.js';
+            import * from './modules/module.js';
         """
         token = tokens[index]
 
@@ -2064,52 +2134,63 @@ class Parser(ParserBase):
             module = next_tok
 
         if module.type == Token.T_SPECIAL and module.value == "*":
-            self.consume(tokens, token, index, 1)
-            name_ = self.consume(tokens, token, index, 1)
             from_ = self.consume(tokens, token, index, 1)
-            path_ = self.consume(tokens, token, index, 1)
+
+            if from_.value != "from":
+                name_ = from_
+                from_ = self.consume(tokens, token, index, 1)
+                path_ = self.consume(tokens, token, index, 1)
+                children = [name_]
+            else:
+                path_ = self.consume(tokens, token, index, 1)
+                children = []
 
             token.type = Token.T_IMPORT_JS_MODULE_AS
             token.value = path_.value
-            token.children = [name_]
+            token.children = children
+
+            raise ParseError(token, "not yet supported")
 
         elif module.type == Token.T_GROUPING:
             # javascript style module import
-            token.type = Token.T_IMPORT_JS_MODULE
-            token.children = module.children
+            #token.type = Token.T_GROUPING
+            #token.value = "{}"
+            grouping = Token(Token.T_GROUPING, token.line, token.index, "{}")
+            token.children = [grouping]
+            grouping.children = module.children
 
             # undo the previous comma parsing
-            j=0
-            while j < len(token.children):
-                if token.children[j].type == Token.T_COMMA:
-                    token.children[j:j+1] = token.children[j].children
-                j += 1
+            #j=0
+            #while j < len(grouping.children):
+            #    if grouping.children[j].type == Token.T_COMMA:
+            #        grouping.children[j:j+1] = grouping.children[j].children
+            #    j += 1
 
             # group based on special keyword 'as'
-            j=0
-            while j < len(token.children):
-                tok = token.children[j]
-                if tok.type == Token.T_TEXT and \
-                   tok.value == "as":
-                    if j == 0 or j == len(token.children) - 1:
-                        # missing lhs or rhs value
-                        raise ParseError(tok, "invalid import alias")
-                    rhs = token.children.pop(j+1)
-                    if rhs.type == Token.T_KEYWORD or \
-                       (rhs.type == Token.T_TEXT and \
-                        rhs.value == "as"):
-                        raise ParseError(rhs, "invalid import alias")
-                    lhs = token.children.pop(j-1)
-                    if lhs.type == Token.T_KEYWORD or \
-                       (lhs.type == Token.T_TEXT and \
-                        lhs.value == "as"):
-                        raise ParseError(lhs, "invalid import alias")
-                    tok.type = Token.T_KEYWORD
-                    tok.children = [lhs, rhs]
-                else:
-                    j += 1
+            #j=0
+            #while j < len(grouping.children):
+            #    tok = grouping.children[j]
+            #    if tok.type == Token.T_TEXT and \
+            #       tok.value == "as" and len(tok.children) == 0:
+            #        if j == 0 or j == len(grouping.children) - 1:
+            #            # missing lhs or rhs value
+            #            raise ParseError(tok, "invalid import alias")
+            #        rhs = grouping.children.pop(j+1)
+            #        if rhs.type == Token.T_KEYWORD or \
+            #           (rhs.type == Token.T_TEXT and \
+            #            rhs.value == "as"):
+            #            raise ParseError(rhs, "invalid import alias")
+            #        lhs = grouping.children.pop(j-1)
+            #        if lhs.type == Token.T_KEYWORD or \
+            #           (lhs.type == Token.T_TEXT and \
+            #            lhs.value == "as"):
+            #            raise ParseError(lhs, "invalid import alias")
+            #        tok.type = Token.T_KEYWORD
+            #        tok.children = [lhs, rhs]
+            #    else:
+            #        j += 1
 
-            # now every direct child of token is either a import name
+            # now every direct child of grouping is either a import name
             # or an import alias
 
             from_ = self.consume_keyword(tokens, token, index, 1)
@@ -2119,7 +2200,8 @@ class Parser(ParserBase):
             path = self.consume(tokens, token, index, 1)
             if path.type != Token.T_STRING:
                 raise ParseError(path, "expected path to module as string")
-            token.value = path.value
+            token.value = ast.literal_eval(path.value)
+            token.type = Token.T_IMPORT_MODULE
 
         else:
             # daedalus style import
@@ -2546,6 +2628,20 @@ class Parser(ParserBase):
         token.children = [rhs]
         token.type = Token.T_VAR
 
+        if rhs.type == Token.T_COMMA:
+            nodes = [rhs]
+            while nodes:
+                tmp = nodes.pop(0)
+                for i, child in enumerate(tmp.children):
+                    if child.type == Token.T_COMMA:
+                        nodes.append(child)
+                    if child.type == Token.T_BINARY and child.value==":":
+                        child.type = Token.T_ANNOTATION
+                        child.value = ""
+                        tmp2 = child.children.pop(0)
+                        tmp2.children.append(child)
+                        tmp.children[i] = tmp2
+
     def collect_keyword_while(self, tokens, index):
 
         token = tokens[index]
@@ -2624,20 +2720,28 @@ def main():  # pragma: no cover
         $include('./foo.js')
         """
 
-    text1 = """
 
-    class A {
-        foo {
-            this.a = 1
-            this.b = 2
-        }
-    }
-
-    """
 
     text1 = "if (true) {} else 4 {}"
     text1 = "if (true)\n {\n} \nelse \n{\n}"
     text1 = "type T = {x:number, y:number}"
+
+    text1 = """
+
+    $import("./a", {a,b,C as c})
+    import { a, b, C as c } from "./a"
+
+    import * from "./a"
+    //export a, b
+
+    //$import("./a", {a, b, c as d})
+    //export a, b, c
+
+    //export { a, b, c } from "./a";
+
+
+
+    """
 
     #text1 = "(x:int): int => x"
     print("="* 79)

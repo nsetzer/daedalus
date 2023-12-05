@@ -66,8 +66,6 @@ class TransformGrouping(TransformBase):
 
         for i, child in enumerate(token.children):
 
-
-
             if child.type == Token.T_GROUPING and child.value == "{}":
                 if (token.type == Token.T_MODULE) or \
                    (token.type == Token.T_ASYNC_FUNCTION) or \
@@ -127,10 +125,13 @@ class TransformGrouping(TransformBase):
 
                                 continue
 
-                        print("\n%s:"%ref)
-                        print("parent", parent.type, parent.value)
-                        print("token", token.type, token.value)
-                        print("parent", parent.toString(3))
+                        #print("\n---- Debug Transform ----")
+                        #print(">>> %s:"%ref)
+                        #print(">>> parent", parent.type, parent.value)
+                        #print(">>> token", token.type, token.value)
+                        #print(">>> parent", parent.toString(3))
+                        #print(">>> raise transform error")
+                        #print("---- End Debug Transform ----")
                         raise ref
                     child.type = Token.T_OBJECT
 
@@ -147,6 +148,7 @@ class TransformGrouping(TransformBase):
     def _isObject(self, token):
         # test if a token is an object, this is only valid
         # if the object contents have not been flattened
+
         if token.type != Token.T_GROUPING or token.value != "{}":
             return TransformError(token, "expected grouping")
 
@@ -167,10 +169,12 @@ class TransformGrouping(TransformBase):
         t = child.type
         v = child.value
 
+        # TODO: keyword as is only valid in an import
         if (t == Token.T_TEXT) or \
            (t == Token.T_FUNCTION) or \
            (t == Token.T_SPREAD) or \
            (t == Token.T_BINARY and (v == ':')) or \
+           (t == Token.T_KEYWORD and (v == 'as')) or \
            (t == Token.T_COMMA):
             return None
 
@@ -225,6 +229,8 @@ class TransformFlatten(TransformBase):
         TODO: put this behind a feature flag
         """
         for pair in token.children:
+            if pair.type == Token.T_BLOCK_LABEL:
+                raise TransformError(pair, "expected value on lhs")
             if pair.type == Token.T_BINARY and pair.value == ":":
                 tok_key = pair.children[0]
                 if tok_key.type == Token.T_BINARY:

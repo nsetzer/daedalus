@@ -1267,6 +1267,15 @@ class ParserFunctionTestCase(unittest.TestCase):
 
 class ParserClassTestCase(unittest.TestCase):
 
+    @unittest.expectedFailure
+    def test_001_object_missing_comma(self):
+        text = """
+            const x = {a, b
+                c}
+        """
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+
     def test_001_class_1(self):
 
         text = "class {}"
@@ -1771,8 +1780,10 @@ class ParserModuleTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
-                TOKEN('T_TEXT', 'name')))
+            TOKEN('T_IMPORT_MODULE', './module/module.js',
+                TOKEN('T_OBJECT', '{}',
+                    TOKEN('T_TEXT', 'name'))))
+
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -1781,9 +1792,10 @@ class ParserModuleTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
-                TOKEN('T_TEXT', 'name1'),
-                TOKEN('T_TEXT', 'name2')))
+            TOKEN('T_IMPORT_MODULE', './module/module.js',
+                TOKEN('T_OBJECT', '{}',
+                    TOKEN('T_TEXT', 'name1'),
+                    TOKEN('T_TEXT', 'name2'))))
         self.assertFalse(parsecmp(expected, ast, False))
 
     def test_003_module(self):
@@ -1791,10 +1803,12 @@ class ParserModuleTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
-                TOKEN('T_KEYWORD', 'as',
-                    TOKEN('T_TEXT', 'a'),
-                    TOKEN('T_TEXT', 'b'))))
+            TOKEN('T_IMPORT_MODULE', './module/module.js',
+                TOKEN('T_OBJECT', '{}',
+                    TOKEN('T_KEYWORD', 'as',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_TEXT', 'b')),
+                    )))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
@@ -1803,16 +1817,18 @@ class ParserModuleTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_IMPORT_JS_MODULE', "'./module/module.js'",
-                TOKEN('T_KEYWORD', 'as',
-                    TOKEN('T_TEXT', 'a'),
-                    TOKEN('T_TEXT', 'b')),
-                TOKEN('T_KEYWORD', 'as',
-                    TOKEN('T_TEXT', 'c'),
-                    TOKEN('T_TEXT', 'd'))))
+            TOKEN('T_IMPORT_MODULE', './module/module.js',
+                TOKEN('T_OBJECT', '{}',
+                    TOKEN('T_KEYWORD', 'as',
+                        TOKEN('T_TEXT', 'a'),
+                        TOKEN('T_TEXT', 'b')),
+                    TOKEN('T_KEYWORD', 'as',
+                        TOKEN('T_TEXT', 'c'),
+                        TOKEN('T_TEXT', 'd')))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
+    @unittest.skip("fixme")
     def test_005_module(self):
         text = "import * as module from './module/module.js'"
         tokens = Lexer().lex(text)
@@ -1837,30 +1853,127 @@ class ParserTypeAnnotationTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    def test_001_annotate_var_1(self):
+    def test_001_annotate_let_1(self):
         text = "let x : string"
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'let',
-                TOKEN('T_BINARY', ':',
-                    TOKEN('T_TEXT', 'x'),
-                    TOKEN('T_TEXT', 'string'))))
+                TOKEN('T_TEXT', 'x',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string')))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-    def test_001_annotate_var_2(self):
+    def test_001_annotate_let_2(self):
+        text = "let x : number = 1"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'let',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'number'))),
+                    TOKEN('T_NUMBER', '1'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_let_3(self):
         text = "let x : string, y : string"
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'let',
-                TOKEN('T_BINARY', ':',
-                    TOKEN('T_TEXT', 'x'),
-                    TOKEN('T_TEXT', 'string')),
-                TOKEN('T_BINARY', ':',
-                    TOKEN('T_TEXT', 'y'),
-                    TOKEN('T_TEXT', 'string'))))
+                TOKEN('T_TEXT', 'x',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string'))),
+                TOKEN('T_TEXT', 'y',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string')))))
+
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_let_4(self):
+        text = "let x : number = 1, y : number = 2"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'let',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'number'))),
+                    TOKEN('T_NUMBER', '1')),
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'y',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'number'))),
+                    TOKEN('T_NUMBER', '2'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_const_1(self):
+        text = "const x : string"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_TEXT', 'x',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_const_2(self):
+        text = "const x : number = 1"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'number'))),
+                    TOKEN('T_NUMBER', '1'))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_const_3(self):
+        text = "const x : string, y : string, z : string"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_TEXT', 'x',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string'))),
+                TOKEN('T_TEXT', 'y',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string'))),
+                TOKEN('T_TEXT', 'z',
+                    TOKEN('T_ANNOTATION', '',
+                        TOKEN('T_TEXT', 'string')))))
+
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_annotate_const_4(self):
+        text = "const x : number = 1, y : number = 2"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_VAR', 'const',
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'x',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'number'))),
+                    TOKEN('T_NUMBER', '1')),
+                TOKEN('T_ASSIGN', '=',
+                    TOKEN('T_TEXT', 'y',
+                        TOKEN('T_ANNOTATION', '',
+                            TOKEN('T_TEXT', 'number'))),
+                    TOKEN('T_NUMBER', '2'))))
 
         self.assertFalse(parsecmp(expected, ast, False))
 

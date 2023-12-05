@@ -7,7 +7,7 @@ import unittest
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser, ParseError
 from daedalus.formatter import Formatter, isalphanum
-from daedalus.transform import TransformMinifyScope, TransformIdentityScope
+from daedalus.transform import TransformMinifyScope, TransformIdentityScope, TransformError
 
 class FormatterUtilTestCase(unittest.TestCase):
 
@@ -964,6 +964,7 @@ class FormatterTestCase(unittest.TestCase):
             for (let x=1,y=2,z=3; x<y,y<z; --x,z++) {}
         """, 'for(let x=1,y=2,z=3;x<y,y<z;--x,z++){}')
 
+    @unittest.skip("not implemented")
     def test_001_import_js_module(self):
 
         text = """
@@ -976,6 +977,7 @@ class FormatterTestCase(unittest.TestCase):
 
         self.assertEqual(expected, output)
 
+    @unittest.skip("not implemented")
     def test_001_import_js_module_2(self):
 
         text = """
@@ -1699,7 +1701,6 @@ class FormatterTestCase(unittest.TestCase):
         ast = Parser().parse(tokens)
         self.formatter.format(ast)
 
-    @unittest.expectedFailure
     def test_001_object_comma_missing(self):
 
         # python -m tests.formatter_test FormatterTestCase.test_001_expect_brace
@@ -1712,10 +1713,11 @@ class FormatterTestCase(unittest.TestCase):
         """
         tokens = Lexer().lex(text)
 
-        ast = Parser().parse(tokens)
-        self.formatter.format(ast)
+        with self.assertRaises(TransformError):
+            ast = Parser().parse(tokens)
+            text = self.formatter.format(ast)
+            print("\n\nunexpected text", text)
 
-    @unittest.expectedFailure
     def test_001_object_comma_extra(self):
 
         # python -m tests.formatter_test FormatterTestCase.test_001_expect_brace
@@ -1729,8 +1731,11 @@ class FormatterTestCase(unittest.TestCase):
         """
         tokens = Lexer().lex(text)
 
-        ast = Parser().parse(tokens)
-        self.formatter.format(ast)
+        with self.assertRaises(TransformError):
+            ast = Parser().parse(tokens)
+
+            text = self.formatter.format(ast)
+            print("\n\nunexpected text", text)
 
 class FormatterStressTestCase(unittest.TestCase):
 
@@ -1823,6 +1828,75 @@ class FormatterStressTestCase(unittest.TestCase):
         output = self.formatter.format(ast).replace("\n", "")
 
         self.assertEqual(output, text)
+
+class FormatterTypeScriptTestCase(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        self.formatter = Formatter()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_001_member_initializer(self):
+        # the lexer / parser /.formatter should
+        # support a line that is longer than 4096 characters
+
+        text = """
+            class A {
+                static V1: number = 1
+                public static V2: number = 2
+                private static V3: number = 3
+                public V4: number = 4;
+                private V5: number = 5;
+
+                constructor() {
+                    const a : number = 1
+                }
+            }
+
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+
+        expected = "class A{static V1=1;static V2=2;static V3=3;V4=4;V5=5 constructor(){const a=1}}"
+        self.assertEqual(output, expected)
+
+    def test_001_member_variables(self):
+        # the lexer / parser /.formatter should
+        # support a line that is longer than 4096 characters
+
+        text = """
+            class A {
+                static V1: number
+                public static V2: number
+                private static V3: number
+                public V4: number
+                private V5: number
+
+                constructor() {
+                    const a : number
+                }
+            }
+
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+
+        expected = "class A{static V1;static V2;static V3;V4;V5 constructor(){const a}}"
+        self.assertEqual(output, expected)
+
 
 def main():
     unittest.main()

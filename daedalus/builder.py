@@ -625,6 +625,7 @@ class JsModule(object):
 class Builder(object):
     def __init__(self, search_paths, static_data, platform=None):
         super(Builder, self).__init__()
+        self.error = None
         self.search_paths = search_paths
 
         self.files = {}
@@ -943,6 +944,8 @@ class Builder(object):
 
         if error:
             raise error
+
+        # return True
 
         if self.globals:
             export_name = self.globals[jsm.name()] + "." + list(jsm.module_exports)[0]
