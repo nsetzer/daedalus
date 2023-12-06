@@ -1,7 +1,7 @@
 
-include './daedalus_element.js'
-include './daedalus_util.js'
-include './daedalus_location.js'
+import {} from './daedalus_element.js'
+import {parseParameters, StyleSheet, getStyleSheet, util} from './daedalus_util.js'
+import {} from './daedalus_location.js'
 
 // pattern: a location string used to match URLs
 // returns a function (map, map) => string

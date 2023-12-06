@@ -1,10 +1,10 @@
 
-include './daedalus_util.js'
-include './daedalus_element.js'
-include './daedalus_location.js'
-include './daedalus_router.js'
-include './daedalus_fileapi.js'
-include './daedalus_platform.js'
+import {util} from './daedalus_util.js'
+import {DomElement} from './daedalus_element.js'
+import {} from './daedalus_location.js'
+import {} from './daedalus_router.js'
+import {} from './daedalus_fileapi.js'
+import {} from './daedalus_platform.js'
 
 //---safarai
 if (window.requestIdleCallback===undefined) {
@@ -148,7 +148,7 @@ function workLoop(deadline=null) {
 
     let debug = workstack.length > 1 || updatequeue.length > 1
     if (!!debug) {
-        console.warn("workloop failed to finish", initial_delay, ":"
+        console.warn("workloop failed to finish", initial_delay, ":",
             initialWorkLength, '->', workstack.length,
             initialUpdateLength, '->', updatequeue.length)
 

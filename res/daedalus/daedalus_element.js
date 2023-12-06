@@ -1,5 +1,5 @@
 
-include './daedalus_util.js'
+import {parseParameters, StyleSheet, getStyleSheet, util} from './daedalus_util.js'
 
 let element_uid = 0
 function generateElementId() {
@@ -393,10 +393,10 @@ function childIndex(node) {
 
 
 const placeholder = StyleSheet({
-    background-color: "#edf2f7",
-    border: "2px dashed #cbd5e0",
-    width: '100%',
-    height: '100%',
+    'background-color': "#edf2f7",
+    'border': "2px dashed #cbd5e0",
+    'width': '100%',
+    'height': '100%',
 })
 
 /**

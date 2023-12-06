@@ -19,7 +19,7 @@
  *
  */
 
-include './daedalus_util.js'
+import {parseParameters, StyleSheet, getStyleSheet, util} from './daedalus_util.js'
 
 function saveBlob(blob, fileName) {
     let a = document.createElement('a');

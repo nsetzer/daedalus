@@ -2779,13 +2779,9 @@ def main():  # pragma: no cover
     class A {
             // why is the semicolon required
             static a = 0
-
             constructor() {
-
             }
-
         }
-
     """
 
     #text1 = "(x:int): int => x"

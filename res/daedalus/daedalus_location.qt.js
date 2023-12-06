@@ -3,7 +3,7 @@
 patch the history object to fire an event every time the location changes
 */
 
-include './daedalus_element.js'
+import {DomElement} from './daedalus_element.js'
 
 window.daedalus_location = "/"
 function _sendEvent(path) {

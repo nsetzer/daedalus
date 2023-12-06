@@ -406,7 +406,9 @@ class Formatter(object):
             elif token.type == Token.T_KEYWORD:
 
                 if token.value == "static" and len(token.children)>0:
-                    raise RuntimeError("deprecated")
+                    #raise FormatError(token, "deprecated")
+                    print("warn: deprecated use of static")
+                    print(token.toString(2))
                     seq.append((depth, Token.T_SPECIAL, ';'))
                     for child in reversed(token.children):
                         seq.append((depth, None, child))
@@ -818,11 +820,6 @@ def main():  # pragma: no cover
     // comment
     /* comment */
     /** doc string */
-    """
-    text1= """
-
-        class A{static #PRIVATE_STATIC_FIELD; static #PRIVATE_STATIC_FIELD_DEFAULT=0; static #privateStaticMethod(){return 0}}
-
     """
 
     tokens = Lexer({"preserve_documentation": True}).lex(text1)
