@@ -552,6 +552,10 @@ class TransformIdentityTestCase(unittest.TestCase):
 
 class TransformImportExport(unittest.TestCase):
 
+    # https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/import
+    # https://developer.mozilla.org/en-US/docs/web/javascript/reference/statements/export
+    # https://www.typescriptlang.org/docs/handbook/2/everyday-types.html
+
     def parse(self, text):
         tokens = Lexer().lex(text)
         ast = Parser().parse(tokens)

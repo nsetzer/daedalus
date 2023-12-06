@@ -1762,11 +1762,13 @@ class Parser(ParserBase):
             rhs1.type = Token.T_CLASS_BLOCK
 
         token.children.append(rhs1)
+        #print(token.toString(2))
 
         # loop over the class body
         index = 0
         while index < len(rhs1.children):
             child = rhs1.children[index]
+            #print(child.toString(2))
             # a function call inside of an object is actually a method def
             offset = 1
             if child.type == Token.T_ASSIGN:
@@ -1860,7 +1862,11 @@ class Parser(ParserBase):
                     tok.type = Token.T_METHOD
                     tok.value = "static"
                     rhs1.children[index] = tok
+                elif tok.type == Token.T_ASSIGN:
+                    child.type = Token.T_STATIC_PROPERTY
+                    child.children.append(tok)
                 else:
+                    child.type = Token.T_STATIC_PROPERTY
                     child.children.append(tok)
 
             elif child.type == Token.T_GROUPING:
@@ -2767,6 +2773,19 @@ def main():  # pragma: no cover
         $include("./a.js")
 
         import {} from "./daedalus.js"
+    """
+
+    text1 = """
+    class A {
+            // why is the semicolon required
+            static a = 0
+
+            constructor() {
+
+            }
+
+        }
+
     """
 
     #text1 = "(x:int): int => x"

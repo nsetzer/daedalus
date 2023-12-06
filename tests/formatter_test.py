@@ -700,7 +700,7 @@ class FormatterTestCase(unittest.TestCase):
         text = """
         class A{#PRIVATE_FIELD#PRIVATE_FIELD_DEFAULT=0#privateMethod(){return 0}}
         """
-        expected = "class A{#PRIVATE_FIELD#PRIVATE_FIELD_DEFAULT=0#privateMethod(){return 0}}"
+        expected = "class A{#PRIVATE_FIELD #PRIVATE_FIELD_DEFAULT=0 #privateMethod(){return 0}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
@@ -718,7 +718,7 @@ class FormatterTestCase(unittest.TestCase):
           }
         }
         """
-        expected = "class A{#PRIVATE_FIELD#PRIVATE_FIELD_DEFAULT=0#privateMethod(){return 0}}"
+        expected = "class A{#PRIVATE_FIELD #PRIVATE_FIELD_DEFAULT=0 #privateMethod(){return 0}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
@@ -730,7 +730,7 @@ class FormatterTestCase(unittest.TestCase):
         text = """
         class A{static #PRIVATE_STATIC_FIELD; static #PRIVATE_STATIC_FIELD_DEFAULT=0; static #privateStaticMethod(){return 0}}
         """
-        expected = "class A{static #PRIVATE_STATIC_FIELD static #PRIVATE_STATIC_FIELD_DEFAULT=0 static#privateStaticMethod(){return 0}}"
+        expected = "class A{static #PRIVATE_STATIC_FIELD;static #PRIVATE_STATIC_FIELD_DEFAULT=0;static #privateStaticMethod(){return 0}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
@@ -748,7 +748,7 @@ class FormatterTestCase(unittest.TestCase):
           }
         }
         """
-        expected = "class A{static #PRIVATE_STATIC_FIELD static #PRIVATE_STATIC_FIELD_DEFAULT=0 static#privateStaticMethod(){return 0}}"
+        expected = "class A{static #PRIVATE_STATIC_FIELD;static #PRIVATE_STATIC_FIELD_DEFAULT=0;static #privateStaticMethod(){return 0}}"
         tokens = self.lexer.lex(text)
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast)
@@ -929,7 +929,7 @@ class FormatterTestCase(unittest.TestCase):
     def test_001_static_props(self):
         self._chkeq("""
             class C {static p = 123}
-        """, 'class C{static p=123}')
+        """, 'class C{static p=123;}')
 
     def test_001_unpack_sequence(self):
 
@@ -1869,7 +1869,7 @@ class FormatterTypeScriptTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast).replace("\n", "")
 
-        expected = "class A{static V1=1;static V2=2;static V3=3;V4=4;V5=5 constructor(){const a=1}}"
+        expected = "class A{static V1=1;static V2=2;static V3=3;V4=4;V5=5;constructor(){const a=1}}"
         self.assertEqual(output, expected)
 
     def test_001_member_variables(self):
@@ -1894,7 +1894,7 @@ class FormatterTypeScriptTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast).replace("\n", "")
 
-        expected = "class A{static V1;static V2;static V3;V4;V5 constructor(){const a}}"
+        expected = "class A{static V1;static V2;static V3;V4;V5;constructor(){const a}}"
         self.assertEqual(output, expected)
 
 

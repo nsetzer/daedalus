@@ -909,6 +909,7 @@ class Builder(object):
                     if srcname in name2path:
                         abspath = name2path[srcname]
                         # TODO: optional relative path to support github actions
+                        # TODO: support typescript when the original path is typescript
                         url = f'srcmap/{srcname.replace(".", "/")}.js'
                         url2index[url] = sources[srcname]
                         url2path[url] = abspath

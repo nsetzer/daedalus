@@ -31,8 +31,8 @@ def isalphanum(a, b):
         c1 = a[-1]
         c2 = b[0]
 
-        return (c1.isalnum() or c1 in '_$' or ord(c1) > 127) and \
-               (c2.isalnum() or c2 in '_$' or ord(c2) > 127)
+        return (c1.isalnum() or c1 in '_$#' or ord(c1) > 127) and \
+               (c2.isalnum() or c2 in '_$#' or ord(c2) > 127)
     return False
 
 def isfunction(child):
@@ -406,38 +406,38 @@ class Formatter(object):
             elif token.type == Token.T_KEYWORD:
 
                 if token.value == "static" and len(token.children)>0:
-                    #seq.append((depth, Token.T_SPECIAL, ';'))
+                    raise RuntimeError("deprecated")
+                    seq.append((depth, Token.T_SPECIAL, ';'))
                     for child in reversed(token.children):
                         seq.append((depth, None, child))
                     seq.append((depth, Token.T_SPECIAL, ' '))
+
                 out.append((depth, token, token.type, token.value))
             elif token.type == Token.T_STATIC_PROPERTY:
-                out.append((depth, token, Token.T_SPECIAL, ';'))
-                out.append((depth, token, token.type, token.value))
+                seq.append((depth, None, ';'))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
+                seq.append((depth, None, 'static'))
 
             elif token.type == Token.T_PUBLIC_STATIC_PROPERTY:
-                out.append((depth, token, Token.T_SPECIAL, ';'))
-                out.append((depth, token, token.type, 'static'))
+                seq.append((depth, None, ';'))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
+                seq.append((depth, None, 'static'))
 
             elif token.type == Token.T_PRIVATE_STATIC_PROPERTY:
-                out.append((depth, token, Token.T_SPECIAL, ';'))
-                out.append((depth, token, token.type, 'static'))
+                seq.append((depth, None, ';'))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
+                seq.append((depth, None, 'static'))
 
             elif token.type == Token.T_PUBLIC_PROPERTY:
-                out.append((depth, token, Token.T_SPECIAL, ';'))
-                #out.append((depth, token, token.type, token.value))
+                seq.append((depth, None, ';'))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
 
             elif token.type == Token.T_PRIVATE_PROPERTY:
-                out.append((depth, token, Token.T_SPECIAL, ';'))
-                #out.append((depth, token, token.type, token.value))
+                seq.append((depth, None, ';'))
                 for child in reversed(token.children):
                     seq.append((depth, None, child))
 
@@ -624,7 +624,7 @@ class Formatter(object):
             elif token.type == Token.T_BRANCH:
                 if len(token.children) == 3:
                     if not isctrlflow(token.children[2]):
-                        seq.append((depth, Token.T_SPECIAL, ";"))
+                        seq.append((depth, Token.T_SPECIAL, ';'))
                     seq.append((depth, None, token.children[2]))
 
                     # note: for source maps, else doesnt exist
@@ -633,7 +633,7 @@ class Formatter(object):
 
                     seq.append((depth, Token.T_KEYWORD, "else"))
                 if not isctrlflow(token.children[1]):
-                    seq.append((depth, Token.T_SPECIAL, ";"))
+                    seq.append((depth, Token.T_SPECIAL, ';'))
                 seq.append((depth, None, token.children[1]))
                 seq.append((depth, None, token.children[0]))
                 seq.append((depth, False, token.type, token))
@@ -821,9 +821,7 @@ def main():  # pragma: no cover
     """
     text1= """
 
-        export const a = {}
-        type a = {}
-        export type a = {}
+        class A{static #PRIVATE_STATIC_FIELD; static #PRIVATE_STATIC_FIELD_DEFAULT=0; static #privateStaticMethod(){return 0}}
 
     """
 
