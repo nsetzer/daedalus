@@ -3022,7 +3022,14 @@ def getModuleImportExport(ast, warn_include=False):
 
                 modname = token.value
                 if modname.startswith("@"):
+                    # "@daedalus/daedalus"
+                    # the @ symbol specifies a folder alias
+                    # currently not used by daedalus, but used by typescript
+                    # for resolving where the file lives
+                    # typescript also requires / for folder levels
+                    # but daedalus uses python style dotted names
                     _, modname = modname.split("/", 1)
+                    modname = modname.replace("/", ".")
 
                 if modname in module_imports:
                     module_imports[modname].update(dict(fromlist))

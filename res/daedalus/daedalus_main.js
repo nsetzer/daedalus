@@ -2,11 +2,11 @@
 import {util} from './daedalus_util.js'
 import {DomElement} from './daedalus_element.js'
 import {} from './daedalus_location.js'
-import {} from './daedalus_router.js'
-import {} from './daedalus_fileapi.js'
-import {} from './daedalus_platform.js'
+import {patternCompile, patternToRegexp, locationMatch, Router, AuthenticatedRouter} from './daedalus_router.js'
+import {downloadFile, uploadFile} from './daedalus_fileapi.js'
+import {platform} from './daedalus_platform.js'
 
-//---safarai
+//---safari
 if (window.requestIdleCallback===undefined) {
     window.requestIdleCallback = (callback, options) => {
         //options.timeout : timeout in milliseconds
@@ -593,7 +593,4 @@ function removeDomNode(fiber) {
     fiber.alternate = null
     _removeDomNode_elementFixUp(fiber.element)
 }
-
-
-
 
