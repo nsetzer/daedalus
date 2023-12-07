@@ -6,6 +6,7 @@ from tests.util import parsecmp, TOKEN
 
 from daedalus.lexer import Lexer
 from daedalus.parser import Parser as ParserBase
+from daedalus.formatter import Formatter
 from daedalus.transform import TransformIdentityScope, \
     TransformMinifyScope, getModuleImportExport, TransformIdentityBlockScope, \
     TransformExtractStyleSheet, TransformError
@@ -645,8 +646,34 @@ class TransformImportExport(unittest.TestCase):
 
         self.assertFalse(parsecmp(ast1, ast2, False))
 
+    def test_001_export_type(self):
 
+        text1 = """
+            export type Point = {x: number, y:number}
+        """
 
+        ast1 = self.parse(text1)
+
+        ast1, imports1, modimports1, exports1 = getModuleImportExport(ast1)
+
+        expected_ast = TOKEN('T_MODULE', '', 
+            TOKEN('T_TYPE', 'type', 
+                TOKEN('T_ASSIGN', '=', 
+                    TOKEN('T_GLOBAL_VAR', 'Point'), 
+                    TOKEN('T_OBJECT', '{}', 
+                        TOKEN('T_BINARY', ':', 
+                            TOKEN('T_STRING', "'x'"), 
+                            TOKEN('T_GLOBAL_VAR', 'number')), 
+                        TOKEN('T_BINARY', ':', 
+                            TOKEN('T_STRING', "'y'"), 
+                            TOKEN('T_GLOBAL_VAR', 'number'))))))
+
+        self.assertFalse(parsecmp(ast1, expected_ast, False))
+        self.assertEqual(exports1, ['Point'])
+
+        text = Formatter().format(ast1)
+        expected_text = "const Point=undefined"
+        self.assertEqual(text, expected_text)
 
 def main():
     unittest.main()

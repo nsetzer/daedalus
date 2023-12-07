@@ -2423,8 +2423,16 @@ class Parser(ParserBase):
         if token.children[1].type not in (Token.T_GROUPING, Token.T_ARGLIST):
             raise ParseError(token, "expected arglist")
 
-        token.children[1].type = Token.T_ARGLIST
-        for k, arg in enumerate(token.children[1].children):
+        arglist = token.children[1]
+        arglist.type = Token.T_ARGLIST
+        k = 0;
+        while k < len(arglist.children):
+
+            arg = arglist.children[k]
+
+            if arg.type == Token.T_COMMA:
+                arglist.children = arglist.children[:k] + arglist.children[k].children + arglist.children[k+1:] 
+                continue
 
             if arg.type == Token.T_BINARY and arg.value==":":
                 # fix the type annotation for this argument
@@ -2432,10 +2440,14 @@ class Parser(ParserBase):
                 type_ = self.consume_type(arg.children, 0)
                 anno = Token(Token.T_ANNOTATION, type_.line, type_.index, "", [type_])
                 arg.children[0].children = [anno]
+
+            # TODO: not clear what this does
             if arg.type == Token.T_LIST:
                 arg.type = Token.T_UNPACK_SEQUENCE
             if arg.type == Token.T_GROUPING:
                 arg.type = Token.T_UNPACK_OBJECT
+
+            k += 1
 
         if body.type != Token.T_GROUPING:
             self._remove_special(tokens, index + 1)
@@ -2776,12 +2788,24 @@ def main():  # pragma: no cover
     """
 
     text1 = """
-    class A {
-            // why is the semicolon required
-            static a = 0
-            constructor() {
-            }
-        }
+
+    // everything within < and > must describe a valid type
+    // if a semicolon is found, or certain expression (&&, ||)
+    // then the search can end
+    // if a pair is found, and it parses to a valid type
+    // then that pair represents a generic type def
+    // otherwise it should not be consumed
+    // this creates the first branch in the parser
+    // that may not resolve to anything
+
+    //let x = 1 < 2 && 3 > 2
+    //let list: Array<number> = [1, 2, 3];
+    //let result = fn<number>(213)
+    //function first<T>(x : T[]) : T | undefined { return x[] }
+
+    export function fn(x:number,x:number,x:number) {}
+
+
     """
 
     #text1 = "(x:int): int => x"

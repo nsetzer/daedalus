@@ -489,16 +489,23 @@ class Formatter(object):
                 seq.append((depth, token.type, token.value))
             elif token.type == Token.T_TYPE:
 
-                #seq.append((depth, Token.T_TEXT, "*/"))
+                # no specification yet for how to export types in javascript
+                # since the right hand side is a mapping of {property:type_spec}
+                # I am choosing to not serialize it at all, but still export a name
                 first = True
+                if len(token.children) > 1:
+                    raise FormatError(token, "declaring more than one type not yet supported")
+
                 for child in reversed(token.children):
-                    if not first:
-                        seq.append((depth + 1, Token.T_SPECIAL, ","))
-                    seq.append((depth, None, child))
-                    first = False
-                #seq.append((depth, token.type, token.value))
+
+                    if child.type != Token.T_ASSIGN or child.value != "=":
+                        raise FormatError(token, "type declartion must bind a name")
+
+                    seq.append((depth, None, 'undefined'))
+                    seq.append((depth, None, '='))
+                    seq.append((depth, None, child.children[0]))
+
                 seq.append((depth, token.type, 'const'))
-                #seq.append((depth, Token.T_TEXT, "/*"))
 
             elif token.type == Token.T_INTERFACE:
                 # nothing to do
