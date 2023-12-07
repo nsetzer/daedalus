@@ -133,12 +133,78 @@ class ParserBase(object):
             if token.type == self.token_input_grouping_type and token.value in pairs:
                 self.grouping(tokens, index, token.value, pairs[token.value])
                 self.scan(token)
+            if token.type == self.token_input_grouping_type and token.value == "<":
+                self.group_generic(tokens, index)
             index -= 1
 
         mod = Token(self.token_ast_type, 0, 0, "", tokens)
         self.scan(mod)
 
         return mod
+
+    def group_generic(self, tokens, index):
+        # https://www.typescriptlang.org/docs/handbook/2/generics.html
+        return
+        # TODO: a generic is either:
+        # type identifier = identifier T_GENERIC
+        # : identifier T_GENERIC
+        # identifier T_GENERIC T_GROUPING()
+        
+        pairs = {
+            '(': ')',
+            '[': ']',
+            '{': '}',
+        }
+
+        valid = {
+            Token.T_SPECIAL: ["&", "|", ","],
+            Token.T_STRING: None,
+            Token.T_NUMBER: None,
+            Token.T_TEXT: None,
+            Token.T_KEYWORD: None,
+            Token.T_GROUPING: None,
+        }
+
+        nested_stack = []
+
+        success = -1
+
+        for i in range(index+1, len(tokens)):
+
+            tok = tokens[i]
+            if len(nested_stack) == 0 and tok.type == Token.T_SPECIAL and tok.value == ">":
+                success = i
+                break
+            elif tok.type == Token.T_SPECIAL and tok.value in "({[":
+                nested_stack.push(tok.value)
+            elif tok.type == Token.T_SPECIAL and tok.value in ")}]":
+                if len(nested_stack) > 0:
+                    c = nested_stack.pop()
+                    if pairs[c] != tok.value:
+                        break
+                else:
+                    break
+            elif tok.type in valid:
+                if valid[tok.type] is not None:
+                    if tok.value not in valid[tok.type]:
+                        break
+                
+        if success < 0:
+            print("error", index, [tok.value for tok in tokens])
+            return
+        else:
+            print("ok")
+
+        grp = tokens[index]
+        grp.type = Token.T_GENERIC
+        grp.value = "<>"
+        tokens.pop(success)
+        for i in reversed(range(index+1, success)):
+            grp.children.insert(0, tokens.pop(i))
+
+        print(grp.toString(2))
+
+        tokens.pop(index)
 
     def grouping(self, tokens, index, open, close):
         current = tokens[index]
@@ -2393,7 +2459,9 @@ class Parser(ParserBase):
         i2 = self.peek_token(tokens, token, index, 1)
         if i2 is not None and tokens[i2].type == token.T_SPECIAL and tokens[i2].value == "<":
             self.grouping(tokens, i2, "<", ">")
-            tokens.pop(i2) # not sure where to put this
+            tmp = tokens.pop(i2)
+            tmp.type = Token.T_GENERIC
+            rhs1.children.append(tmp) # not sure where to put this
 
         # function () {}
         # function name() {}
@@ -2789,6 +2857,11 @@ def main():  # pragma: no cover
 
     text1 = """
 
+    export function fn(x:number,x:number,x:number) {}
+
+    """
+    text1 = """
+
     // everything within < and > must describe a valid type
     // if a semicolon is found, or certain expression (&&, ||)
     // then the search can end
@@ -2803,7 +2876,10 @@ def main():  # pragma: no cover
     //let result = fn<number>(213)
     //function first<T>(x : T[]) : T | undefined { return x[] }
 
-    export function fn(x:number,x:number,x:number) {}
+    //function fn<Type, Key extends keyof Type>(obj: Type, key: Key){}
+
+    //let x = a < 3 & c > 4
+    let x = fn<int>()
 
 
     """
