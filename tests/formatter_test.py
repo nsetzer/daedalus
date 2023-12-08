@@ -1897,6 +1897,150 @@ class FormatterTypeScriptTestCase(unittest.TestCase):
         expected = "class A{static V1;static V2;static V3;V4;V5;constructor(){const a}}"
         self.assertEqual(output, expected)
 
+class FormatterTypeScriptGenericsTestCase(unittest.TestCase):
+    
+    @classmethod
+    def setUpClass(cls):
+
+        cls.lexer = Lexer()
+        cls.parser = Parser()
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        self.formatter = Formatter()
+
+    def tearDown(self):
+        super().tearDown()
+
+    def test_001_base_case(self):
+        text = """
+            let x = 1 < 2 && 3 > 2
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "let x=1<2&&3>2"
+        self.assertEqual(output, expected)
+
+    def test_001_call(self):
+        text = """
+            let output = identity<string>("myString");
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "let output=identity(\"myString\")"
+        self.assertEqual(output, expected)
+
+    def test_001_define(self):
+        text = """
+            function identity<Type>(arg: Type): Type {
+                return arg;
+            }
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "function identity(arg){return arg}"
+        self.assertEqual(output, expected)
+
+    @unittest.expectedFailure
+    def test_001_interface(self):
+        text = """
+            export interface GenericIdentityFn {
+                <Type>(arg: Type): Type;
+            }
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "function identity(arg){return arg}"
+        self.assertEqual(output, expected)
+
+    @unittest.expectedFailure
+    def test_001_class(self):
+        text = """
+            class GenericNumber<NumType> {
+                value: NumType;
+            }
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "function identity(arg){return arg}"
+        self.assertEqual(output, expected)
+
+    @unittest.expectedFailure
+    def test_001_conditional(self):
+        text = """
+            type Example1 = Dog extends Animal ? number : string;
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Example1=undefined"
+        self.assertEqual(output, expected)
+
+    def test_001_mapped(self):
+        text = """
+            type OnlyBoolsAndHorses = {
+                [key: string]: boolean | Horse;
+            };
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const OnlyBoolsAndHorses=undefined"
+        self.assertEqual(output, expected)
+
+    def test_001_sequence(self):
+        text = """
+            type Sequence = {
+                [key: number]: unknown;
+            };
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Sequence=undefined"
+        self.assertEqual(output, expected)
+
+    def test_001_literals(self):
+        # this actually does multiplication
+        # but doesnt need to be implemented
+        text = """
+            //type lang = "us" | "ja"
+            type Greeting = `hello ${lang}`;
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Greeting=undefined"
+        self.assertEqual(output, expected)
+
+    @unittest.expectedFailure
+    def test_001_point(self):
+        text = """
+            type Point = { x: number; y: number };
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Point=undefined"
+        self.assertEqual(output, expected)
+
+    def test_001_keyof(self):
+        text = """
+            type P = keyof Point;
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const P=undefined"
+        self.assertEqual(output, expected)
 
 def main():
     unittest.main()

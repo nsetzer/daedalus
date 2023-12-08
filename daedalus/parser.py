@@ -144,11 +144,15 @@ class ParserBase(object):
 
     def group_generic(self, tokens, index):
         # https://www.typescriptlang.org/docs/handbook/2/generics.html
-        return
         # TODO: a generic is either:
-        # type identifier = identifier T_GENERIC
-        # : identifier T_GENERIC
-        # identifier T_GENERIC T_GROUPING()
+        #   type identifier = identifier T_GENERIC
+        #   interface identifier = identifier T_GENERIC
+        #   : identifier T_GENERIC
+        #   identifier T_GENERIC T_GROUPING()
+        #   class identifier T_GENERIC
+        # within angle brackets a generic can contain any valid type definition
+        # text, boolean operators, commas, sequences and mappings
+        # as well as some typescript specific keywords: extends, keyof, valueof
         
         pairs = {
             '(': ')',
@@ -157,7 +161,7 @@ class ParserBase(object):
         }
 
         valid = {
-            Token.T_SPECIAL: ["&", "|", ","],
+            Token.T_SPECIAL: ["&", "|", ",", ":"],
             Token.T_STRING: None,
             Token.T_NUMBER: None,
             Token.T_TEXT: None,
@@ -190,10 +194,31 @@ class ParserBase(object):
                         break
                 
         if success < 0:
-            print("error", index, [tok.value for tok in tokens])
             return
-        else:
-            print("ok")
+
+        is_rhs_grouping = False
+        if success + 1 < len(tokens):
+            tok = tokens[success + 1]
+            is_rhs_grouping = tok.type == Token.T_GROUPING and tok.value == "()"
+
+        is_lhs_type = False
+        if index >= 2:
+            tok1 = tokens[index-1] # peek?
+            tok2 = tokens[index-2] # peek?
+            if tok1.type == Token.T_TEXT:
+            
+                if tok2.type == Token.T_KEYWORD and tok2.value == "class":
+                    is_lhs_type = True
+                if tok2.type == Token.T_SPECIAL:
+                    if tok2.value == ":":
+                        is_lhs_type = True
+                    if index >= 3 and tok2.value == "=":
+                        tok3 = tokens[index-3] # peek?
+                        if tok3.value in ("type", "interface"):
+                            is_lhs_type = True
+
+        if not is_lhs_type and not is_rhs_grouping:
+            return
 
         grp = tokens[index]
         grp.type = Token.T_GENERIC
@@ -202,7 +227,7 @@ class ParserBase(object):
         for i in reversed(range(index+1, success)):
             grp.children.insert(0, tokens.pop(i))
 
-        print(grp.toString(2))
+        # TODO: should grp be added as a child of index-1?
 
         tokens.pop(index)
 
@@ -290,7 +315,7 @@ class Parser(ParserBase):
             (L2R, self.visit_new, []),
             (L2R, self.visit_unary_postfix, ['++', '--']),
             (R2L, self.visit_unary_prefix, ['!', '~', '+', '-', '++', '--']),
-            (R2L, self.visit_prefix, ['typeof', 'void', 'delete', 'await']),
+            (R2L, self.visit_prefix, ['typeof', 'void', 'delete', 'await', "keyof", "valueof"]),
             (R2L, self.visit_binary, ['**']),
             (L2R, self.visit_math_mul, ['*', '/', '%']),
             (L2R, self.visit_binary, ['+', '-']),
@@ -922,7 +947,7 @@ class Parser(ParserBase):
 
         token = tokens[index]
 
-        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD) or \
+        if token.type not in (Token.T_SPECIAL, Token.T_KEYWORD, Token.T_TEXT) or \
            token.value not in operators:
             return 1
 
@@ -1061,8 +1086,8 @@ class Parser(ParserBase):
                 if tok1.type == Token.T_KEYWORD and tok1.value == 'import':
                     return 1
 
-        rhs = self.consume(tokens, token, index, 1)
-        lhs = self.consume(tokens, token, index, -1)
+        rhs = self.consume_keyword(tokens, token, index, 1)
+        lhs = self.consume_keyword(tokens, token, index, -1)
         token.children.append(lhs)
         token.children.append(rhs)
 
@@ -1753,6 +1778,7 @@ class Parser(ParserBase):
         #  allow 'type' to be an identifier
         #  allow 'type x = expression' to be a type definition
         if token.type == Token.T_TEXT and token.value == "type":
+            raise ValueError()
             i1 = self.peek_token(tokens, token, index, 1)
             if i1 is not None and tokens[i1].type == Token.T_ASSIGN:
                 if tokens[i1].value != "=":
@@ -2737,6 +2763,7 @@ class Parser(ParserBase):
 
         if token.value == "type":
             token.type = Token.T_TYPE
+            print(token.toString(2))
 
     def collect_keyword_while(self, tokens, index):
 
@@ -2879,7 +2906,12 @@ def main():  # pragma: no cover
     //function fn<Type, Key extends keyof Type>(obj: Type, key: Key){}
 
     //let x = a < 3 & c > 4
-    let x = fn<int>()
+
+    //let x : fn<int>()
+
+    class GenericNumber<NumType> {
+        value: NumType;
+    }
 
 
     """
