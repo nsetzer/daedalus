@@ -487,6 +487,15 @@ class Formatter(object):
                 if token.value == "constexpr":
                     token.value = "const"
                 seq.append((depth, token.type, token.value))
+            elif token.type == Token.T_INTERFACE:
+                # no specification yet for how to export types in javascript
+                # since the right hand side is a mapping of {property:type_spec}
+                # I am choosing to not serialize it at all, but still export a name
+                
+                seq.append((depth, None, 'undefined'))
+                seq.append((depth, None, '='))
+                seq.append((depth, None, child.children[0]))
+                seq.append((depth, token.type, 'const'))
             elif token.type == Token.T_TYPE:
 
                 # no specification yet for how to export types in javascript

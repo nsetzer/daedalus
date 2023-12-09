@@ -6,6 +6,7 @@ from tests.util import parsecmp, TOKEN
 
 from daedalus.lexer import Token, Lexer
 from daedalus.parser import Parser as ParserBase, ParseError
+from daedalus.transform import TransformError
 
 class Parser(ParserBase):
     def __init__(self):
@@ -646,7 +647,9 @@ class ParserBinOpTestCase(unittest.TestCase):
 
         text = "var [a,b,c] = d"
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
+        parser = Parser()
+        parser.disabled_warnings.add(Parser.W_VAR_USED)
+        ast = parser.parse(tokens)
         expected = TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'var',
                 TOKEN('T_ASSIGN', '=',
@@ -663,7 +666,9 @@ class ParserBinOpTestCase(unittest.TestCase):
             var [x=[2][0]] = [];
         """
         tokens = Lexer().lex(text)
-        Parser().parse(tokens)
+        parser = Parser()
+        parser.disabled_warnings.add(Parser.W_VAR_USED)
+        parser.parse(tokens)
         TOKEN('T_MODULE', '',
             TOKEN('T_VAR', 'var',
                 TOKEN('T_ASSIGN', '=',
@@ -1267,14 +1272,14 @@ class ParserFunctionTestCase(unittest.TestCase):
 
 class ParserClassTestCase(unittest.TestCase):
 
-    @unittest.expectedFailure
     def test_001_object_missing_comma(self):
         text = """
             const x = {a, b
                 c}
         """
         tokens = Lexer().lex(text)
-        ast = Parser().parse(tokens)
+        with self.assertRaises(TransformError):
+            Parser().parse(tokens)
 
     def test_001_class_1(self):
 
@@ -1613,9 +1618,9 @@ class ParserChallengeTestCase(unittest.TestCase):
 
     def test_001_challenge_10(self):
         # inner for loop order of operations
-        text = "var a;for(b=c;d<e;f++)for(g in h=i)j;"
+        text = "let a;for(b=c;d<e;f++)for(g in h=i)j;"
         expected = TOKEN('T_MODULE', '',
-            TOKEN('T_VAR', 'var',
+            TOKEN('T_VAR', 'let',
                 TOKEN('T_TEXT', 'a')),
             TOKEN('T_FOR', 'for',
                 TOKEN('T_ARGLIST', '()',
@@ -1638,7 +1643,7 @@ class ParserChallengeTestCase(unittest.TestCase):
     def test_001_challenge_11(self):
         # inner for loop order of operations
         text = """
-            if("object"==typeof t)for(var n in t)this._on(n,t[n],i)else for(var o=0,s=(
+            if("object"==typeof t)for(let n in t)this._on(n,t[n],i)else for(let o=0,s=(
                           t=d(t)).length;o<s;o++)this._on(t[o],i,e);
             """
         expected = TOKEN('T_MODULE', '',
@@ -1649,7 +1654,7 @@ class ParserChallengeTestCase(unittest.TestCase):
                         TOKEN('T_PREFIX', 'typeof',
                             TOKEN('T_TEXT', 't')))),
                 TOKEN('T_FOR_IN', 'for',
-                    TOKEN('T_VAR', 'var',
+                    TOKEN('T_VAR', 'let',
                         TOKEN('T_TEXT', 'n')),
                     TOKEN('T_TEXT', 't'),
                     TOKEN('T_FUNCTIONCALL', '',
@@ -1664,7 +1669,7 @@ class ParserChallengeTestCase(unittest.TestCase):
                             TOKEN('T_TEXT', 'i')))),
                 TOKEN('T_FOR', 'for',
                     TOKEN('T_ARGLIST', '()',
-                        TOKEN('T_VAR', 'var',
+                        TOKEN('T_VAR', 'let',
                             TOKEN('T_ASSIGN', '=',
                                 TOKEN('T_TEXT', 'o'),
                                 TOKEN('T_NUMBER', '0')),
@@ -1773,7 +1778,9 @@ class ParserModuleTestCase(unittest.TestCase):
             export default class a {}
         """
         tokens = Lexer().lex(text)
-        Parser().parse(tokens)
+        parser = Parser()
+        parser.disabled_warnings.add(Parser.W_VAR_USED)
+        parser.parse(tokens)
 
     def test_001_module(self):
         text = "import { name } from './module/module.js'"

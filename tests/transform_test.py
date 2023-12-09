@@ -486,7 +486,7 @@ class TransformIdentityTestCase(unittest.TestCase):
 
             let x = 1;
             while (true) {
-                let x = 2;
+                let x = 2; // TODO block scope not deleted correctly
                 {
                     break
                     let x = 3;
@@ -505,7 +505,37 @@ class TransformIdentityTestCase(unittest.TestCase):
         xform.transform(ast)
 
         self.assertFail("not implemented")
-        expected = TOKEN('T_MODULE', '')
+        expected = TOKEN('T_MODULE', '', 
+            TOKEN('T_FUNCTION', 'function', 
+                TOKEN('T_GLOBAL_VAR', 'f'), 
+                TOKEN('T_ARGLIST', '()'), 
+                TOKEN('T_BLOCK', '{}', 
+                    TOKEN('T_VAR', 'let', 
+                        TOKEN('T_ASSIGN', '=', 
+                            TOKEN('T_LOCAL_VAR', 'x'), 
+                            TOKEN('T_NUMBER', '1'))), 
+                    TOKEN('T_WHILE', 'while', 
+                        TOKEN('T_ARGLIST', '()', 
+                            TOKEN('T_KEYWORD', 'true')), 
+                        TOKEN('T_BLOCK', '{}', 
+                            TOKEN('T_VAR', 'let', 
+                                TOKEN('T_ASSIGN', '=', 
+                                    TOKEN('T_LOCAL_VAR', 'x#b2'), 
+                                    TOKEN('T_NUMBER', '2'))), 
+                            TOKEN('T_BLOCK', '{}', 
+                                TOKEN('T_BREAK', 'break'), 
+                                TOKEN('T_VAR', 'let', 
+                                    TOKEN('T_ASSIGN', '=', 
+                                        TOKEN('T_LOCAL_VAR', 'x#b3'), 
+                                        TOKEN('T_NUMBER', '3'))), 
+                                TOKEN('T_DELETE_VAR', '', 
+                                    TOKEN('T_LOCAL_VAR', 'x#b3'))),
+                            TOKEN('T_DELETE_VAR', '', 
+                                TOKEN('T_LOCAL_VAR', 'x#b2')))), 
+                    TOKEN('T_RETURN', 'return', 
+                        TOKEN('T_LOCAL_VAR', 'x'))), 
+                TOKEN('T_CLOSURE', '')))
+
         self.assertFalse(parsecmp(expected, ast, False))
 
     def test_001_unused_var_lambda(self):

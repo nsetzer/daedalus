@@ -16,6 +16,7 @@ from .lexer import Lexer, Token, TokenError, reserved_types
 from .transform import TransformGrouping, \
     TransformFlatten, TransformOptionalChaining, \
     TransformMagicConstants, TransformRemoveSemicolons, TransformBase
+import traceback
 
 class ParseError(TokenError):
     pass
@@ -136,6 +137,11 @@ class ParserBase(object):
             if token.type == self.token_input_grouping_type and token.value == "<":
                 self.group_generic(tokens, index)
             index -= 1
+
+        closers = set(pairs.values())
+        for token in tokens:
+            if token.type == Token.T_SPECIAL and token.value in closers:
+                raise ParseError(token, "unopened grouping")
 
         mod = Token(self.token_ast_type, 0, 0, "", tokens)
         self.scan(mod)
@@ -427,7 +433,9 @@ class Parser(ParserBase):
         text = "WARNING: module: %s line: %d column: %d type: %s value: %s : %s\n" % (
             self.module_name, token.line, token.index, token.type, token.value, text)
 
+        sys.stdout.write("\n")
         sys.stdout.write(text)
+        #print(traceback.print_stack())
 
     def peek_token(self, tokens, token, index, direction):
         """
@@ -1653,7 +1661,7 @@ class Parser(ParserBase):
         elif token.value == 'while':
             self.collect_keyword_while(tokens, index)
 
-        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default", "static"):
+        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default", "static", "extends"):
             pass
         elif token.value == 'in':
             # TODO: this may be consumed in a higher layer...
@@ -1963,6 +1971,10 @@ class Parser(ParserBase):
 
             elif child.type == Token.T_GROUPING:
                 raise ParseError(child, "unexpected object in class body")
+            elif child.type == Token.T_BINARY and child.value == ":":
+                blhs,brhs = child.children
+                rhs1.children[index] = blhs
+                blhs.children.append(Token(Token.T_ANNOTATION, blhs.line, blhs.index, "", [brhs]))
 
             index += offset
 
@@ -2099,7 +2111,11 @@ class Parser(ParserBase):
                 stack.append(node.children[0])
             elif node.type == Token.T_VAR:
                 stack.append(node.children[0])
+            elif node.type == Token.T_INTERFACE:
+                # an interface is "identity object" without a binary op
+                stack.append(node.children[0])
             elif node.type == Token.T_TYPE:
+                # a type is "identity = object" with a binary op
                 stack.append(node.children[0])
             elif node.type == Token.T_CLASS:
                 stack.append(node.children[0])
@@ -2763,7 +2779,6 @@ class Parser(ParserBase):
 
         if token.value == "type":
             token.type = Token.T_TYPE
-            print(token.toString(2))
 
     def collect_keyword_while(self, tokens, index):
 
@@ -2909,10 +2924,7 @@ def main():  # pragma: no cover
 
     //let x : fn<int>()
 
-    class GenericNumber<NumType> {
-        value: NumType;
-    }
-
+    export a from b
 
     """
 
