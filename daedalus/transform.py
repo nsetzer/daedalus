@@ -49,6 +49,8 @@ class TransformRemoveSemicolons(TransformBase):
         i = 0
         while i < len(token.children):
             child = token.children[i]
+            #if parent.type == Token.T_GROUPING and parent.value == "{}":
+            #    parent.type = Token.T_OBJECT
             if child.type == Token.T_SPECIAL and child.value == ';':
                 token.children.pop(i)
             else:
@@ -125,6 +127,12 @@ class TransformGrouping(TransformBase):
 
                                 continue
 
+
+                        #TODO: this is a hack to support semicolons in block statements
+                        if isinstance(ref, int):
+                            child.type = Token.T_BLOCK
+                            continue
+
                         #print("\n---- Debug Transform ----")
                         #print(">>> %s:"%ref)
                         #print(">>> parent", parent.type, parent.value)
@@ -160,6 +168,12 @@ class TransformGrouping(TransformBase):
             while child.type == Token.T_COMMA or \
               (child.type == Token.T_BINARY and child.value == ':'):
                 child = child.children[0]
+
+            if child.type == Token.T_SPECIAL and child.value == ";":
+                # this is a class body or function body
+                #token.type = Token.T_BLOCK
+                return -1
+
             return TransformError(child, "malformed object. maybe a comma is missing?")
 
         if len(token.children) == 0:

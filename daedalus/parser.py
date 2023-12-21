@@ -339,6 +339,7 @@ class Parser(ParserBase):
             (L2R, self.visit_binary, ['|>']),  # unsure where to place in sequence
             (L2R, self.visit_unary, ['...']),
             (L2R, self.visit_type_annotations, []),
+            (R2L, self.visit_binary, ['extends']),
             #(R2L, self.visit_ternary, ['?']), # merged with visit_assign_v2
             (R2L, self.visit_assign_v2, [
                     '=>',
@@ -390,8 +391,8 @@ class Parser(ParserBase):
 
         mod = super().parse(tokens)
 
-        TransformRemoveSemicolons().transform(mod)
         TransformGrouping().transform(mod)
+        TransformRemoveSemicolons().transform(mod)
         TransformFlatten().transform(mod)
         if self.feat_xform_optional_chaining:
             TransformOptionalChaining().transform(mod)
@@ -1661,7 +1662,10 @@ class Parser(ParserBase):
         elif token.value == 'while':
             self.collect_keyword_while(tokens, index)
 
-        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default", "static", "extends"):
+        elif token.value == "extends":
+            pass
+            #self.collect_keyword_extends(tokens, index)
+        elif token.value in ('this', 'import', 'export', "with", "true", "false", "null", "default", "static"):
             pass
         elif token.value == 'in':
             # TODO: this may be consumed in a higher layer...
@@ -1786,7 +1790,8 @@ class Parser(ParserBase):
         #  allow 'type' to be an identifier
         #  allow 'type x = expression' to be a type definition
         if token.type == Token.T_TEXT and token.value == "type":
-            raise ValueError()
+            #raise ValueError()
+            print("Warning: should be unreachable")
             i1 = self.peek_token(tokens, token, index, 1)
             if i1 is not None and tokens[i1].type == Token.T_ASSIGN:
                 if tokens[i1].value != "=":
@@ -1830,20 +1835,33 @@ class Parser(ParserBase):
         # check for the class name
         i1 = self.peek_token(tokens, token, index, 1)
         if i1 is not None and tokens[i1].type == Token.T_TEXT:
-            token.children = [self.consume(tokens, token, index, 1)]
+            token.children = []
+            token.children.append(self.consume(tokens, token, index, 1))
+            token.children.append(Token(Token.T_KEYWORD, token.line, token.index, "extends"))
+        elif i1 is not None and tokens[i1].type == Token.T_BINARY and tokens[i1].value == "extends":
+            # check for inheritance
+            c = self.consume(tokens, token, index, 1)
+            a,b = c.children
+            c.type = Token.T_KEYWORD
+            c.children = [b]
+
+            token.children.append(a)
+            token.children.append(c)
         else:
             # anonymous class
             token.children = [Token(Token.T_TEXT, token.line, token.index, "")]
 
-        # check for inheritance
-        i2 = self.peek_keyword(tokens, token, index, 1)
-        if (i2 is not None and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'extends'):
-            rhs2 = self.consume_keyword(tokens, token, index, 1)
-            rhs3 = self.consume(tokens, token, index, 1)
-            rhs2.children = [rhs3]
-            token.children.append(rhs2)
-        else:
             token.children.append(Token(Token.T_KEYWORD, token.line, token.index, "extends"))
+
+        # check for inheritance
+        #i2 = self.peek_keyword(tokens, token, index, 1)
+        #if (i2 is not None and tokens[i2].type == Token.T_KEYWORD and tokens[i2].value == 'extends'):
+        #    rhs2 = self.consume_keyword(tokens, token, index, 1)
+        #    rhs3 = self.consume(tokens, token, index, 1)
+        #    rhs2.children = [rhs3]
+        #    token.children.append(rhs2)
+        #else:
+        #    token.children.append(Token(Token.T_KEYWORD, token.line, token.index, "extends"))
 
         rhs1 = self.consume(tokens, token, index, 1)
 
@@ -2121,6 +2139,10 @@ class Parser(ParserBase):
                 stack.append(node.children[0])
             elif node.type == Token.T_FUNCTION:
                 stack.append(node.children[0])
+            elif node.type == Token.T_BINARY and node.value == "extends":
+
+                # stack.append(node.children[0])
+                pass
             elif node.type == Token.T_COMMA:
                 stack.extend(node.children)
             elif node.type == Token.T_GROUPING:
@@ -2780,6 +2802,12 @@ class Parser(ParserBase):
         if token.value == "type":
             token.type = Token.T_TYPE
 
+    def collect_keyword_extends(self, tokens, index):
+        token = tokens[index]
+        rhs = self.consume(tokens, token, index, 1)
+        lhs = self.consume(tokens, token, index, -1)
+        token.children = [lhs, rhs]
+
     def collect_keyword_while(self, tokens, index):
 
         token = tokens[index]
@@ -2924,7 +2952,14 @@ def main():  # pragma: no cover
 
     //let x : fn<int>()
 
-    export a from b
+    export type a = b extends c
+
+    class a {
+
+    }
+    class a extends b {
+
+    }
 
     """
 

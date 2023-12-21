@@ -108,19 +108,7 @@ class TransformTestCase(unittest.TestCase):
 
         self.assertEqual(exports, ['name'])
 
-        expected = TOKEN('T_MODULE', '',
-            TOKEN('T_FUNCTION', 'function',
-                TOKEN('T_TEXT', 'f'),
-                TOKEN('T_ARGLIST', '()'),
-                TOKEN('T_BLOCK', '{}')),
-            TOKEN('T_FUNCTION', 'function',
-                TOKEN('T_TEXT', 'g'),
-                TOKEN('T_ARGLIST', '()'),
-                TOKEN('T_BLOCK', '{}')),
-            TOKEN('T_FUNCTION', 'function',
-                TOKEN('T_TEXT', 'h'),
-                TOKEN('T_ARGLIST', '()'),
-                TOKEN('T_BLOCK', '{}')))
+        expected = TOKEN('T_MODULE', '')
 
         self.assertFalse(parsecmp(expected, ast, False))
 

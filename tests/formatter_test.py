@@ -1976,7 +1976,6 @@ class FormatterTypeScriptGenericsTestCase(unittest.TestCase):
         expected = "class GenericNumber{value}"
         self.assertEqual(output, expected)
 
-    @unittest.expectedFailure
     def test_001_conditional(self):
         text = """
             type Example1 = Dog extends Animal ? number : string;
@@ -2024,7 +2023,6 @@ class FormatterTypeScriptGenericsTestCase(unittest.TestCase):
         expected = "const Greeting=undefined"
         self.assertEqual(output, expected)
 
-    @unittest.expectedFailure
     def test_001_point(self):
         text = """
             type Point = { x: number; y: number };
@@ -2043,6 +2041,38 @@ class FormatterTypeScriptGenericsTestCase(unittest.TestCase):
         ast = self.parser.parse(tokens)
         output = self.formatter.format(ast).replace("\n", "")
         expected = "const P=undefined"
+        self.assertEqual(output, expected)
+
+    def test_001_typetype_v1(self):
+        text = """
+            type Point = A<B<C> >
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Point=undefined"
+        self.assertEqual(output, expected)
+
+    @unittest.expectedFailure
+    def test_001_typetype_v2(self):
+        text = """
+            type Point = A<B<C>>
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Point=undefined"
+        self.assertEqual(output, expected)
+
+    @unittest.expectedFailure
+    def test_001_optional_arg(self):
+        text = """
+            function fn(x:number, y?:number) {}
+        """
+        tokens = self.lexer.lex(text)
+        ast = self.parser.parse(tokens)
+        output = self.formatter.format(ast).replace("\n", "")
+        expected = "const Point=undefined"
         self.assertEqual(output, expected)
 
 def main():

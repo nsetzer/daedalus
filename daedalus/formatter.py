@@ -838,6 +838,24 @@ def main():  # pragma: no cover
     /** doc string */
     """
 
+    text1 = """
+     72 = 2 + 4 + 6 + 8 + 10 + 12 + 14 + 16
+    128 = 8 * 16
+     56 = 2 + 4 + 6 + 8 + 10 + 12 + 14
+    256 = 16 * 16
+
+    """
+
+
+    text1 = """
+
+        function FileLike(context) {
+            return {read, write}
+            function read(nbytes) { return ""}
+            async function write(bytes) {return await callable()}
+        }
+    """
+
     tokens = Lexer({"preserve_documentation": True}).lex(text1)
     mod = Parser().parse(tokens)
 
