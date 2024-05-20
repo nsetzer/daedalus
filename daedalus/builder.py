@@ -36,6 +36,7 @@ from .transform import TransformExtractStyleSheet, TransformMinifyScope, \
 from .formatter import Formatter
 import pickle
 import base64
+import logging
 
 def findFile(name, search_paths):
     """
@@ -156,10 +157,19 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
         #           (iifi(api, daedalus) { ... })(app.api, daedalus)
         #       use:
         #           (iifi(app, daedalus) { const api = app.api; ... })(app, daedalus)
-        #
+        # TODO: implement some form of name mangling to prevent name collisions
+        #       export * from "@daedalus/api" => 'daedalus_api' instead of 'api'
+        # TODO: there is another bug in the implementation
+        #       @pkg/a/b, the generated code uses a.b directly from the global scope, instead of
+        #       unpacking from the IIFI argument list.
+        #       example:
+        #           Object.assign(entities,(function(axertc,mobs){
+        #               const MyMob=entities.mobs.MyMob;
+
 
         import_names[i] = name.split('.')[-1]
         argument_names[i] = name
+        # print("fix name!!", name, import_names[i])
         #if name.endswith('.js'):
         #    import_names[i] = os.path.splitext(os.path.split(name)[1])[0]
         #    argument_names[i] = import_names[i]
@@ -675,7 +685,7 @@ class Builder(object):
             jsm = queue.pop()
             files = jsm.load()
             self.files.update(files)
-            #print("visit", jsm.name(), list(jsm.module_imports.keys()))
+            # print("visit", jsm.name(), list(jsm.module_imports.keys()))
             #print("   ", ','.join(list([x.name for x in files.values()])))
 
             for modname in jsm.module_imports.keys():
@@ -718,6 +728,7 @@ class Builder(object):
                 if modpath not in visited:
                     queue.append(self.modules[modpath])
                     visited.add(modpath)
+                
 
     def discover(self, path):
         """
@@ -748,7 +759,27 @@ class Builder(object):
 
         self._discover(jm)
 
+        self._fix_export_star()
+
         return jm
+
+    def _fix_export_star(self):
+
+        name2mod = {mod.module_name: mod for mod in self.modules.values()}
+
+        for path, mod in self.modules.items():
+            
+            for modname, names in mod.module_imports.items():
+                
+                if "*" in names:
+                    other = name2mod[modname]
+                    #print()
+                    #print(path)
+                    #print(mod.module_name)
+                    #print(mod.module_imports.keys())
+                    #print(other.module_name)
+                    #print(other.module_exports)
+                    mod.module_imports[modname] = {v:v for v in other.module_exports}
 
     def _sort_modules(self, jsm):
         name2mod = {m.name(): m for m in self.modules.values()}
@@ -929,6 +960,7 @@ class Builder(object):
 
 
         except TokenError as e:
+            logging.exception("error building module")
             filepath = ""
             lines = []
             if e.token.file:
@@ -970,7 +1002,7 @@ class Builder(object):
         except BuildError as e:
             return self.build_error(e)
         except FileNotFoundError as e:
-            print("path", path)
+            logging.exception(f"file not found when building path: {path}")
             return self.build_error(e)
 
         if sourcemap:
@@ -1057,8 +1089,9 @@ class Builder(object):
         # BuildError(filepath, token, lines, message, raw_message)
         self.error = Exception(message)
 
-        print("=--= filepath", e.filepath)
         _filename = getattr(e, 'filepath', '<>')
+        print("=--= filepath", _filename)
+        print("=--= filepath", getattr(e, 'filename', '<>'))
         _line = getattr(e, 'line', -1)
         _column = getattr(e, 'column', -1)
         _raw_message = getattr(e, 'raw_message', str(e))

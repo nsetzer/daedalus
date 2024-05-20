@@ -3061,18 +3061,54 @@ def getModuleImportExport(ast, warn_include=False):
 
                 if len(export_names) == 1 and export_names[0].type == Token.T_SPECIAL and export_names[0].value == "*":
                     if name.startswith("@"):
-                        raise TransformError(token.children[2], "exporting aliased module not supported")
-                    if not name.startswith("."):
-                        raise TransformError(token.children[2], "must export relative path")
-                    imports[name] = {}
+                        #raise TransformError(token.children[2], "exporting aliased module not supported")
+                        import_name = name
+                        _, modname = name.split("/", 1)
+                        modname = modname.replace("/", ".")
+                        module_imports[modname] = dict()
 
-                    ast.children.pop(i)
+                        # TODO: need a proper way to specify export all names
+                        #if modname not in module_imports:
+                        module_imports[modname] = {"*": "*"}
+
+                        print(f"exporting aliased module {import_name} as {modname} is experimental")
+                        ast.children.pop(i)
+                    elif not name.startswith("."):
+                        raise TransformError(token.children[2], "must export relative path")
+                    else:
+                        imports[name] = {}
+                        ast.children.pop(i)
 
                 else:
-                    # export from may need to update includes and exports
-                    # the from source has not yet been defined.
-                    # it may be a filepath or an object - undecided
-                    raise TransformError(token, "export from not implemented")
+                    fromlist = [] # list of (import_name, target_name)
+                    for child in export_names[0].children:
+                        print(child.toString(1))
+                        if child.type == Token.T_TEXT:
+                            # import name from module
+                            fromlist.append((child.value, child.value))
+                        else:
+                            # import name from module and rename
+                            fromlist.append((child.children[0].value, child.children[1].value))
+
+                    if name.startswith("@"):
+                        #raise TransformError(token.children[2], "exporting aliased module not supported")
+                        import_name = name
+                        _, modname = name.split("/", 1)
+                        modname = modname.replace("/", ".")
+                        module_imports[modname] = dict()
+
+                        if modname in module_imports:
+                            module_imports[modname].update(dict(fromlist))
+                        else:
+                            module_imports[modname] = dict(fromlist)
+
+                        print(f"exporting aliased module {import_name} as {modname} is experimental")
+                        ast.children.pop(i)
+                    else:
+                        # export from may need to update includes and exports
+                        # the from source has not yet been defined.
+                        # it may be a filepath or an object - undecided
+                        raise TransformError(token, "export from not implemented")
             else:
 
                 for text in token.children[0].children:
@@ -3341,6 +3377,23 @@ def main(): # pragma: no cover
         }
     }
     export f
+    """
+
+    text = """
+        let var1,var2;
+        
+        if (var1) {
+            let a = 1;
+            console.log(a)
+        } else {
+            if (var2) { 
+                let a = 2
+                console.log(a)
+            } else {
+                let a = 3
+                console.log(a)
+            }
+        }
     """
     tokens = Lexer().lex(text)
     parser =  Parser()
