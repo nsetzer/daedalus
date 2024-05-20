@@ -159,13 +159,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
         #           (iifi(app, daedalus) { const api = app.api; ... })(app, daedalus)
         # TODO: implement some form of name mangling to prevent name collisions
         #       export * from "@daedalus/api" => 'daedalus_api' instead of 'api'
-        # TODO: there is another bug in the implementation
-        #       @pkg/a/b, the generated code uses a.b directly from the global scope, instead of
-        #       unpacking from the IIFI argument list.
-        #       example:
-        #           Object.assign(entities,(function(axertc,mobs){
-        #               const MyMob=entities.mobs.MyMob;
-
+        #       unclear if still required
 
         import_names[i] = name.split('.')[-1]
         argument_names[i] = name
@@ -184,7 +178,21 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     #    modname = os.path.splitext(os.path.split(modname)[1])[0]
 
     tok_import_names = [TOKEN('T_TEXT', text) for text in import_names]
-    tok_argument_names = [TOKEN('T_TEXT', text) for text in argument_names]
+    #tok_argument_names = [TOKEN('T_TEXT', text) for text in argument_names]
+
+    # IFFI argument names need to be unpacked so that minify works
+    tok_argument_names = []
+    for text in argument_names:
+        if '.' in text:
+            parts = text.split(".")
+            lhs = TOKEN('T_TEXT', parts[0])
+            for i in range(1, len(parts)):
+                rhs = TOKEN('T_TEXT', parts[i])
+                lhs = TOKEN('T_GET_ATTR', ".", lhs, rhs)
+            tok_argument_names.append(lhs)
+        else:
+            tok_argument_names.append(TOKEN('T_TEXT', text))
+
     tok_export_names = [TOKEN('T_TEXT', text) for text in sorted(exports)]
     tok_exports = TOKEN('T_MODULE', '',
         TOKEN('T_RETURN', 'return',
@@ -193,10 +201,12 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     tok_imports1 = []
     for varname, names in imports.items():
         for src, dst in names.items():
+            # TODO: unclear if this is completely correct, what about case like a.b.c
+            _x_varname = varname.split('.')[-1]
             tok = TOKEN('T_ASSIGN', '=',
                 TOKEN('T_VAR', 'const', TOKEN('T_TEXT', dst)),
                 TOKEN('T_GET_ATTR', '.',
-                    TOKEN('T_TEXT', varname),
+                    TOKEN('T_TEXT', _x_varname),
                     TOKEN('T_ATTR', src)))
             tok_imports1.append(tok)
     tok_imports = TOKEN('T_MODULE', '', *tok_imports1)
@@ -204,6 +214,7 @@ def buildModuleIIFI(modname, mod, imports, exports, merge):
     tok_ast = merge_ast(tok_imports, mod)
     tok_ast = merge_ast(tok_ast, tok_exports)
     tok_ast.children.insert(0, TOKEN('T_STRING', '"use strict"'))
+
     tok_fundef = TOKEN('T_ANONYMOUS_FUNCTION', 'function',
         TOKEN('T_TEXT', 'Anonymous'),
         TOKEN('T_ARGLIST', '()', *tok_import_names),
@@ -768,6 +779,15 @@ class Builder(object):
         name2mod = {mod.module_name: mod for mod in self.modules.values()}
 
         for path, mod in self.modules.items():
+
+            # resolve `export *` where all names in the chil module should be exported
+            # with along with the current module
+            values = list(mod.module_exports)
+            for name in values:
+                if name.endswith("/*"):
+                    mod.module_exports.remove(name)
+                    name = name[:-2]
+                    mod.module_exports |= name2mod[name].module_exports
             
             for modname, names in mod.module_imports.items():
                 
@@ -872,8 +892,10 @@ class Builder(object):
 
                 for mod in order:
                     struct = _get(mod.name())
-                    ast = merge_ast(ast, mod.getAST(merge=len(struct) > 0))
+                    ast2 = mod.getAST(merge=len(struct) > 0)
+                    ast = merge_ast(ast, ast2)
                     source_size += mod.source_size
+                
 
                 styles = sum([mod.styles for mod in order], [])
             else:
@@ -885,11 +907,13 @@ class Builder(object):
             error = None
             self.globals = {}
 
+
             if minify:
                 ast = Token.deepCopy(ast)
                 xform = TransformMinifyScope()
                 xform.disable_warnings = self.disable_warnings
                 self.globals = xform.transform(ast)
+
             else:
                 ast_source = ast
                 ast = Token.deepCopy(ast)

@@ -1510,6 +1510,9 @@ class TransformAssignScope(object):
             Token.T_MODULE: self.visit_module,
             Token.T_TEXT: self.visit_text,
             Token.T_VAR: self.visit_var,
+            Token.T_STATIC_PROPERTY: self.visit_static,
+            Token.T_PUBLIC_STATIC_PROPERTY: self.visit_static,
+            Token.T_PRIVATE_STATIC_PROPERTY: self.visit_static,
             Token.T_OBJECT: self.visit_object,
             Token.T_RECORD: self.visit_object,
             Token.T_BINARY: self.visit_binary,
@@ -1653,6 +1656,14 @@ class TransformAssignScope(object):
             self._push_finalize(scope, token, parent)
 
         self._push_children(scope, token, flags)
+
+    def visit_static(self, flags, scope, token, parent):
+        # do not name mangle the variable that is being statically assigned
+        # static variables are often used to define enum names
+        # static functions are handled separatley
+        assert token.children[0].type == Token.T_ASSIGN
+        rhs = token.children[0].children[1]
+        self._push_tokens(flags, scope, [rhs], token.children[0])
 
     def visit_error(self, flags, scope, token, parent):
         raise TokenError(token, "invalid token")
@@ -1805,7 +1816,6 @@ class TransformAssignScope(object):
 
         else:
             self._push_children(scope, token, 0)
-
 
     def _h_get_attr(self, token, attr):
         # TODO: consider using the form `${token}?.${attr}`
@@ -2144,7 +2154,6 @@ class TransformAssignScope(object):
                 tok.children = [lhs, rhs]
                 token.children[2].children[idx] = tok
 
-
     def visit_export(self, flags, scope, token, parent):
 
         new_flags = (ST_VISIT | (flags & ST_SCOPE_MASK))
@@ -2294,7 +2303,6 @@ class TransformAssignScope(object):
 
         if idx < 0:
             raise TransformError(token, "break found outside loop")
-
 
     def visit_continue(self, flags, scope, token, parent):
         self._push_finalize(scope, token, parent)
@@ -3072,6 +3080,7 @@ def getModuleImportExport(ast, warn_include=False):
                         module_imports[modname] = {"*": "*"}
 
                         print(f"exporting aliased module {import_name} as {modname} is experimental")
+                        exports.append(modname + "/*")
                         ast.children.pop(i)
                     elif not name.startswith("."):
                         raise TransformError(token.children[2], "must export relative path")
@@ -3103,6 +3112,7 @@ def getModuleImportExport(ast, warn_include=False):
                             module_imports[modname] = dict(fromlist)
 
                         print(f"exporting aliased module {import_name} as {modname} is experimental")
+                        exports.append(modname + "/*")
                         ast.children.pop(i)
                     else:
                         # export from may need to update includes and exports

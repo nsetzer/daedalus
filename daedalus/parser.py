@@ -1791,7 +1791,7 @@ class Parser(ParserBase):
         #  allow 'type x = expression' to be a type definition
         if token.type == Token.T_TEXT and token.value == "type":
             #raise ValueError()
-            print("Warning: should be unreachable")
+            print("Warning: should be unreachable:", token.toString(1))
             i1 = self.peek_token(tokens, token, index, 1)
             if i1 is not None and tokens[i1].type == Token.T_ASSIGN:
                 if tokens[i1].value != "=":
