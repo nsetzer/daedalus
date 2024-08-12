@@ -783,8 +783,10 @@ class Builder(object):
             # resolve `export *` where all names in the chil module should be exported
             # with along with the current module
             values = list(mod.module_exports)
+            print(mod.module_name, values)
             for name in values:
                 if name.endswith("/*"):
+                    print("fixing:", names)
                     mod.module_exports.remove(name)
                     name = name[:-2]
                     mod.module_exports |= name2mod[name].module_exports
@@ -1153,7 +1155,7 @@ class Builder(object):
         # allow for a user defined value
 
         if self.platform == "android":
-            return "file:///android_asset/site/"
+            return "/android_asset/site/"
         elif self.platform == "qt":
             return "./"
         else:

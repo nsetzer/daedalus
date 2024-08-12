@@ -16,6 +16,8 @@ from .parser import Parser
 from .formatter import Formatter
 from .transform import TransformMinifyScope
 from .vm import VmRuntime
+from . import cli
+from . import webview
 
 def parse(text: str) -> Token:
     """ Parse javascript source into an AST

@@ -1741,7 +1741,16 @@ class FormatterTestCase(unittest.TestCase):
 
             text = self.formatter.format(ast)
             print("\n\nunexpected text", text)
+    
+    def test_001_while_increment(self):
+        self._chkeq("""
+            while (true) i++
+        """, "while(true)i++")
 
+    def test_001_eval(self):
+        self._chkeq("""
+            eval(`${expr}`)
+        """, "eval(`${expr}`)")
 class FormatterStressTestCase(unittest.TestCase):
 
     @classmethod

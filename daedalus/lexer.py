@@ -36,7 +36,7 @@ reserved_words = {
     # keywords
     'async', 'await', 'break', 'case',
     'class', 'const', 'continue', 'debugger', 'default',
-    'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends',
+    'delete', 'do', 'else', 'enum', 'export', 'extends',
     'final', 'finally', 'float', 'for', 'function', 'goto', 'if',
     'implements', 'import', 'in', 'instanceof', 'interface', 'let',
     'new', 'package',
@@ -49,7 +49,7 @@ reserved_words = {
 reserved_words_extra = {
     'private', 'protected', 'public', 'native',
     'abstract', 'arguments', 'synchronized', 'from',
-    'module', "catch", 'throws',
+    'module', "catch", 'throws', 'eval',
     "constexpr", "pyimport"
 }
 
