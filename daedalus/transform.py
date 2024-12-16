@@ -489,6 +489,13 @@ class TransformExtractStyleSheet(TransformBase):
                 elif selector.type == Token.T_TEMPLATE_STRING:
                     selector_text = py_ast.literal_eval('"' + selector.value[1:-1] + '"')
                     selector_text = shell_format(selector_text, self.named_styles)
+                elif selector.type == Token.T_LIST:
+                    if len(selector.children) == 1 and selector.children[0].type == Token.T_TEMPLATE_STRING:
+                        #child.children[0] = selector.children[0]
+                        selector_text = py_ast.literal_eval('"' + selector.children[0].value[1:-1] + '"')
+                        selector_text = shell_format(selector_text, self.named_styles)
+                    else:
+                        raise TransformError(selector, "invalid selector")
 
                 if not selector_text:
                     return False
@@ -3405,6 +3412,18 @@ def main(): # pragma: no cover
             }
         }
     """
+
+    text = """
+
+    const style = {
+        test: StyleSheet({}),
+    }
+
+    StyleSheet(1, `@media`, {
+        [`${style.test}.attr`]: 2
+    })
+    """
+
     tokens = Lexer().lex(text)
     parser =  Parser()
     ast = parser.parse(tokens)
@@ -3414,12 +3433,17 @@ def main(): # pragma: no cover
 
     #print(ast.toString(2))
     #TransformIdentityScope().transform(ast)
-    xform = TransformMinifyScope()
-    xform.warnings_as_errors = True
+    #xform = TransformMinifyScope()
+    #xform.warnings_as_errors = True
+    
+    xform = TransformExtractStyleSheet("uuid")
 
     xform.transform(ast)
+    print(xform.styles)
     text = Formatter({"minify": True}).format(ast)
+    print("----")
     print(text)
+    print("----")
 
 if __name__ == '__main__': # pragma: no cover
     main()

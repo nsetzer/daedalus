@@ -2963,6 +2963,14 @@ def main():  # pragma: no cover
 
     """
 
+    text1 = """
+
+    y = 0
+    x = {
+        [`${y}`]: 2
+    }
+    """
+
     #text1 = "(x:int): int => x"
     print("="* 79)
     print(text1)
