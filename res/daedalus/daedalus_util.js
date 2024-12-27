@@ -230,6 +230,30 @@ export function StyleSheet(...args) {
         style = args[1]
         name = selector
     }
+
+    if (args.length >= 3) {
+        // format args as a csv string
+        let str = ""
+        for (let i=0; i < args.length; i++) {
+            if (i > 0) {
+                str += ", "
+            }
+            // if the argument is an object, JSONify it
+            if (typeof(args[i]) === "object") {
+                str += JSON.stringify(args[i])
+            } else {
+                str += args[i]
+            }
+        }
+        console.error(`Invalid Style Sheet StyleSheet(${str})`)
+        return
+    }
+    if (style === undefined) {
+        console.log(`$nargs=${args.length}`)
+        console.log(`${args[0]}, ${args[1]}, ${args[2]}`)
+        console.log(`StyleSheet(name=${name}, selector=${selector}, style=${style})`)
+        throw new Error("style must be defined")
+    }
     //https://stackoverflow.com/questions/1720320/how-to-dynamically-create-css-class-in-javascript-and-apply
     if (css_sheet === null) {
         css_sheet = document.createElement('style');
