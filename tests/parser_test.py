@@ -916,7 +916,6 @@ class ParserKeywordTestCase(unittest.TestCase):
 
         self.assertFalse(parsecmp(expected, ast, False))
 
-
     def test_001_import_js(self):
 
         text = "import './file.js'"
@@ -1162,6 +1161,41 @@ class ParserKeywordTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         with self.assertRaises(ParseError):
             Parser().parse(tokens)
+
+    def test_001_delete_property(self):
+        text = "delete obj.attr"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_PREFIX', 'delete',
+                TOKEN('T_GET_ATTR', '.',
+                    TOKEN('T_TEXT', 'obj'),
+                    TOKEN('T_ATTR', 'attr'))))
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_delete_array(self):
+        text = "delete obj[0]"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_PREFIX', 'delete',
+                TOKEN('T_SUBSCR', '',
+                    TOKEN('T_TEXT', 'obj'),
+                    TOKEN('T_NUMBER', '0'))))
+        self.assertFalse(parsecmp(expected, ast, False))
+
+    def test_001_delete_set(self):
+        text = "myset.delete(42)"
+        tokens = Lexer().lex(text)
+        ast = Parser().parse(tokens)
+        expected = TOKEN('T_MODULE', '',
+            TOKEN('T_FUNCTIONCALL', '',
+                TOKEN('T_GET_ATTR', '.',
+                    TOKEN('T_TEXT', 'myset'),
+                    TOKEN('T_ATTR', 'delete')),
+                TOKEN('T_ARGLIST', '()',
+                    TOKEN('T_NUMBER', '42'))))
+        self.assertFalse(parsecmp(expected, ast, False))
 
 class ParserFunctionTestCase(unittest.TestCase):
 

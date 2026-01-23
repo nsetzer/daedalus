@@ -36,7 +36,7 @@ reserved_words = {
     # keywords
     'async', 'await', 'break', 'case',
     'class', 'const', 'continue', 'debugger', 'default',
-    'delete', 'do', 'else', 'enum', 'export', 'extends',
+    'do', 'else', 'enum', 'export', 'extends',
     'final', 'finally', 'float', 'for', 'function', 'goto', 'if',
     'implements', 'import', 'in', 'instanceof', 'interface', 'let',
     'new', 'package',
@@ -47,7 +47,7 @@ reserved_words = {
 
 # TODO: e.x. {public: 'abc123'} will fail since public is a keyword
 reserved_words_extra = {
-    'private', 'protected', 'public', 'native',
+    'private', 'protected', 'public', 'native', 'delete',
     'abstract', 'arguments', 'synchronized', 'from',
     'module', "catch", 'throws', 'eval',
     "constexpr", "pyimport"

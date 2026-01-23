@@ -1702,7 +1702,7 @@ class FormatterTestCase(unittest.TestCase):
         tokens = Lexer().lex(text)
         parser = Parser()
         parser.disabled_warnings.add(Parser.W_BLOCK_UNSAFE)
-        
+
         with self.assertRaises(ParseError):
             ast = parser.parse(tokens)
 
@@ -1741,7 +1741,7 @@ class FormatterTestCase(unittest.TestCase):
 
             text = self.formatter.format(ast)
             print("\n\nunexpected text", text)
-    
+
     def test_001_while_increment(self):
         self._chkeq("""
             while (true) i++
@@ -1751,6 +1751,15 @@ class FormatterTestCase(unittest.TestCase):
         self._chkeq("""
             eval(`${expr}`)
         """, "eval(`${expr}`)")
+
+    def test_001_set_ops(self):
+        self._chkeq("""
+            let myset = new Set()
+            myset.add(1)
+            myset.delete(1)
+            myset.clear()
+        """, "let myset=new Set();myset.add(1);myset.delete(1);myset.clear()")
+
 class FormatterStressTestCase(unittest.TestCase):
 
     @classmethod
@@ -1912,7 +1921,7 @@ class FormatterTypeScriptTestCase(unittest.TestCase):
         self.assertEqual(output, expected)
 
 class FormatterTypeScriptGenericsTestCase(unittest.TestCase):
-    
+
     @classmethod
     def setUpClass(cls):
 
